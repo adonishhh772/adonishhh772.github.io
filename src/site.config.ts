@@ -17,7 +17,7 @@ const baseUrl = import.meta.env.BASE_URL ?? '/';
 
 export const site = {
   /** Canonical origin — the live site root domain. */
-  url: 'https://abdbastola.github.io',
+  url: 'https://adonishhh772.github.io',
   title: 'Abd Bastola — AI Engineer',
   name: 'Abd Bastola',
   role: 'AI Engineer building reliable enterprise AI systems.',
@@ -63,10 +63,8 @@ export function absoluteUrl(path: string): string {
 
 /** External profile links — edit once here; navigation and footer use them. */
 export const social = {
-  // TODO: replace with the real GitHub profile URL.
-  github: 'https://github.com/your-github-username',
-  // TODO: replace with the real LinkedIn profile URL.
-  linkedin: 'https://www.linkedin.com/in/your-linkedin-handle',
+  github: 'https://github.com/adonishhh772',
+  linkedin: 'https://www.linkedin.com/in/abda-bastola-b0447b13a/',
 };
 
 /** Primary navigation. Internal pages first, then external links. */

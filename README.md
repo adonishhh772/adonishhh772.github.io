@@ -1,8 +1,10 @@
-# abdbastola.github.io
+# adonishhh772.github.io
 
 Personal portfolio and writing hub for **Abd Bastola** — AI Engineer building
 reliable enterprise AI systems in London. Publisher of the **Reliable AI**
 newsletter.
+
+Live at **https://adonishhh772.github.io/**
 
 Built with [Astro](https://astro.build) (static site generation), plain CSS,
 and zero backend. Deploys to GitHub Pages from GitHub Actions.
@@ -128,30 +130,23 @@ delete the surrounding `TODO` comments.
 
 ## Deployment (GitHub Pages)
 
-The Astro config resolves `site` and `base` automatically from the
-`GITHUB_REPOSITORY` environment variable that GitHub Actions provides:
+This repository — `adonishhh772/adonishhh772.github.io` — is a GitHub Pages
+**user site**, so the built site is served at the domain root:
+**https://adonishhh772.github.io/**.
 
-- Repo `<owner>/<owner>.github.io` → **user site** at the domain root
-  (`base: "/"`, e.g. `https://abdbastola.github.io` — requires the repo
-  owner to *be* `abdbastola`).
-- Any other repo → **project site** under `/<repo>/` on the owner's pages
-  domain (e.g. `https://adonishhh772.github.io/abdbastola.github.io/`).
-
-Local development (no `GITHUB_REPOSITORY`) defaults to the user-site
-identity from this spec.
+`astro.config.mjs` resolves `site`/`base` from the `GITHUB_REPOSITORY`
+environment variable that GitHub Actions injects, so builds are correct for
+user-site (root) or project-site (`/<repo>/`) hosting. Local development
+(no `GITHUB_REPOSITORY`) defaults to `https://adonishhh772.github.io`.
 
 To deploy:
 
 1. Push the repository to GitHub.
 2. In **Settings → Pages**, set “Build and deployment” → **Source** to
-   **GitHub Actions** (not “Deploy from a branch” — branch deployment
-   runs Jekyll over the Astro sources and fails).
+   **GitHub Actions** (not “Deploy from a branch” — branch deployment runs
+   Jekyll over the Astro sources and fails).
 3. The `Deploy to GitHub Pages` workflow (`.github/workflows/deploy.yml`)
    runs on every push to `main` and on manual dispatch.
-
-If the site must live at `https://abdbastola.github.io`, the repository
-must be owned by the `abdbastola` account — either create/transfer the
-repo there or rename the owning account to match.
 
 ## Design notes
 

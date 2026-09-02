@@ -5,14 +5,14 @@ import sitemap from '@astrojs/sitemap';
 /**
  * Deployment target resolution.
  *
- * GitHub Actions injects GITHUB_REPOSITORY (e.g. "adonishhh772/abdbastola.github.io").
+ * GitHub Actions injects GITHUB_REPOSITORY (e.g. "adonishhh772/adonishhh772.github.io").
  * - If the repo is <owner>.github.io owned by <owner>  → GitHub Pages user site,
  *   served at the domain root  (base "/").
  * - Otherwise the repo is a project site, served under /<repo>/ on the owner's
  *   pages domain (base "/<repo>/").
  *
- * Local dev has no GITHUB_REPOSITORY, so it defaults to the intended user-site
- * identity (https://abdbastola.github.io) per the project spec.
+ * Local dev has no GITHUB_REPOSITORY, so it defaults to the user-site
+ * identity (https://adonishhh772.github.io).
  */
 const repoEnv = process.env.GITHUB_REPOSITORY ?? '';
 const [repoOwner, repoName] = repoEnv.split('/');
@@ -23,7 +23,7 @@ const site =
     ? `https://${repoName}`
     : repoName
       ? `https://${repoOwner}.github.io`
-      : 'https://abdbastola.github.io';
+      : 'https://adonishhh772.github.io';
 
 const base = isUserSite || !repoName ? '/' : `/${repoName}/`;
 
