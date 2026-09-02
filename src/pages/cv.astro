@@ -1,0 +1,331 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+import { site, newsletter, social } from '../site.config';
+
+const title = 'CV — Abd Bastola';
+
+const focusAreas = [
+  'Production AI agents',
+  'Multi-agent RAG & GraphRAG',
+  'Evaluation & observability',
+  'Guardrails & governance',
+  'AI platform engineering',
+  'LLMOps & responsible AI',
+];
+
+const toolkit = [
+  'Python',
+  'FastAPI',
+  'REST APIs',
+  'Asynchronous systems',
+  'RAG',
+  'Multi-agent systems',
+  'GraphRAG',
+  'Neo4j',
+  'Redis',
+  'GCP Pub/Sub',
+  'AWS',
+  'Azure',
+  'Kubernetes',
+  'Docker',
+  'CI/CD',
+  'Observability',
+  'Evaluation',
+  'Prompt versioning',
+  'Guardrails',
+  'LangChain',
+  'LangGraph',
+];
+
+const engagements = [
+  {
+    id: 'kai',
+    name: 'KAI — Enterprise knowledge assistant',
+    tag: 'Multi-agent RAG · Enterprise delivery',
+    line: 'An enterprise AI assistant that helps teams find, understand and use trusted organisational knowledge — multi-agent RAG, evaluation-first quality gates, guardrails and operational reporting.',
+  },
+  {
+    id: 'aruva',
+    name: 'Aruva — GraphRAG for complex documents',
+    tag: 'GraphRAG · Platform delivery',
+    line: 'Led delivery of a GraphRAG and document-intelligence platform for turning complex unstructured content into connected, searchable knowledge with measurable citation accuracy.',
+  },
+  {
+    id: 'hyperran',
+    name: 'HyperRAN — AI optimisation for telecom networks',
+    tag: 'Applied research · Stakeholder-led',
+    line: 'An AI-driven approach to reduce RAN energy consumption while maintaining service quality — reinforcement learning, KPI forecasting and hard QoS protection.',
+  },
+];
+---
+
+<BaseLayout
+  title={title}
+  description={`A focused CV for ${site.name}: summary, focus areas, experience, selected projects, technical toolkit, education and contact.`}
+>
+  <section class="page-head">
+    <div class="wrap">
+      <span class="kicker">CV</span>
+      <h1 class="display display--page" style="margin-top: 0.9rem;">
+        {site.name}
+      </h1>
+      <p class="lede">
+        AI Engineer building reliable enterprise AI systems · {site.location}.
+        A focused snapshot — for a full résumé or a conversation, use the
+        links below.
+      </p>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <!-- Summary -->
+    <div class="cv-section">
+      <h2 class="cv-section-title">Summary</h2>
+      <p class="cv-summary">
+        AI Engineer focused on enterprise generative AI and intelligent
+        systems, with hands-on delivery across multi-agent RAG, GraphRAG,
+        evaluation, observability, governance and cloud-native infrastructure.
+        I work at the intersection of consulting, product thinking and
+        engineering — translating ambiguous business problems into systems
+        that are measurable, governed and genuinely reliable in production.
+      </p>
+    </div>
+
+    <!-- Focus areas -->
+    <div class="cv-section">
+      <h2 class="cv-section-title">Focus areas</h2>
+      <ul class="chips" style="row-gap: 0.6rem;">
+        {focusAreas.map((area) => (
+          <li class="chip chip--lg">{area}</li>
+        ))}
+      </ul>
+    </div>
+
+    <!-- Experience -->
+    <div class="cv-section">
+      <h2 class="cv-section-title">Experience</h2>
+      <div class="cv-row">
+        <div>
+          <h3>AI Engineer — Enterprise AI & consulting</h3>
+          <p class="org">Independent engagements · {site.location}</p>
+          <ul>
+            <li>
+              Design and deliver production AI agents, RAG and GraphRAG
+              systems for real-world teams, end to end.
+            </li>
+            <li>
+              Lead technical delivery across ingestion, retrieval, orchestration,
+              evaluation, guardrails and observability.
+            </li>
+            <li>
+              Work across consulting, product and engineering — shaping the
+              business problem, not just the code.
+            </li>
+            <li>
+              Translate ambiguous requirements into measured, governed systems
+              with clear success criteria.
+            </li>
+          </ul>
+        </div>
+        <div class="period">Current</div>
+      </div>
+
+      <div class="cv-row">
+        <div>
+          <h3>
+            <span class="ph">[Role]</span> — <span class="ph">[Company]</span>
+          </h3>
+          <p class="org">
+            <span class="ph">[What you worked on]</span>
+          </p>
+          <ul>
+            <li>
+              <span class="ph">[Key responsibility or outcome]</span>
+            </li>
+            <li>
+              <span class="ph">[Key responsibility or outcome]</span>
+            </li>
+          </ul>
+        </div>
+        <div class="period">
+          <span class="ph">[Start]–[End]</span>
+        </div>
+      </div>
+      <!--
+        TODO: replace the placeholder row above with earlier experience.
+        Edit this file at the marked location in src/pages/cv.astro.
+      -->
+    </div>
+
+    <!-- Selected projects -->
+    <div class="cv-section">
+      <h2 class="cv-section-title">Selected projects</h2>
+      <div class="projects-list">
+        {engagements.map((project, i) => (
+          <a class="cv-project" href={`/work/${project.id}/`}>
+            <span class="cv-project-num mono">
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <span class="cv-project-body">
+              <strong>{project.name}</strong>
+              <span class="mono cv-project-tag">{project.tag}</span>
+              <span class="cv-project-line">{project.line}</span>
+            </span>
+            <span class="cv-project-arrow">
+              <Icon name="arrow-up-right" size={16} />
+            </span>
+          </a>
+        ))}
+      </div>
+    </div>
+
+    <!-- Technical toolkit -->
+    <div class="cv-section">
+      <h2 class="cv-section-title">Technical toolkit</h2>
+      <ul class="chips">
+        {toolkit.map((tool) => (
+          <li class="chip">{tool}</li>
+        ))}
+      </ul>
+    </div>
+
+    <!-- Education -->
+    <div class="cv-section">
+      <h2 class="cv-section-title">Education</h2>
+      <div class="cv-row">
+        <div>
+          <h3>
+            <span class="ph">[Degree]</span> — <span class="ph">[University]</span>
+          </h3>
+          <p class="org">
+            <span class="ph">[Field of study or honours, if relevant]</span>
+          </p>
+        </div>
+        <div class="period">
+          <span class="ph">[Year]–[Year]</span>
+        </div>
+      </div>
+      <!--
+        TODO: replace the placeholder row above with your real education.
+        Edit this file at the marked location in src/pages/cv.astro.
+      -->
+    </div>
+
+    <!-- Contact -->
+    <div class="cv-section">
+      <h2 class="cv-section-title">Contact</h2>
+      <div class="contact-links">
+        <a
+          class="btn btn--ghost"
+          href={social.github}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Icon name="github" size={15} />
+          GitHub
+        </a>
+        <a
+          class="btn btn--ghost"
+          href={social.linkedin}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Icon name="linkedin" size={15} />
+          LinkedIn
+        </a>
+        <a class="btn btn--ghost" href={newsletter.rssPath}>
+          <Icon name="rss" size={15} />
+          RSS
+        </a>
+      </div>
+      <p class="cv-note muted">
+        Full résumé available on request via LinkedIn.
+      </p>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .cv-summary {
+    max-width: 68ch;
+    color: var(--muted);
+    line-height: 1.75;
+    margin-bottom: 0;
+  }
+
+  .chip--lg {
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    padding: 0.4rem 0.85rem;
+    color: var(--text-soft);
+  }
+
+  .projects-list {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .cv-project {
+    display: grid;
+    grid-template-columns: 2.4rem 1fr auto;
+    gap: 0.9rem;
+    align-items: start;
+    padding: 1.15rem 1.2rem;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    background: rgba(16, 19, 26, 0.4);
+    transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  }
+
+  .cv-project:hover {
+    border-color: var(--accent-line);
+    transform: translateY(-2px);
+  }
+
+  .cv-project-num {
+    color: var(--accent);
+    font-size: 0.8rem;
+    padding-top: 0.2rem;
+  }
+
+  .cv-project-body {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .cv-project-tag {
+    color: var(--faint);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .cv-project-line {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .cv-project-arrow {
+    color: var(--faint);
+    padding-top: 0.25rem;
+    transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  }
+
+  .cv-project:hover .cv-project-arrow {
+    color: var(--accent);
+    transform: translate(2px, -2px);
+  }
+
+  .contact-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+  }
+
+  .cv-note {
+    margin-top: 1.4rem;
+    font-size: 0.9rem;
+  }
+</style>

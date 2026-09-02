@@ -1,0 +1,213 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+import { site, newsletter, social } from '../site.config';
+
+const interests = [
+  'Production AI agents',
+  'RAG security and evaluation',
+  'AI platform engineering',
+  'LLMOps',
+  'Responsible AI delivery',
+];
+
+const focusAreas = [
+  'Multi-agent RAG',
+  'GraphRAG',
+  'Evaluation & observability',
+  'Governance & guardrails',
+  'Cloud-native delivery',
+];
+
+// TODO: placeholders — replace in src/site.config.ts → social.*
+const socialLinks = [
+  { label: 'GitHub', href: social.github, icon: 'github' },
+  { label: 'LinkedIn', href: social.linkedin, icon: 'linkedin' },
+] as const;
+---
+
+<BaseLayout
+  title="About — Abd Bastola"
+  description={`About ${site.name}: an AI Engineer in ${site.location} focused on enterprise generative AI, multi-agent RAG, GraphRAG, evaluation, governance and responsible AI delivery.`}
+>
+  <section class="page-head">
+    <div class="wrap">
+      <span class="kicker">About</span>
+      <h1 class="display display--page" style="margin-top: 0.9rem;">
+        Engineer. Consultant. Builder.
+      </h1>
+      <p class="lede">
+        I’m {site.name} — an AI Engineer based in {site.location}, focused on
+        enterprise generative AI and intelligent systems.
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap two-col">
+      <div class="bio">
+        <h2 class="section-title" style="margin-bottom: 1.2rem;">
+          From ambiguity to reliable systems
+        </h2>
+        <div class="prose">
+          <p>
+            I design and deliver production-ready AI systems for real-world
+            teams. My work spans multi-agent RAG, GraphRAG, evaluation,
+            observability, governance and cloud-native delivery — and it sits
+            deliberately at the intersection of consulting, product thinking
+            and hands-on engineering.
+          </p>
+          <p>
+            What I enjoy most is translating ambiguous business problems into
+            reliable technical systems. A vague “we should do something with
+            AI” becomes a defined problem, a data-readiness check, a small
+            honest prototype, an evaluation harness and — eventually — a
+            system that people trust because it demonstrably works and knows
+            its own limits.
+          </p>
+          <p>
+            I care about the unglamorous parts of AI delivery: document
+            quality, retrieval evaluation, guardrails, cost, observability and
+            the governance conversations that make a system defensible. Those
+            are the parts that decide whether AI survives contact with an
+            enterprise.
+          </p>
+          <p>
+            I write about all of it in <a href="/writing">{newsletter.name}</a>
+            , my newsletter on building production-ready AI agents, RAG
+            systems, evaluation and enterprise AI delivery. It’s independent
+            writing — practical, technical and free of vendor noise.
+          </p>
+        </div>
+
+        <div class="bio-footer">
+          <p>
+            Based in {site.location}. Currently building and delivering
+            enterprise AI systems — and always interested in hard problems
+            around production agents, RAG security and AI platform
+            engineering.
+          </p>
+          <div class="hero-actions">
+            {socialLinks.map((l) => (
+              <a
+                class="btn btn--ghost"
+                href={l.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Icon name={l.icon} size={15} />
+                {l.label}
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <aside class="aside" aria-label="Focus and interests">
+        <div class="card aside-card">
+          <span class="kicker kicker--plain">Focus areas</span>
+          <ul class="focus-list">
+            {focusAreas.map((area) => (
+              <li>{area}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div class="card aside-card">
+          <span class="kicker kicker--plain">Currently interested in</span>
+          <ul class="focus-list focus-list--dots">
+            {interests.map((item) => (
+              <li>{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div class="card aside-card aside-card--line">
+          <span class="status-dot" aria-hidden="true"></span>
+          <p>
+            <strong>{site.location}</strong>
+            <br />
+            <span class="muted">
+              Building and delivering enterprise AI systems.
+            </span>
+          </p>
+        </div>
+      </aside>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .bio-footer {
+    margin-top: 2.4rem;
+    padding-top: 1.8rem;
+    border-top: 1px solid var(--hairline);
+  }
+
+  .bio-footer p {
+    color: var(--muted);
+    line-height: 1.7;
+    margin-bottom: 1.4rem;
+    max-width: 58ch;
+  }
+
+  .bio-footer .hero-actions {
+    margin-top: 0;
+  }
+
+  .aside {
+    display: grid;
+    gap: 1rem;
+    position: sticky;
+    top: 5.5rem;
+  }
+
+  .aside-card {
+    padding: 1.4rem 1.4rem 1.6rem;
+  }
+
+  .focus-list {
+    list-style: none;
+    margin: 1.2rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .focus-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    color: var(--text-soft);
+    font-size: 0.95rem;
+  }
+
+  .focus-list li::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex: 0 0 auto;
+    align-self: center;
+  }
+
+  .focus-list--dots li {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+  }
+
+  .aside-card--line {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9rem;
+    background: linear-gradient(160deg, rgba(200, 255, 0, 0.05), transparent 60%),
+      linear-gradient(180deg, var(--bg-raised), var(--bg-sunken));
+  }
+
+  .aside-card--line p {
+    margin: 0;
+    line-height: 1.6;
+  }
+</style>

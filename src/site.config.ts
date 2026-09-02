@@ -1,0 +1,84 @@
+/**
+ * ─────────────────────────────────────────────────────────────────────
+ * Single source of truth for site copy, navigation and external links.
+ *
+ * Edit THIS file to change: social links, the coffee link, newsletter
+ * endpoint fallbacks, navigation labels or hero copy.
+ *
+ * All placeholders are marked with a "TODO" comment so you can find and
+ * replace them quickly.
+ * ─────────────────────────────────────────────────────────────────────
+ */
+
+const env = import.meta.env;
+
+export const site = {
+  /** Canonical domain — must match the live GitHub Pages URL. */
+  url: 'https://abdbastola.github.io',
+  title: 'Abd Bastola — AI Engineer',
+  name: 'Abd Bastola',
+  role: 'AI Engineer building reliable enterprise AI systems.',
+  location: 'London',
+  metaDescription:
+    'Abd Bastola is an AI Engineer in London building production-ready enterprise AI systems — multi-agent RAG, GraphRAG, evaluation, observability and responsible delivery. Publisher of the Reliable AI newsletter.',
+};
+
+/** External profile links — edit once here; navigation and footer use them. */
+export const social = {
+  // TODO: replace with the real GitHub profile URL.
+  github: 'https://github.com/your-github-username',
+  // TODO: replace with the real LinkedIn profile URL.
+  linkedin: 'https://www.linkedin.com/in/your-linkedin-handle',
+};
+
+/** Primary navigation. Internal pages first, then external links. */
+export const nav = {
+  primary: [
+    { label: 'Work', href: '/work' },
+    { label: 'Writing', href: '/writing' },
+    { label: 'About', href: '/about' },
+    { label: 'CV', href: '/cv' },
+  ],
+  external: [
+    { label: 'GitHub', href: social.github },
+    { label: 'LinkedIn', href: social.linkedin },
+  ],
+};
+
+/** Reliable AI — the newsletter. */
+export const newsletter = {
+  name: 'Reliable AI',
+  tagline:
+    'Notes on building production-ready AI agents, RAG systems, evaluation and enterprise AI delivery.',
+  signup: {
+    headline: 'Get Reliable AI in your inbox.',
+    copy: 'A concise daily briefing on enterprise AI agents, RAG, evaluation, security and the ideas worth understanding before they become industry noise.',
+    buttonLabel: 'Subscribe to the daily briefing',
+    inputPlaceholder: 'you@company.com',
+    /** Shown only while no form endpoint is configured. */
+    launchingMessage:
+      'Daily issues are launching soon. Follow on LinkedIn in the meantime.',
+    followLabel: 'Follow on LinkedIn',
+  },
+  /**
+   * Newsletter form endpoint. The value comes from the NEWSLETTER_FORM_URL
+   * environment variable (see `.env.example`). When empty, the site renders
+   * a graceful "launching soon" placeholder instead of a broken form.
+   */
+  formUrl: env.NEWSLETTER_FORM_URL ?? '',
+  rssPath: '/rss.xml',
+};
+
+/** Support card copy + link. */
+export const coffee = {
+  copy: 'If these notes help you think more clearly about AI, you can support the writing with a coffee.',
+  buttonLabel: 'Buy me a coffee',
+  // TODO: replace with the real Buy Me a Coffee username.
+  url: 'https://buymeacoffee.com/<BUY_ME_A_COFFEE_USERNAME>',
+};
+
+/** Contact details. */
+export const contact = {
+  // TODO: replace with the real public email address.
+  email: 'you@example.com',
+};

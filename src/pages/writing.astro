@@ -1,0 +1,121 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ArticleCard from '../components/ArticleCard.astro';
+import NewsletterSignup from '../components/NewsletterSignup.astro';
+import CoffeeCard from '../components/CoffeeCard.astro';
+import Icon from '../components/Icon.astro';
+import { newsletter, social } from '../site.config';
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('writing'))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+// TODO: LinkedIn placeholder — replace in src/site.config.ts → social.linkedin
+const linkedinUrl = social.linkedin;
+
+const title = `${newsletter.name} — Notes on reliable enterprise AI`;
+const description =
+  'Reliable AI is independent writing on building production-ready AI agents, RAG systems, evaluation and enterprise AI delivery.';
+---
+
+<BaseLayout title={title} description={description}>
+  <!-- Newsletter masthead -->
+  <section class="page-head">
+    <div class="wrap">
+      <span class="kicker">Newsletter</span>
+      <h1 class="display display--page" style="margin-top: 0.9rem;">
+        {newsletter.name}
+        <span class="issue-mark" aria-hidden="true">*</span>
+      </h1>
+      <p class="lede">{newsletter.tagline}</p>
+
+      <div class="page-head-actions">
+        <a
+          class="btn btn--ghost"
+          href={linkedinUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Icon name="linkedin" size={15} />
+          Follow on LinkedIn
+        </a>
+        <a class="btn btn--ghost" href={newsletter.rssPath}>
+          <Icon name="rss" size={15} />
+          RSS feed
+        </a>
+      </div>
+
+      <p class="independence-note">
+        Independent writing on practical enterprise AI systems — no vendor
+        spin, no hype, no “AI will change everything”. Just what works in
+        production, and what quietly doesn’t.
+      </p>
+    </div>
+  </section>
+
+  <!-- Highly visible sign-up -->
+  <div class="wrap" style="margin-block: clamp(2rem, 5vw, 3.5rem);">
+    <NewsletterSignup />
+  </div>
+
+  <!-- Article archive -->
+  <section class="section section--rule" aria-labelledby="archive">
+    <div class="wrap">
+      <div class="section-head-row">
+        <div>
+          <span class="kicker">Archive</span>
+          <h2 class="section-title" id="archive" style="margin-top: 0.8rem;">
+            Latest issues
+          </h2>
+        </div>
+        <p class="issue-count" style="margin: 0;">
+          {posts.length} {posts.length === 1 ? 'article' : 'articles'}
+        </p>
+      </div>
+
+      {
+        posts.length > 0 ? (
+          <div class="issue-list">
+            {posts.map((post) => <ArticleCard article={post} />)}
+          </div>
+        ) : (
+          <p class="muted">
+            The first issue is being written. Subscribe above and it will land
+            in your inbox.
+          </p>
+        )
+      }
+    </div>
+  </section>
+
+  <!-- Newsletter page footer: support card -->
+  <section class="section section--tight wrap" aria-label="Support the writing">
+    <CoffeeCard />
+  </section>
+</BaseLayout>
+
+<style>
+  .issue-mark {
+    color: var(--accent);
+    font-weight: 400;
+  }
+
+  .independence-note {
+    margin: 1.8rem 0 0;
+    max-width: 58ch;
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.65;
+    border-left: 2px solid var(--hairline-strong);
+    padding-left: 1.1rem;
+  }
+
+  .issue-count {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--faint);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+</style>

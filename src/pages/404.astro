@@ -1,0 +1,33 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+
+const title = 'Page not found';
+---
+
+<BaseLayout
+  title={title}
+  description="This page does not exist — head back to the home page."
+>
+  <section class="notfound">
+    <div class="wrap">
+      <p class="code" aria-hidden="true">404</p>
+      <h1 class="section-title" style="margin: 1.2rem 0 0.6rem;">
+        This page drifted out of context.
+      </h1>
+      <p class="muted" style="margin: 0 auto 2rem; max-width: 46ch;">
+        The page you’re looking for doesn’t exist or has moved. The rest of
+        the site is exactly where it should be.
+      </p>
+      <div class="hero-actions" style="justify-content: center; margin-top: 0;">
+        <a class="btn btn--primary" href="/">
+          Back to the home page
+          <Icon name="arrow-right" size={16} />
+        </a>
+        <a class="btn btn--ghost" href="/writing">
+          Read Reliable AI
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

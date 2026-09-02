@@ -1,0 +1,67 @@
+---
+import { site, newsletter, social, contact } from '../site.config';
+import CoffeeCard from './CoffeeCard.astro';
+
+const year = new Date().getFullYear();
+const navLinks = [
+  { label: 'Home', href: '/' },
+  { label: 'Work', href: '/work' },
+  { label: 'Writing', href: '/writing' },
+  { label: 'About', href: '/about' },
+  { label: 'CV', href: '/cv' },
+];
+---
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="wordmark" href="/">
+          Abd Bastola<span class="accent-dot">.</span>
+        </a>
+        <p>
+          {site.role} Based in {site.location} — building enterprise AI systems
+          that hold up in production.
+        </p>
+      </div>
+
+      <nav class="footer-col" aria-label="Footer">
+        <h3>Site</h3>
+        <ul>
+          {navLinks.map((item) => (
+            <li>
+              <a href={item.href}>{item.label}</a>
+            </li>
+          ))}
+          <li>
+            <a href={newsletter.rssPath}>RSS feed</a>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="footer-col footer-col--support">
+        <h3>Support my work</h3>
+        <CoffeeCard compact />
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <span>
+        © {year} {site.name} · {site.location}
+      </span>
+      <div class="footer-bottom-links">
+        <a href={newsletter.rssPath} aria-label="Reliable AI RSS feed">
+          RSS
+        </a>
+        <a href={social.github} target="_blank" rel="noopener noreferrer">
+          GitHub
+        </a>
+        <a href={social.linkedin} target="_blank" rel="noopener noreferrer">
+          LinkedIn
+        </a>
+        <a href={`mailto:${contact.email}`}>Email</a>
+        <span aria-hidden="true">Built with Astro</span>
+      </div>
+    </div>
+  </div>
+</footer>

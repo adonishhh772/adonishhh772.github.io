@@ -1,0 +1,59 @@
+---
+// Elegant project card used on the home page selected-work grid.
+import type { CollectionEntry } from 'astro:content';
+import Icon from './Icon.astro';
+
+interface Props {
+  project: CollectionEntry<'projects'>;
+  /** Zero-padded index label, e.g. "01". */
+  index: string;
+}
+
+const { project, index } = Astro.props;
+const { data } = project;
+const href = `/work/${project.id}/`;
+---
+
+<article class="card card--hover project-card">
+  <div class="project-card-top">
+    <span class="project-index" aria-hidden="true">{index}</span>
+    <span class="project-status">{data.tag}</span>
+  </div>
+
+  <h3 class="h3-title">
+    <a href={href} class="project-title-link">{data.title}</a>
+  </h3>
+
+  <p class="project-summary">{data.summary}</p>
+
+  {
+    data.themes.length > 0 && (
+      <ul class="chips" aria-label={`${data.shortTitle} — key themes`}>
+        {data.themes.slice(0, 6).map((theme) => (
+          <li class="chip">{theme}</li>
+        ))}
+      </ul>
+    )
+  }
+
+  <a class="link-arrow" href={href}>
+    Read the case study
+    <Icon name="arrow-right" size={16} />
+  </a>
+</article>
+
+<style>
+  .project-title-link {
+    display: block;
+    transition: color var(--dur) var(--ease);
+  }
+
+  .project-card:hover .project-title-link {
+    color: var(--accent);
+  }
+
+  .project-card .link-arrow {
+    margin-top: 1.1rem;
+    font-size: 0.92rem;
+  }
+</style>

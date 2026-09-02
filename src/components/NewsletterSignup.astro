@@ -1,0 +1,96 @@
+---
+// Editorial newsletter sign-up block.
+// Renders a live form when NEWSLETTER_FORM_URL is configured (see
+// src/site.config.ts / .env.example); otherwise shows a graceful
+// "launching soon" placeholder with a Follow-on-LinkedIn action.
+import { newsletter, social } from '../site.config';
+import Icon from './Icon.astro';
+
+interface Props {
+  headline?: string;
+  copy?: string;
+  buttonLabel?: string;
+}
+
+const {
+  headline = newsletter.signup.headline,
+  copy = newsletter.signup.copy,
+  buttonLabel = newsletter.signup.buttonLabel,
+} = Astro.props;
+
+const hasForm = newsletter.formUrl.length > 0;
+const inputId = 'newsletter-email';
+
+// TODO: LinkedIn placeholder — replace in src/site.config.ts → social.linkedin
+const linkedinUrl = social.linkedin;
+---
+
+<section class="signup" aria-labelledby={inputId + '-title'}>
+  <div class="signup-inner">
+    <span class="kicker">{`Newsletter · ${newsletter.name}`}</span>
+    <h2 class="signup-title" id={inputId + '-title'}>
+      {headline}
+    </h2>
+    <p class="signup-copy">{copy}</p>
+
+    {
+      hasForm ? (
+        <>
+          <form class="signup-form" method="post" action={newsletter.formUrl}>
+            <label class="visually-hidden" for={inputId}>
+              Email address
+            </label>
+            <input
+              class="signup-input"
+              id={inputId}
+              name="email"
+              type="email"
+              placeholder={newsletter.signup.inputPlaceholder}
+              required
+              autocomplete="email"
+              aria-describedby="signup-footnote"
+            />
+            <button class="btn btn--primary" type="submit">
+              {buttonLabel}
+            </button>
+          </form>
+          <p class="signup-foot" id="signup-footnote">
+            One concise daily briefing — no noise, no spam. Unsubscribe
+            anytime.
+          </p>
+        </>
+      ) : (
+        <div class="signup-notice" role="status">
+          <p>
+            <span class="micro-label">Launching soon</span>
+            {newsletter.signup.launchingMessage}
+          </p>
+          <a
+            class="btn btn--ghost btn--small"
+            href={linkedinUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Icon name="linkedin" size={14} />
+            {newsletter.signup.followLabel}
+            <Icon name="arrow-up-right" size={13} />
+          </a>
+        </div>
+      )
+    }
+  </div>
+</section>
+
+<style>
+  .signup :global(.visually-hidden) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>

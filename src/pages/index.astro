@@ -1,0 +1,172 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import NewsletterSignup from '../components/NewsletterSignup.astro';
+import ProjectCard from '../components/ProjectCard.astro';
+import ArticleCard from '../components/ArticleCard.astro';
+import Icon from '../components/Icon.astro';
+import { site, newsletter } from '../site.config';
+import { getCollection, type CollectionEntry } from 'astro:content';
+
+// Order the selected work deliberately (by project id).
+const projectOrder = ['kai', 'aruva', 'hyperran'];
+const allProjects = await getCollection('projects');
+const projectsById = new Map(allProjects.map((p) => [p.id, p]));
+const selectedProjects = projectOrder
+  .map((id) => projectsById.get(id))
+  .filter((p): p is CollectionEntry<'projects'> => Boolean(p));
+
+const allWriting = (await getCollection('writing'))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+const latestWriting = allWriting.slice(0, 3);
+
+const title = `${site.name} — ${site.role}`;
+---
+
+<BaseLayout title={title} description={site.metaDescription}>
+  <!-- ── Hero ─────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="wrap hero-inner">
+      <div class="hero-eyebrow">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span class="mono">AI Engineer · {site.location}</span>
+      </div>
+
+      <h1 class="hero-title">
+        <span class="hero-name">Abd Bastola<span class="dot">.</span></span>
+        <span class="hero-role">
+          AI Engineer building reliable enterprise AI systems.
+        </span>
+      </h1>
+
+      <p class="hero-lead">
+        I design and deliver production-ready AI agents, RAG systems and
+        intelligent platforms for real-world teams — with a focus on{' '}
+        <strong>evaluation</strong>, <strong>governance</strong> and{' '}
+        <strong>measurable value</strong>.
+      </p>
+
+      <div class="hero-actions">
+        <a class="btn btn--primary" href="/work">
+          View selected work
+          <Icon name="arrow-right" size={16} />
+        </a>
+        <a class="btn btn--ghost" href="/writing">
+          Read {newsletter.name}
+          <Icon name="arrow-up-right" size={15} />
+        </a>
+      </div>
+
+      <div class="currently">
+        <span aria-hidden="true"></span>
+        <p>
+          <strong>Currently</strong> — Building and delivering enterprise AI
+          systems in {site.location}.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Newsletter sign-up (after the first section) ────────── -->
+  <div class="wrap" style="margin-block: clamp(1rem, 3vw, 2rem);">
+    <NewsletterSignup />
+  </div>
+
+  <!-- ── Selected work ────────────────────────────────────────── -->
+  <section class="section" aria-labelledby="selected-work">
+    <div class="wrap">
+      <div class="section-head-row">
+        <div>
+          <span class="kicker">Selected work</span>
+          <h2 class="section-title" id="selected-work" style="margin-top: 0.8rem;">
+            Systems built for real organisations
+          </h2>
+        </div>
+        <a class="link-arrow" href="/work">
+          All work
+          <Icon name="arrow-right" size={15} />
+        </a>
+      </div>
+
+      <div class="project-grid">
+        {
+          selectedProjects.map((project, i) => (
+            <ProjectCard project={project} index={String(i + 1).padStart(2, '0')} />
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Latest writing ───────────────────────────────────────── -->
+  <section class="section section--rule" aria-labelledby="latest-writing">
+    <div class="wrap">
+      <div class="section-head-row">
+        <div>
+          <span class="kicker">Reliable AI — newsletter</span>
+          <h2 class="section-title" id="latest-writing" style="margin-top: 0.8rem;">
+            Latest writing
+          </h2>
+          <p class="lede" style="margin-top: 0.7rem;">
+            {newsletter.tagline}
+          </p>
+        </div>
+        <a class="link-arrow" href="/writing">
+          All articles
+          <Icon name="arrow-right" size={15} />
+        </a>
+      </div>
+
+      <div class="issue-list">
+        {latestWriting.map((article) => <ArticleCard article={article} />)}
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .hero-name {
+    display: block;
+  }
+
+  .hero-name .dot {
+    color: var(--accent);
+  }
+
+  .currently {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    margin-top: 2.4rem;
+    padding: 0.8rem 1.1rem;
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: rgba(16, 19, 26, 0.5);
+    max-width: max-content;
+  }
+
+  .currently > span:first-child {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 0.55rem;
+  }
+
+  .currently p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+
+  .currently strong {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-right: 0.55rem;
+    color: var(--accent);
+  }
+</style>

@@ -1,0 +1,127 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Icon from '../../components/Icon.astro';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+
+export async function getStaticPaths() {
+  const projects = await getCollection('projects');
+  return projects.map((project) => ({
+    params: { slug: project.id },
+    props: { project },
+  }));
+}
+
+interface Props {
+  project: CollectionEntry<'projects'>;
+}
+
+const { project } = Astro.props;
+const { Content } = await render(project);
+const { data } = project;
+
+const title = `${data.title} — case study`;
+---
+
+<BaseLayout title={title} description={data.summary} type="article">
+  <article>
+    <header class="article-header">
+      <div class="wrap">
+        <p class="article-kicker">
+          <a href="/work" class="back-link">
+            <Icon name="arrow-right" size={13} />
+            Work
+          </a>
+          <span aria-hidden="true">·</span>
+          Case study
+          <span aria-hidden="true">·</span>
+          {data.readingTime}
+        </p>
+        <h1 class="article-title">{data.title}</h1>
+        <p class="article-lead">{data.context}</p>
+        <ul class="chips" aria-label="Key themes">
+          {data.themes.map((theme) => (
+            <li class="chip">{theme}</li>
+          ))}
+        </ul>
+      </div>
+    </header>
+
+    <div class="wrap article-body-wrap">
+      <div class="prose">
+        <Content />
+      </div>
+
+      <footer class="case-footer">
+        <a class="link-arrow" href="/work">
+          <Icon name="arrow-right" size={15} />
+          Back to all work
+        </a>
+        <p>
+          Case studies are anonymised to protect client confidentiality.
+          Implementations are described separately from outcomes.
+        </p>
+      </footer>
+    </div>
+  </article>
+</BaseLayout>
+
+<style>
+  .article-kicker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 1.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .article-kicker a.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--muted);
+    transition: color var(--dur) var(--ease);
+  }
+
+  .article-kicker a.back-link:hover {
+    color: var(--accent);
+  }
+
+  .article-kicker a.back-link svg {
+    transform: rotate(180deg);
+  }
+
+  .article-title {
+    max-width: 26ch;
+  }
+
+  .article-lead {
+    max-width: 64ch;
+    color: var(--muted);
+    font-size: 1.08rem;
+    line-height: 1.75;
+    margin: 0 0 1.6rem;
+  }
+
+  .case-footer {
+    margin-top: 3rem;
+    padding-top: 1.6rem;
+    border-top: 1px solid var(--hairline);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem 1.5rem;
+  }
+
+  .case-footer p {
+    margin: 0;
+    color: var(--faint);
+    font-size: 0.82rem;
+    max-width: 46ch;
+  }
+</style>

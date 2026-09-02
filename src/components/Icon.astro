@@ -1,0 +1,111 @@
+---
+// Minimal geometric icon set (inline SVG, currentColor).
+interface Props {
+  name:
+    | 'arrow-right'
+    | 'arrow-up-right'
+    | 'github'
+    | 'linkedin'
+    | 'rss'
+    | 'coffee'
+    | 'mail';
+  size?: number;
+}
+
+const { name, size = 18 } = Astro.props;
+
+const stroke = {
+  fill: 'none',
+  stroke: 'currentColor',
+  'stroke-width': '1.8',
+  'stroke-linecap': 'round',
+  'stroke-linejoin': 'round',
+} as const;
+---
+
+{
+  name === 'arrow-right' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M4 12h15" />
+      <path d="m13 5 7 7-7 7" />
+    </svg>
+  )
+}
+{
+  name === 'arrow-up-right' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M7 17 17 7" />
+      <path d="M8.5 7H17v8.5" />
+    </svg>
+  )
+}
+{
+  name === 'github' && (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.09 3.29 9.39 7.86 10.91.59.11.79-.25.79-.56 0-.27-.01-1.17-.01-2.13-2.89.53-3.64-1.13-3.64-1.13-.47-1.2-1.16-1.52-1.16-1.52-.94-.64.07-.63.07-.63 1.04.07 1.59 1.07 1.59 1.07 1.04 1.79 2.69 1.27 3.35.97.1-.75.4-1.27.73-1.56-2.56-.28-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.16 1.18.92-.26 1.9-.39 2.88-.39s1.96.13 2.88.39c2.19-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.12 3.05.73.8 1.18 1.83 1.18 3.09 0 4.41-2.69 5.41-5.25 5.69.41.35.78 1.05.78 2.12 0 1.53-.01 2.77-.01 3.15 0 .31.21.67.8.56 4.56-1.52 7.85-5.82 7.85-10.91C23.5 5.65 18.35.5 12 .5Z" />
+    </svg>
+  )
+}
+{
+  name === 'linkedin' && (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.86-3.04-3.04 0-2.14 1.44-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45Z" />
+    </svg>
+  )
+}
+{
+  name === 'rss' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M4 11a9 9 0 0 1 9 9" />
+      <path d="M4 4a16 16 0 0 1 16 16" />
+      <circle cx="5" cy="19" r="1.6" fill="currentColor" />
+    </svg>
+  )
+}
+{
+  name === 'coffee' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M4.5 8.5h11V15a4.5 4.5 0 0 1-4.5 4.5H9A4.5 4.5 0 0 1 4.5 15v-6.5Z" />
+      <path d="M15.5 9.5h1.75a2.5 2.5 0 0 1 0 5H15.5" />
+      <path d="M8 3.8c0 .75.6 1 .6 1.8M12 3.8c0 .75.6 1 .6 1.8" />
+    </svg>
+  )
+}
+{
+  name === 'mail' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <rect x="3" y="5.5" width="18" height="13" rx="2.5" />
+      <path d="m3.5 7 8.5 6 8.5-6" />
+    </svg>
+  )
+}

@@ -1,0 +1,42 @@
+---
+// Article card used on the home page and the /writing index.
+import type { CollectionEntry } from 'astro:content';
+import { formatDate, readTimeInMinutes } from '../lib/format';
+
+interface Props {
+  article: CollectionEntry<'writing'>;
+  showDescription?: boolean;
+}
+
+const { article, showDescription = true } = Astro.props;
+const { data } = article;
+const href = `/writing/${article.id}/`;
+const readMins = readTimeInMinutes(article.body ?? '');
+---
+
+<article class="card card--hover issue-item">
+  <div class="issue-item-row">
+    <span class="issue-number">
+      {data.issue ? `Issue ${String(data.issue).padStart(2, '0')}` : 'Note'}
+    </span>
+    <time class="issue-date" datetime={data.pubDate.toISOString()}>
+      {formatDate(data.pubDate)} · {readMins} min read
+    </time>
+  </div>
+
+  <h3 class="h3-title">
+    <a href={href}>{data.title}</a>
+  </h3>
+
+  {showDescription && <p class="issue-desc">{data.description}</p>}
+
+  {
+    data.tags.length > 0 && (
+      <ul class="issue-tags" aria-label="Topics">
+        {data.tags.map((tag) => (
+          <li>{tag}</li>
+        ))}
+      </ul>
+    )
+  }
+</article>

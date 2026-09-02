@@ -1,0 +1,150 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+import { site } from '../site.config';
+import { getCollection, type CollectionEntry } from 'astro:content';
+
+const projectOrder = ['kai', 'aruva', 'hyperran'];
+const allProjects = await getCollection('projects');
+const projectsById = new Map(allProjects.map((p) => [p.id, p]));
+const projects = projectOrder
+  .map((id) => projectsById.get(id))
+  .filter((p): p is CollectionEntry<'projects'> => Boolean(p));
+
+const title = 'Work — Selected projects';
+---
+
+<BaseLayout
+  title={title}
+  description={`Selected work by ${site.name}: enterprise AI assistants, GraphRAG platforms and applied research — each with an anonymised case study.`}
+>
+  <section class="page-head">
+    <div class="wrap">
+      <span class="kicker">Selected work</span>
+      <h1 class="display display--page">Work</h1>
+      <p class="lede">
+        A selection of engagements and systems across enterprise AI
+        assistants, GraphRAG platforms and applied research. Client names and
+        commercially sensitive detail are anonymised; each case study covers
+        the problem, my role, the approach and what was learned.
+      </p>
+      <div class="page-head-actions">
+        <a class="btn btn--ghost" href="/about">
+          More about how I work
+          <Icon name="arrow-right" size={15} />
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-label="Case studies">
+    <div class="wrap">
+      <div class="work-list">
+        {
+          projects.map((project, i) => (
+            <article class="card card--hover work-item">
+              <div class="work-item-meta">
+                <span class="project-index" aria-hidden="true">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span class="project-status">{project.data.tag}</span>
+              </div>
+
+              <div>
+                <h2 class="work-item-title">
+                  <a href={`/work/${project.id}/`}>{project.data.title}</a>
+                </h2>
+                <p class="project-summary">{project.data.summary}</p>
+                <ul class="chips" aria-label={`${project.data.shortTitle} themes`}>
+                  {project.data.themes.map((theme) => (
+                    <li class="chip">{theme}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div class="work-item-cta">
+                <a
+                  class="link-arrow"
+                  href={`/work/${project.id}/`}
+                  aria-label={`Read the ${project.data.shortTitle} case study`}
+                >
+                  Case study
+                  <Icon name="arrow-right" size={16} />
+                </a>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+
+      <div class="work-note" style="margin-top: 2.2rem;">
+        <p>
+          Each engagement is different, but the shape of the work is
+          consistent: understand the business problem, pressure-test the data,
+          design the smallest reliable system, instrument everything, and
+          agree how success will be measured before the first model is chosen.
+        </p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .work-item-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .project-index {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+  }
+
+  .project-status {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    line-height: 1.5;
+  }
+
+  @media (min-width: 860px) {
+    .work-item-meta {
+      padding-top: 0.3rem;
+    }
+
+    .work-item-cta {
+      display: flex;
+      justify-content: flex-end;
+      padding-top: 0.3rem;
+    }
+  }
+
+  .work-item h2 a {
+    transition: color var(--dur) var(--ease);
+  }
+
+  .work-item:hover h2 a {
+    color: var(--accent);
+  }
+
+  .work-item .project-summary {
+    margin-bottom: 1.1rem;
+  }
+
+  .work-note {
+    max-width: 62ch;
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.7;
+    border-left: 2px solid var(--hairline-strong);
+    padding-left: 1.2rem;
+  }
+
+  .work-note p {
+    margin: 0;
+  }
+</style>

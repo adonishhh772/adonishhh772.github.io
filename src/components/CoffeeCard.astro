@@ -1,0 +1,32 @@
+---
+// Small outlined "support the writing" card with a coffee icon.
+import { coffee } from '../site.config';
+import Icon from './Icon.astro';
+
+interface Props {
+  /** Narrower layout for the site footer. */
+  compact?: boolean;
+}
+
+const { compact = false } = Astro.props;
+---
+
+<div class:list={['coffee-card', { 'coffee-card--compact': compact }]}>
+  <span class="coffee-icon" aria-hidden="true">
+    <Icon name="coffee" />
+  </span>
+  <div class="coffee-copy">
+    <span class="micro-label">Support my work</span>
+    <p>{coffee.copy}</p>
+  </div>
+  <a
+    class="btn btn--ghost btn--small"
+    href={coffee.url}
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label={`${coffee.buttonLabel} (opens in a new tab)`}
+  >
+    {coffee.buttonLabel}
+    <Icon name="arrow-up-right" size={14} />
+  </a>
+</div>

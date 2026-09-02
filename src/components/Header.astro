@@ -1,0 +1,50 @@
+---
+import { site, nav } from '../site.config';
+import Icon from './Icon.astro';
+
+const { pathname } = Astro.url;
+
+const isCurrent = (href: string) =>
+  pathname === href || pathname.startsWith(`${href}/`);
+---
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="wordmark" href="/" aria-label={`${site.name} — home`}>
+      Abd Bastola<span class="accent-dot">.</span
+      ><span class="wordmark-tag" aria-hidden="true">AI · {site.location}</span>
+    </a>
+
+    <nav class="nav" aria-label="Primary">
+      {
+        nav.primary.map((item) => (
+          <a
+            class="nav-link"
+            href={item.href}
+            aria-current={isCurrent(item.href) ? 'page' : undefined}
+          >
+            {item.label}
+          </a>
+        ))
+      }
+      <span class="nav-divider" aria-hidden="true"></span>
+      {
+        nav.external.map((item) => (
+          <a
+            class="nav-link"
+            href={item.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`${item.label} (opens in a new tab)`}
+          >
+            <Icon
+              name={item.label.toLowerCase() === 'github' ? 'github' : 'linkedin'}
+              size={15}
+            />
+            {item.label}
+          </a>
+        ))
+      }
+    </nav>
+  </div>
+</header>
