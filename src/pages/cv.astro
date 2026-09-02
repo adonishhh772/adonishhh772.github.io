@@ -1,68 +1,156 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
-import { site, newsletter, social, rootUrl } from '../site.config';
+import { site, newsletter, social, contact, rootUrl } from '../site.config';
 
 const title = 'CV — Abd Bastola';
 
 const focusAreas = [
-  'Production AI agents',
-  'Multi-agent RAG & GraphRAG',
-  'Evaluation & observability',
-  'Guardrails & governance',
-  'AI platform engineering',
-  'LLMOps & responsible AI',
+  'Enterprise RAG & GraphRAG',
+  'AI agents & orchestration',
+  'Evaluation & response validation',
+  'Guardrails & responsible AI',
+  'Prompt engineering & versioning',
+  'Document intelligence',
+  'Azure AI Foundry / GCP delivery',
+  'LLMOps & production support',
 ];
 
 const toolkit = [
   'Python',
-  'FastAPI',
-  'REST APIs',
-  'Asynchronous systems',
+  'SQL',
+  'JavaScript',
+  'TypeScript',
+  'React',
+  'LLM applications',
   'RAG',
-  'Multi-agent systems',
-  'GraphRAG',
-  'Neo4j',
-  'Redis',
-  'GCP Pub/Sub',
-  'AWS',
-  'Azure',
-  'Kubernetes',
-  'Docker',
-  'CI/CD',
-  'Observability',
-  'Evaluation',
-  'Prompt versioning',
+  'Semantic retrieval',
+  'Prompt engineering',
+  'Prompt evaluation',
+  'AI agents',
+  'Response validation',
   'Guardrails',
+  'OpenAI API',
+  'Claude',
+  'Azure AI Foundry',
   'LangChain',
   'LangGraph',
+  'Custom GPT workflows',
+  'FastAPI',
+  'REST APIs',
+  'Full-stack delivery',
+  'API integration',
+  'Backend orchestration',
+  'Embeddings',
+  'Vector search',
+  'Data pipelines',
+  'Reporting workflows',
+  'Large-context systems',
+  'GCP',
+  'AWS',
+  'Azure',
+  'Docker',
+  'Kubernetes',
+  'CI/CD',
+  'Linux',
+  'Redis',
+  'GCP Pub/Sub',
+  'Debugging',
+  'Production support',
+];
+
+const experience = [
+  {
+    role: 'Lead AI Engineer / GenAI Specialist',
+    org: 'AWTG Ltd',
+    period: 'May 2022 – Present',
+    where: 'London, UK',
+    bullets: [
+      'Contribute to the KAI AI platform — production-grade LLM workflows, Python/FastAPI services, backend systems, data pipelines and reusable AI capabilities — supporting enterprise AI adoption for 65,000+ active users, including the British Council.',
+      'Led AI engineering delivery for Aruva, a KTP Associate smart-learning platform project supporting the University of Glasgow and the University of Surrey — translating academic, product and user needs into scalable, production-ready AI features.',
+      'Built RAG and document-grounded AI workflows across approved knowledge sources, retrieval logic, structured context, embeddings and vector search, prompt construction and response validation.',
+      'Designed agent-style AI workflows and LangGraph/LangChain-style orchestration that connect LLMs with retrieval, backend APIs and tool-style service calls — multi-step logic, error handling and validated outputs.',
+      'Improved document-intelligence workflows by processing structured and unstructured data, running data-quality checks and preparing content for retrieval.',
+      'Strengthened safe, responsible AI delivery through prompt versioning, approved knowledge sources, guardrails, response constraints, controlled releases and mitigation of hallucination, data leakage, prompt injection and unsafe outputs.',
+      'Reduced manual reporting effort by 40% with automated data pipelines and reporting workflows, and improved network energy efficiency by 28% across 200+ network nodes with optimisation, analytics and decision-support tooling.',
+      'Operate cloud-native AI services on GCP and Azure AI Foundry with Docker, Kubernetes, Redis and GCP Pub/Sub — CI/CD, structured logging, debugging, root-cause analysis and cross-team knowledge sharing.',
+    ],
+  },
+  {
+    role: 'AI Research and Computing Support Apprenticeship',
+    org: 'Teesside University',
+    period: 'Sep 2022 – May 2023',
+    where: 'United Kingdom',
+    bullets: [
+      'Supported AI-focused research prototypes by configuring Python workflows, reproducible environments, automation tools, testing and technical documentation.',
+      'Improved reliability of research computing environments through Linux setup, access management, performance checks, troubleshooting and issue investigation.',
+      'Explained software and infrastructure issues clearly to technical and non-technical users.',
+    ],
+  },
+  {
+    role: 'Machine Learning Engineer',
+    org: 'Unifun',
+    period: 'Oct 2017 – Oct 2020',
+    where: 'Kathmandu, Nepal',
+    bullets: [
+      'Delivered AI and machine-learning capabilities for product and business use cases — data preparation, model experimentation, backend integration, testing, deployment and documentation.',
+      'Built Python-based ML and automation workflows processing structured and unstructured data, with predictive analysis and repeatable data-driven tasks.',
+      'Built NLP workflows, recommendation-style logic, search functionality, model evaluation and integrations between AI outputs and user-facing systems.',
+      'Improved model reliability and data quality by validating features, reviewing failure cases and documenting issues across ML-enabled features.',
+    ],
+  },
+];
+
+const achievements = [
+  'Improved automation workflow coverage by 35% through backend logic and API integrations for orchestration and intelligent task execution.',
+  'Accelerated 5G validation and test-cycle analysis by 70% through improved data-ingestion and visualisation modules.',
+  'Contributed to scalable CI/CD and operational practices supporting 99.9% uptime for telecom AI and automation services.',
+];
+
+const education = [
+  {
+    degree: 'MSc Computing, Distinction',
+    org: 'Teesside University',
+    period: '2021 – 2023',
+  },
+  {
+    degree: 'BSc Computing, First Class Honours',
+    org: 'Leeds Beckett University',
+    period: '2018',
+  },
+];
+
+const activities = [
+  'Active AI, ML and data-science writer on LinkedIn — including the Reliable AI newsletter.',
+  'Member and mentor of the LangChain community in London, supporting AI agent, RAG and multi-agent architecture discussions.',
+  'Contributor to open-source AI projects and MLOps best-practice sharing at cloud and AI engineering meetups.',
 ];
 
 const engagements = [
   {
     id: 'kai',
     name: 'KAI — Enterprise knowledge assistant',
-    tag: 'Multi-agent RAG · Enterprise delivery',
-    line: 'An enterprise AI assistant that helps teams find, understand and use trusted organisational knowledge — multi-agent RAG, evaluation-first quality gates, guardrails and operational reporting.',
+    tag: 'Enterprise AI platform · AWTG',
+    line: 'The AI platform behind enterprise knowledge workflows — production LLM services, RAG and document-grounded answers serving 65,000+ active users, including the British Council.',
   },
   {
     id: 'aruva',
     name: 'Aruva — GraphRAG for complex documents',
-    tag: 'GraphRAG · Platform delivery',
-    line: 'Led delivery of a GraphRAG and document-intelligence platform for turning complex unstructured content into connected, searchable knowledge with measurable citation accuracy.',
+    tag: 'KTP · Smart-learning platform',
+    line: 'KTP Associate project supporting the University of Glasgow and the University of Surrey — GraphRAG and document intelligence for connected, verifiable knowledge.',
   },
   {
     id: 'hyperran',
     name: 'HyperRAN — AI optimisation for telecom networks',
-    tag: 'Applied research · Stakeholder-led',
-    line: 'An AI-driven approach to reduce RAN energy consumption while maintaining service quality — reinforcement learning, KPI forecasting and hard QoS protection.',
+    tag: 'Telecom network optimisation',
+    line: 'Optimisation, analytics and decision-support tooling for RAN — improving network energy efficiency by 28% across 200+ network nodes.',
   },
 ];
 ---
 
 <BaseLayout
   title={title}
-  description={`A focused CV for ${site.name}: summary, focus areas, experience, selected projects, technical toolkit, education and contact.`}
+  description={`CV for ${site.name}: Lead AI Engineer at AWTG Ltd (London) — experience, skills, selected projects, education and contact.`}
 >
   <section class="page-head">
     <div class="wrap">
@@ -71,10 +159,37 @@ const engagements = [
         {site.name}
       </h1>
       <p class="lede">
-        AI Engineer building reliable enterprise AI systems · {site.location}.
-        A focused snapshot — for a full résumé or a conversation, use the
-        links below.
+        Lead AI Engineer · AWTG Ltd, London, UK. Building reliable enterprise
+        AI systems across RAG, GraphRAG, agents, evaluation and responsible
+        AI delivery.
       </p>
+      <div class="page-head-actions">
+        <a class="btn btn--ghost" href={`mailto:${contact.email}`}>
+          <Icon name="mail" size={15} />
+          {contact.email}
+        </a>
+        <a class="btn btn--ghost" href={`tel:${contact.phone.replace(/\s/g, '')}`}>
+          {contact.phone}
+        </a>
+        <a
+          class="btn btn--ghost"
+          href={social.github}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Icon name="github" size={15} />
+          GitHub
+        </a>
+        <a
+          class="btn btn--ghost"
+          href={social.linkedin}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Icon name="linkedin" size={15} />
+          LinkedIn
+        </a>
+      </div>
     </div>
   </section>
 
@@ -83,12 +198,16 @@ const engagements = [
     <div class="cv-section">
       <h2 class="cv-section-title">Summary</h2>
       <p class="cv-summary">
-        AI Engineer focused on enterprise generative AI and intelligent
-        systems, with hands-on delivery across multi-agent RAG, GraphRAG,
-        evaluation, observability, governance and cloud-native infrastructure.
-        I work at the intersection of consulting, product thinking and
-        engineering — translating ambiguous business problems into systems
-        that are measurable, governed and genuinely reliable in production.
+        Lead AI Engineer in London with a track record of taking AI from
+        prototype to production in enterprise settings. Currently leading AI
+        engineering for AWTG — contributing to the KAI AI platform and leading
+        delivery on the Aruva KTP smart-learning project — with a career
+        spanning machine learning engineering, research-computing support and
+        production GenAI. Comfortable across the whole delivery arc: problem
+        definition, retrieval and RAG/GraphRAG design, agent orchestration,
+        response validation, guardrails, evaluation and cloud-native
+        operations on Azure AI Foundry and GCP. Works at the intersection of
+        consulting, product thinking and hands-on engineering.
       </p>
     </div>
 
@@ -105,57 +224,22 @@ const engagements = [
     <!-- Experience -->
     <div class="cv-section">
       <h2 class="cv-section-title">Experience</h2>
-      <div class="cv-row">
-        <div>
-          <h3>AI Engineer — Enterprise AI & consulting</h3>
-          <p class="org">Independent engagements · {site.location}</p>
-          <ul>
-            <li>
-              Design and deliver production AI agents, RAG and GraphRAG
-              systems for real-world teams, end to end.
-            </li>
-            <li>
-              Lead technical delivery across ingestion, retrieval, orchestration,
-              evaluation, guardrails and observability.
-            </li>
-            <li>
-              Work across consulting, product and engineering — shaping the
-              business problem, not just the code.
-            </li>
-            <li>
-              Translate ambiguous requirements into measured, governed systems
-              with clear success criteria.
-            </li>
-          </ul>
+      {experience.map((job) => (
+        <div class="cv-row">
+          <div>
+            <h3>{job.role}</h3>
+            <p class="org">
+              {job.org} · {job.where}
+            </p>
+            <ul>
+              {job.bullets.map((b) => (
+                <li>{b}</li>
+              ))}
+            </ul>
+          </div>
+          <div class="period">{job.period}</div>
         </div>
-        <div class="period">Current</div>
-      </div>
-
-      <div class="cv-row">
-        <div>
-          <h3>
-            <span class="ph">[Role]</span> — <span class="ph">[Company]</span>
-          </h3>
-          <p class="org">
-            <span class="ph">[What you worked on]</span>
-          </p>
-          <ul>
-            <li>
-              <span class="ph">[Key responsibility or outcome]</span>
-            </li>
-            <li>
-              <span class="ph">[Key responsibility or outcome]</span>
-            </li>
-          </ul>
-        </div>
-        <div class="period">
-          <span class="ph">[Start]–[End]</span>
-        </div>
-      </div>
-      <!--
-        TODO: replace the placeholder row above with earlier experience.
-        Edit this file at the marked location in src/pages/cv.astro.
-      -->
+      ))}
     </div>
 
     <!-- Selected projects -->
@@ -180,6 +264,21 @@ const engagements = [
       </div>
     </div>
 
+    <!-- Achievements -->
+    <div class="cv-section">
+      <h2 class="cv-section-title">Achievements</h2>
+      <ul class="achievement-list">
+        {achievements.map((item, i) => (
+          <li>
+            <span class="achievement-num mono">
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+
     <!-- Technical toolkit -->
     <div class="cv-section">
       <h2 class="cv-section-title">Technical toolkit</h2>
@@ -193,29 +292,43 @@ const engagements = [
     <!-- Education -->
     <div class="cv-section">
       <h2 class="cv-section-title">Education</h2>
-      <div class="cv-row">
-        <div>
-          <h3>
-            <span class="ph">[Degree]</span> — <span class="ph">[University]</span>
-          </h3>
-          <p class="org">
-            <span class="ph">[Field of study or honours, if relevant]</span>
-          </p>
+      {education.map((entry) => (
+        <div class="cv-row">
+          <div>
+            <h3>{entry.degree}</h3>
+            <p class="org">{entry.org}</p>
+          </div>
+          <div class="period">{entry.period}</div>
         </div>
-        <div class="period">
-          <span class="ph">[Year]–[Year]</span>
-        </div>
-      </div>
-      <!--
-        TODO: replace the placeholder row above with your real education.
-        Edit this file at the marked location in src/pages/cv.astro.
-      -->
+      ))}
+    </div>
+
+    <!-- Activities -->
+    <div class="cv-section">
+      <h2 class="cv-section-title">Activities & community</h2>
+      <ul class="achievement-list">
+        {activities.map((item, i) => (
+          <li>
+            <span class="achievement-num mono">
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
 
     <!-- Contact -->
     <div class="cv-section">
       <h2 class="cv-section-title">Contact</h2>
       <div class="contact-links">
+        <a class="btn btn--ghost" href={`mailto:${contact.email}`}>
+          <Icon name="mail" size={15} />
+          Email
+        </a>
+        <a class="btn btn--ghost" href={`tel:${contact.phone.replace(/\s/g, '')}`}>
+          {contact.phone}
+        </a>
         <a
           class="btn btn--ghost"
           href={social.github}
@@ -239,16 +352,13 @@ const engagements = [
           RSS
         </a>
       </div>
-      <p class="cv-note muted">
-        Full résumé available on request via LinkedIn.
-      </p>
     </div>
   </section>
 </BaseLayout>
 
 <style>
   .cv-summary {
-    max-width: 68ch;
+    max-width: 72ch;
     color: var(--muted);
     line-height: 1.75;
     margin-bottom: 0;
@@ -318,14 +428,33 @@ const engagements = [
     transform: translate(2px, -2px);
   }
 
+  .achievement-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.8rem;
+    max-width: 72ch;
+  }
+
+  .achievement-list li {
+    display: grid;
+    grid-template-columns: 2.4rem 1fr;
+    gap: 0.9rem;
+    align-items: baseline;
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+
+  .achievement-num {
+    color: var(--accent);
+    font-size: 0.78rem;
+  }
+
   .contact-links {
     display: flex;
     flex-wrap: wrap;
     gap: 0.8rem;
-  }
-
-  .cv-note {
-    margin-top: 1.4rem;
-    font-size: 0.9rem;
   }
 </style>

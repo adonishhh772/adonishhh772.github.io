@@ -18,12 +18,12 @@ const baseUrl = import.meta.env.BASE_URL ?? '/';
 export const site = {
   /** Canonical origin — the live site root domain. */
   url: 'https://adonishhh772.github.io',
-  title: 'Abd Bastola — AI Engineer',
+  title: 'Abd Bastola — Lead AI Engineer',
   name: 'Abd Bastola',
-  role: 'AI Engineer building reliable enterprise AI systems.',
+  role: 'Lead AI Engineer building reliable enterprise AI systems.',
   location: 'London',
   metaDescription:
-    'Abd Bastola is an AI Engineer in London building production-ready enterprise AI systems — multi-agent RAG, GraphRAG, evaluation, observability and responsible delivery. Publisher of the Reliable AI newsletter.',
+    'Abd Bastola is a Lead AI Engineer in London (AWTG Ltd) building production-ready enterprise AI systems — RAG, GraphRAG, AI agents, evaluation, guardrails and responsible delivery across Azure AI Foundry and GCP. Publisher of the Reliable AI newsletter.',
 };
 
 /**
@@ -115,6 +115,7 @@ export const coffee = {
 
 /** Contact details. */
 export const contact = {
-  // TODO: replace with the real public email address.
-  email: 'you@example.com',
+  email: 'abdabastola97@gmail.com',
+  phone: '+44 7459 687089',
+  location: 'London, UK',
 };

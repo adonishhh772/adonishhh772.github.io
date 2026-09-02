@@ -24,7 +24,7 @@ Vector search alone failed in characteristic ways: it retrieved the passage wher
 
 ## My role
 
-I led technical delivery of the platform. That meant owning the architecture end to end — document processing, entity and relationship extraction, graph modelling and storage, the retrieval layer, and the quality loop that made extraction trustworthy — as well as the migration of the workload to Azure and the stakeholder conversations that shaped what "good" meant for the domain experts who would use it.
+I led AI engineering delivery for Aruva — a KTP Associate smart-learning platform project supporting the University of Glasgow and the University of Surrey. That meant translating academic, product and user needs into scalable, AI-enabled platform features, and owning the architecture end to end: document processing, entity and relationship extraction, graph modelling and storage, the retrieval layer, and the quality loop that made extraction trustworthy — as well as the migration of the workload to Azure and the stakeholder conversations that shaped what "good" meant for the domain experts who would use it.
 
 ## The approach
 
@@ -49,6 +49,7 @@ I led technical delivery of the platform. That meant owning the architecture end
 
 ## Outcomes
 
+- Delivered as a Knowledge Transfer Partnership (KTP) project in partnership with the **University of Glasgow** and the **University of Surrey**, connecting academic research with production engineering and user-centred product thinking.
 - Content that had been effectively siloed — answerable only by people who had read everything — became queryable as connected knowledge, where the system could surface a definition, its related exceptions and the original passages in one response.
 - Answers carried precise citations, including to content inside tables and cross-referenced clauses, and citation accuracy was measured rather than assumed — giving users a way to verify instead of a reason to distrust.
 - The extraction quality loop gave domain experts a concrete role in the platform, which did more for trust than any accuracy dashboard could have.

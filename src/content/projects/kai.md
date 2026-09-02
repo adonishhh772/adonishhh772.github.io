@@ -23,7 +23,7 @@ So the real problem had three parts: get the *right* knowledge in front of users
 
 ## My role
 
-I led the technical design and delivery across the full stack: document ingestion and structuring, retrieval, the agent orchestration layer, the evaluation harness, and the guardrails that sat around it. I also worked closely with stakeholders on adoption — defining the rollout with real user groups, training champions, and turning operational reporting into a steering mechanism rather than a dashboard afterthought.
+As a Lead AI Engineer at AWTG, I contributed to the KAI AI platform — building production-grade LLM workflows, Python/FastAPI services, backend systems, data pipelines and reusable AI capabilities for major organisational users. I led technical design and delivery across the full stack: document ingestion and structuring, retrieval, the agent orchestration layer, the evaluation harness, and the guardrails that sat around it. I also worked closely with stakeholders on adoption — defining the rollout with real user groups, training champions, and turning operational reporting into a steering mechanism rather than a dashboard afterthought.
 
 ## The approach
 
@@ -46,12 +46,13 @@ I led the technical design and delivery across the full stack: document ingestio
 
 ## Outcomes
 
+- Delivered as part of AWTG's KAI AI platform, which supports **65,000+ active users** across major organisations, including the British Council — enterprise AI adoption at real scale rather than a lab pilot.
 - Teams could ask questions in natural language and get answers with citations pointing to the specific passages in trusted documents — including the version date, so "is this current?" stopped being a guess.
 - Knowledge that had lived in expert inboxes became findable by the whole team, reducing the interrupt-driven burden on the most experienced people.
 - The governance posture was demonstrable rather than aspirational: approval checkpoints, audit trails and refusal behaviour were designed in from the start, which made security and risk conversations materially easier.
 - Adoption was staged: pilot groups, champions, feedback loops — and the operational reporting became the mechanism the programme team used to decide what to improve next.
 
-I have deliberately not put numbers here: I would rather describe what the system demonstrably did than quote metrics that depend on context I cannot share.
+The scale and client context above come from the programme's own reporting. Beyond those figures I have kept outcomes qualitative: I would rather describe what the system demonstrably did than quote metrics that depend on context I cannot share.
 
 ## What I learned
 

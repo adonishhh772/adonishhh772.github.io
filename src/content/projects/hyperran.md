@@ -3,7 +3,7 @@ title: 'HyperRAN — AI optimisation for telecom networks'
 shortTitle: 'HyperRAN'
 summary: 'An AI-driven approach to reduce RAN energy consumption while maintaining service quality.'
 context: 'Radio access networks are the largest energy consumers in a mobile operator’s estate — and most of that energy is spent serving traffic that is not there. Network utilisation swings wildly across the day, yet configuration is largely static. HyperRAN explored whether reinforcement learning could continuously adapt network configuration to live demand — cutting energy use without letting service quality slip below the thresholds that operators and regulators care about. The brief was deliberately conservative: this is a domain where a bad decision has real user impact, so the goal was a decision-support capability that network engineers could trust, evaluate and ultimately choose to delegate to.'
-tag: 'Applied research'
+tag: 'Telecom network optimisation'
 themes:
   - Reinforcement learning
   - Network optimisation
@@ -46,7 +46,8 @@ I led the technical delivery and owned the stakeholder relationship throughout. 
 
 ## Outcomes
 
-- The approach demonstrated — in offline scenario evaluations against operator traces — that demand-aware configuration could reduce energy consumption while holding QoS indicators within agreed thresholds. The evaluation method itself was a deliverable: a repeatable way to compare policies before anything touches the network.
+- The optimisation, data-processing and decision-support work contributed to an **improvement in network energy efficiency of 28% across 200+ network nodes**, per delivery reporting — analytics and tooling that gave engineers faster operational insight rather than another dashboard to ignore.
+- The evaluation method itself was a deliverable: a repeatable way to compare policies against historical traces before anything touches the live network.
 - Network engineers gained a decision-support capability that made the trade-offs visible: what energy could be saved, when, and at what headroom cost — instead of treating configuration as a static, once-a-day decision.
 - Because actions were explainable and bounded by hard constraints, the path to a live pilot was a governance question, not a leap of faith. The conservative, expert-in-the-loop posture is what made the work credible in a domain where autonomy is earned slowly.
 
