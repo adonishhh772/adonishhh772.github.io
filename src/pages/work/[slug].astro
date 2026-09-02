@@ -44,6 +44,24 @@ const title = `${data.title} — case study`;
             <li class="chip">{theme}</li>
           ))}
         </ul>
+        {
+          data.links.length > 0 && (
+            <ul class="case-links" aria-label="External links">
+              {data.links.map((link) => (
+                <li>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {link.label}
+                    <Icon name="arrow-up-right" size={13} />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        }
       </div>
     </header>
 
@@ -106,6 +124,32 @@ const title = `${data.title} — case study`;
     font-size: 1.08rem;
     line-height: 1.75;
     margin: 0 0 1.6rem;
+  }
+
+  .case-links {
+    list-style: none;
+    margin: 1.4rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.6rem;
+  }
+
+  .case-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    border-bottom: 1px solid var(--hairline-strong);
+    padding-bottom: 2px;
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+
+  .case-links a:hover {
+    color: var(--accent);
+    border-color: var(--accent-line);
   }
 
   .case-footer {

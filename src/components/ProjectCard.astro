@@ -37,6 +37,21 @@ const href = rootUrl(`/work/${project.id}/`);
     )
   }
 
+  {
+    data.links.length > 0 && (
+      <ul class="project-ext-links" aria-label="External links">
+        {data.links.map((link) => (
+          <li>
+            <a href={link.url} target="_blank" rel="noopener noreferrer">
+              {link.label}
+              <Icon name="arrow-up-right" size={12} />
+            </a>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
   <a class="link-arrow" href={href}>
     Read the case study
     <Icon name="arrow-right" size={16} />

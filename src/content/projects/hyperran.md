@@ -1,8 +1,8 @@
 ---
-title: 'HyperRAN — AI optimisation for telecom networks'
-shortTitle: 'HyperRAN'
+title: 'Hiper-RAN — AI optimisation for telecom networks'
+shortTitle: 'Hiper-RAN'
 summary: 'An AI-driven approach to reduce RAN energy consumption while maintaining service quality.'
-context: 'Radio access networks are the largest energy consumers in a mobile operator’s estate — and most of that energy is spent serving traffic that is not there. Network utilisation swings wildly across the day, yet configuration is largely static. HyperRAN explored whether reinforcement learning could continuously adapt network configuration to live demand — cutting energy use without letting service quality slip below the thresholds that operators and regulators care about. The brief was deliberately conservative: this is a domain where a bad decision has real user impact, so the goal was a decision-support capability that network engineers could trust, evaluate and ultimately choose to delegate to.'
+context: 'Radio access networks are the largest energy consumers in a mobile operator’s estate — and most of that energy is spent serving traffic that is not there. Network utilisation swings wildly across the day, yet configuration is largely static. Hiper-RAN explored whether reinforcement learning could continuously adapt network configuration to live demand — cutting energy use without letting service quality slip below the thresholds that operators and regulators care about. The brief was deliberately conservative: this is a domain where a bad decision has real user impact, so the goal was a decision-support capability that network engineers could trust, evaluate and ultimately choose to delegate to.'
 tag: 'Telecom network optimisation'
 themes:
   - Reinforcement learning
@@ -10,6 +10,11 @@ themes:
   - KPI forecasting
   - QoS protection
   - Stakeholder-led technical delivery
+links:
+  - label: 'Hiper-RAN — Open Networks Ecosystem (gov.uk)'
+    url: 'https://webarchive.nationalarchives.gov.uk/ukgwa/20240916212622/https://www.gov.uk/government/publications/open-networks-ecosystem-competition-successful-projects/open-networks-ecosystem-competition-successful-projects#hiper-ran-highly-intelligent-highly-performing-ran'
+  - label: 'Hiper-RAN + NL-Comm Open RAN award'
+    url: 'https://nl-comm.com/hiper-ran-awarded-for-integrating-the-nl-comm-non-linear-processing-framework-into-open-ran/'
 readingTime: '6 min read'
 ---
 
@@ -60,4 +65,4 @@ I have kept the outcomes deliberately qualitative: quantified savings belong to 
 - **Offline evaluation is a persuasion tool.** Being able to replay a policy against historical traces — and show where it would have acted and why — was what turned sceptical domain experts into collaborators.
 - **Autonomy is a ladder.** Decision support first, reviewable actions second, delegation later. Skipping rungs in domains with real-world consequences is how trust gets burned.
 
-The takeaway: the interesting engineering in HyperRAN was never the reinforcement learning itself — it was making the learning safe, explainable and accountable enough that experts who guard a live network would take its recommendations seriously.
+The takeaway: the interesting engineering in Hiper-RAN was never the reinforcement learning itself — it was making the learning safe, explainable and accountable enough that experts who guard a live network would take its recommendations seriously.

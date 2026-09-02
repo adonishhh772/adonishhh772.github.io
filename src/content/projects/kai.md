@@ -10,6 +10,11 @@ themes:
   - Evaluation and guardrails
   - Observability and operational reporting
   - Enterprise adoption
+links:
+  - label: 'KAI — AWTG marketing page'
+    url: 'https://www.awtg.co.uk/kai'
+  - label: 'KAI platform (login)'
+    url: 'https://platform.awtg.ai/login'
 readingTime: '7 min read'
 ---
 

@@ -4,7 +4,7 @@ import Icon from '../components/Icon.astro';
 import { site, rootUrl } from '../site.config';
 import { getCollection, type CollectionEntry } from 'astro:content';
 
-const projectOrder = ['kai', 'aruva', 'hyperran'];
+const projectOrder = ['kai', 'education-platform', 'hyperran'];
 const allProjects = await getCollection('projects');
 const projectsById = new Map(allProjects.map((p) => [p.id, p]));
 const projects = projectOrder
@@ -60,6 +60,24 @@ const title = 'Work — Selected projects';
                     <li class="chip">{theme}</li>
                   ))}
                 </ul>
+                {
+                  project.data.links.length > 0 && (
+                    <ul class="project-ext-links" aria-label="External links">
+                      {project.data.links.map((link) => (
+                        <li>
+                          <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {link.label}
+                            <Icon name="arrow-up-right" size={12} />
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                }
               </div>
 
               <div class="work-item-cta">

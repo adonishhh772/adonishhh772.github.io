@@ -42,6 +42,10 @@ const projects = defineCollection({
     tag: z.string(),
     /** Technical themes shown as chips on cards. */
     themes: z.array(z.string()),
+    /** Optional public links (product, marketing, sources). */
+    links: z
+      .array(z.object({ label: z.string(), url: z.string() }))
+      .default([]),
     /** "Reading" label shown in the case study header. */
     readingTime: z.string().default('6 min read'),
   }),

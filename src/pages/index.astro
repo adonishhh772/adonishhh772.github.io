@@ -8,7 +8,7 @@ import { site, newsletter, rootUrl } from '../site.config';
 import { getCollection, type CollectionEntry } from 'astro:content';
 
 // Order the selected work deliberately (by project id).
-const projectOrder = ['kai', 'aruva', 'hyperran'];
+const projectOrder = ['kai', 'education-platform', 'hyperran'];
 const allProjects = await getCollection('projects');
 const projectsById = new Map(allProjects.map((p) => [p.id, p]));
 const selectedProjects = projectOrder
