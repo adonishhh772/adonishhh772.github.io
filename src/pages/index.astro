@@ -4,7 +4,7 @@ import NewsletterSignup from '../components/NewsletterSignup.astro';
 import ProjectCard from '../components/ProjectCard.astro';
 import ArticleCard from '../components/ArticleCard.astro';
 import Icon from '../components/Icon.astro';
-import { site, newsletter } from '../site.config';
+import { site, newsletter, rootUrl } from '../site.config';
 import { getCollection, type CollectionEntry } from 'astro:content';
 
 // Order the selected work deliberately (by project id).
@@ -47,11 +47,11 @@ const title = `${site.name} — ${site.role}`;
       </p>
 
       <div class="hero-actions">
-        <a class="btn btn--primary" href="/work">
+        <a class="btn btn--primary" href={rootUrl('/work')}>
           View selected work
           <Icon name="arrow-right" size={16} />
         </a>
-        <a class="btn btn--ghost" href="/writing">
+        <a class="btn btn--ghost" href={rootUrl('/writing')}>
           Read {newsletter.name}
           <Icon name="arrow-up-right" size={15} />
         </a>
@@ -82,7 +82,7 @@ const title = `${site.name} — ${site.role}`;
             Systems built for real organisations
           </h2>
         </div>
-        <a class="link-arrow" href="/work">
+        <a class="link-arrow" href={rootUrl('/work')}>
           All work
           <Icon name="arrow-right" size={15} />
         </a>
@@ -111,7 +111,7 @@ const title = `${site.name} — ${site.role}`;
             {newsletter.tagline}
           </p>
         </div>
-        <a class="link-arrow" href="/writing">
+        <a class="link-arrow" href={rootUrl('/writing')}>
           All articles
           <Icon name="arrow-right" size={15} />
         </a>

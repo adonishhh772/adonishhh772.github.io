@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import Icon from '../../components/Icon.astro';
+import { rootUrl } from '../../site.config';
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 
 export async function getStaticPaths() {
@@ -27,7 +28,7 @@ const title = `${data.title} — case study`;
     <header class="article-header">
       <div class="wrap">
         <p class="article-kicker">
-          <a href="/work" class="back-link">
+          <a href={rootUrl('/work')} class="back-link">
             <Icon name="arrow-right" size={13} />
             Work
           </a>
@@ -52,7 +53,7 @@ const title = `${data.title} — case study`;
       </div>
 
       <footer class="case-footer">
-        <a class="link-arrow" href="/work">
+        <a class="link-arrow" href={rootUrl('/work')}>
           <Icon name="arrow-right" size={15} />
           Back to all work
         </a>

@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
+import { rootUrl } from '../site.config';
 
 const title = 'Page not found';
 ---
@@ -20,11 +21,11 @@ const title = 'Page not found';
         the site is exactly where it should be.
       </p>
       <div class="hero-actions" style="justify-content: center; margin-top: 0;">
-        <a class="btn btn--primary" href="/">
+        <a class="btn btn--primary" href={rootUrl('/')}>
           Back to the home page
           <Icon name="arrow-right" size={16} />
         </a>
-        <a class="btn btn--ghost" href="/writing">
+        <a class="btn btn--ghost" href={rootUrl('/writing')}>
           Read Reliable AI
         </a>
       </div>

@@ -4,7 +4,7 @@ import NewsletterSignup from '../../components/NewsletterSignup.astro';
 import CoffeeCard from '../../components/CoffeeCard.astro';
 import ArticleCard from '../../components/ArticleCard.astro';
 import Icon from '../../components/Icon.astro';
-import { newsletter } from '../../site.config';
+import { newsletter, rootUrl } from '../../site.config';
 import { formatDate, readTimeInMinutes } from '../../lib/format';
 import {
   getCollection,
@@ -44,7 +44,7 @@ const title = data.title;
     <header class="article-header">
       <div class="wrap">
         <p class="article-kicker">
-          <a href="/writing" class="back-link">
+          <a href={rootUrl('/writing')} class="back-link">
             <Icon name="arrow-right" size={13} />
             {newsletter.name}
           </a>
@@ -87,7 +87,7 @@ const title = data.title;
       </div>
 
       <nav class="article-end-nav" aria-label="More writing">
-        <a class="link-arrow" href="/writing">
+        <a class="link-arrow" href={rootUrl('/writing')}>
           <Icon name="arrow-right" size={15} />
           All {newsletter.name} articles
         </a>

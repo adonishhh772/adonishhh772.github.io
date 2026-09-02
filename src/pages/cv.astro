@@ -1,7 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
-import { site, newsletter, social } from '../site.config';
+import { site, newsletter, social, rootUrl } from '../site.config';
 
 const title = 'CV — Abd Bastola';
 
@@ -163,7 +163,7 @@ const engagements = [
       <h2 class="cv-section-title">Selected projects</h2>
       <div class="projects-list">
         {engagements.map((project, i) => (
-          <a class="cv-project" href={`/work/${project.id}/`}>
+          <a class="cv-project" href={rootUrl(`/work/${project.id}/`)}>
             <span class="cv-project-num mono">
               {String(i + 1).padStart(2, '0')}
             </span>

@@ -2,6 +2,7 @@
 // Article card used on the home page and the /writing index.
 import type { CollectionEntry } from 'astro:content';
 import { formatDate, readTimeInMinutes } from '../lib/format';
+import { rootUrl } from '../site.config';
 
 interface Props {
   article: CollectionEntry<'writing'>;
@@ -10,7 +11,7 @@ interface Props {
 
 const { article, showDescription = true } = Astro.props;
 const { data } = article;
-const href = `/writing/${article.id}/`;
+const href = rootUrl(`/writing/${article.id}/`);
 const readMins = readTimeInMinutes(article.body ?? '');
 ---
 

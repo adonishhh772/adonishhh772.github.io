@@ -1,6 +1,6 @@
 import rss from '@astrojs/rss';
 import { getCollection } from 'astro:content';
-import { site, newsletter } from '../site.config';
+import { site, newsletter, rootUrl } from '../site.config';
 
 export async function GET(context: { site: URL | string | undefined }) {
   const posts = (await getCollection('writing'))
@@ -15,7 +15,7 @@ export async function GET(context: { site: URL | string | undefined }) {
       title: post.data.title,
       description: post.data.description,
       pubDate: post.data.pubDate,
-      link: `/writing/${post.id}/`,
+      link: rootUrl(`/writing/${post.id}/`),
       categories: post.data.tags,
     })),
     customData: '<language>en-gb</language>',

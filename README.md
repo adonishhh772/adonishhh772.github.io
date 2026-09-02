@@ -128,20 +128,30 @@ delete the surrounding `TODO` comments.
 
 ## Deployment (GitHub Pages)
 
-This repository is a **GitHub Pages user site** (`<username>.github.io`), so
-the built site is served from the repository root (`base: "/"` in
-`astro.config.mjs`).
+The Astro config resolves `site` and `base` automatically from the
+`GITHUB_REPOSITORY` environment variable that GitHub Actions provides:
+
+- Repo `<owner>/<owner>.github.io` → **user site** at the domain root
+  (`base: "/"`, e.g. `https://abdbastola.github.io` — requires the repo
+  owner to *be* `abdbastola`).
+- Any other repo → **project site** under `/<repo>/` on the owner's pages
+  domain (e.g. `https://adonishhh772.github.io/abdbastola.github.io/`).
+
+Local development (no `GITHUB_REPOSITORY`) defaults to the user-site
+identity from this spec.
+
+To deploy:
 
 1. Push the repository to GitHub.
-2. In the repo settings go to **Settings → Pages**.
-3. Under “Build and deployment”, set **Source** to **GitHub Actions**
-   (do not pick a branch — the workflow deploys the `dist/` artifact).
-4. The `Deploy to GitHub Pages` workflow (`.github/workflows/deploy.yml`)
+2. In **Settings → Pages**, set “Build and deployment” → **Source** to
+   **GitHub Actions** (not “Deploy from a branch” — branch deployment
+   runs Jekyll over the Astro sources and fails).
+3. The `Deploy to GitHub Pages` workflow (`.github/workflows/deploy.yml`)
    runs on every push to `main` and on manual dispatch.
 
-If you deploy the same code to a **project page** (`owner.github.io/repo`)
-instead, change `site` in `astro.config.mjs` to
-`https://owner.github.io/repo` and set `base: '/repo/'`.
+If the site must live at `https://abdbastola.github.io`, the repository
+must be owned by the `abdbastola` account — either create/transfer the
+repo there or rename the owning account to match.
 
 ## Design notes
 

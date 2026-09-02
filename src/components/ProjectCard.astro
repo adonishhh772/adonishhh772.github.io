@@ -2,6 +2,7 @@
 // Elegant project card used on the home page selected-work grid.
 import type { CollectionEntry } from 'astro:content';
 import Icon from './Icon.astro';
+import { rootUrl } from '../site.config';
 
 interface Props {
   project: CollectionEntry<'projects'>;
@@ -11,7 +12,7 @@ interface Props {
 
 const { project, index } = Astro.props;
 const { data } = project;
-const href = `/work/${project.id}/`;
+const href = rootUrl(`/work/${project.id}/`);
 ---
 
 <article class="card card--hover project-card">

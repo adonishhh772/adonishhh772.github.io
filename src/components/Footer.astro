@@ -1,14 +1,14 @@
 ---
-import { site, newsletter, social, contact } from '../site.config';
+import { site, newsletter, social, contact, rootUrl } from '../site.config';
 import CoffeeCard from './CoffeeCard.astro';
 
 const year = new Date().getFullYear();
 const navLinks = [
-  { label: 'Home', href: '/' },
-  { label: 'Work', href: '/work' },
-  { label: 'Writing', href: '/writing' },
-  { label: 'About', href: '/about' },
-  { label: 'CV', href: '/cv' },
+  { label: 'Home', href: rootUrl('/') },
+  { label: 'Work', href: rootUrl('/work') },
+  { label: 'Writing', href: rootUrl('/writing') },
+  { label: 'About', href: rootUrl('/about') },
+  { label: 'CV', href: rootUrl('/cv') },
 ];
 ---
 
@@ -16,7 +16,7 @@ const navLinks = [
   <div class="wrap">
     <div class="footer-grid">
       <div class="footer-brand">
-        <a class="wordmark" href="/">
+        <a class="wordmark" href={rootUrl('/')}>
           Abd Bastola<span class="accent-dot">.</span>
         </a>
         <p>

@@ -12,8 +12,11 @@
 
 const env = import.meta.env;
 
+/** Deployment base path ("/" for user sites, "/<repo>/" for project sites). */
+const baseUrl = import.meta.env.BASE_URL ?? '/';
+
 export const site = {
-  /** Canonical domain — must match the live GitHub Pages URL. */
+  /** Canonical origin — the live site root domain. */
   url: 'https://abdbastola.github.io',
   title: 'Abd Bastola — AI Engineer',
   name: 'Abd Bastola',
@@ -22,6 +25,41 @@ export const site = {
   metaDescription:
     'Abd Bastola is an AI Engineer in London building production-ready enterprise AI systems — multi-agent RAG, GraphRAG, evaluation, observability and responsible delivery. Publisher of the Reliable AI newsletter.',
 };
+
+/**
+ * Deployment origin, mirroring astro.config.mjs: GitHub Actions injects
+ * GITHUB_REPOSITORY (owner/repo). A repo named <owner>.github.io owned by
+ * <owner> is a user site at the domain root; anything else is a project
+ * site on the owner's pages domain. Falls back to the spec's user-site
+ * identity for local development.
+ */
+export function deploymentOrigin(): string {
+  const repoEnv = process.env.GITHUB_REPOSITORY ?? '';
+  const [repoOwner, repoName] = repoEnv.split('/');
+  if (repoName && repoName === `${repoOwner}.github.io`) {
+    return `https://${repoName}`;
+  }
+  if (repoName) {
+    return `https://${repoOwner}.github.io`;
+  }
+  return site.url;
+}
+
+/**
+ * Prefix a root-relative path (e.g. "/work") with the deployment base.
+ * GitHub Pages project sites are served under "/<repo>/"; user sites and
+ * local dev run at the root, where paths are returned unchanged.
+ */
+export function rootUrl(path: string): string {
+  if (baseUrl === '/') return path;
+  const trimmed = baseUrl.replace(/\/+$/, '');
+  return path === '/' ? `${trimmed}/` : `${trimmed}${path}`;
+}
+
+/** Absolute URL (origin + base + path) for SEO feeds and robots. */
+export function absoluteUrl(path: string): string {
+  return `${deploymentOrigin().replace(/\/+$/, '')}${rootUrl(path)}`;
+}
 
 /** External profile links — edit once here; navigation and footer use them. */
 export const social = {
@@ -66,7 +104,7 @@ export const newsletter = {
    * a graceful "launching soon" placeholder instead of a broken form.
    */
   formUrl: env.NEWSLETTER_FORM_URL ?? '',
-  rssPath: '/rss.xml',
+  rssPath: rootUrl('/rss.xml'),
 };
 
 /** Support card copy + link. */

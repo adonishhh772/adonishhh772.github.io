@@ -1,7 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
-import { site, newsletter, social } from '../site.config';
+import { site, newsletter, social, rootUrl } from '../site.config';
 
 const interests = [
   'Production AI agents',
@@ -73,7 +73,7 @@ const socialLinks = [
             enterprise.
           </p>
           <p>
-            I write about all of it in <a href="/writing">{newsletter.name}</a>
+            I write about all of it in <a href={rootUrl('/writing')}>{newsletter.name}</a>
             , my newsletter on building production-ready AI agents, RAG
             systems, evaluation and enterprise AI delivery. It’s independent
             writing — practical, technical and free of vendor noise.

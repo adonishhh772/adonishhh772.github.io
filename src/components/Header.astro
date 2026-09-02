@@ -1,16 +1,18 @@
 ---
-import { site, nav } from '../site.config';
+import { site, nav, rootUrl } from '../site.config';
 import Icon from './Icon.astro';
 
 const { pathname } = Astro.url;
 
-const isCurrent = (href: string) =>
-  pathname === href || pathname.startsWith(`${href}/`);
+const isCurrent = (rawHref: string) => {
+  const href = rootUrl(rawHref);
+  return pathname === href || pathname.startsWith(`${href}/`);
+};
 ---
 
 <header class="site-header">
   <div class="wrap header-inner">
-    <a class="wordmark" href="/" aria-label={`${site.name} — home`}>
+    <a class="wordmark" href={rootUrl('/')} aria-label={`${site.name} — home`}>
       Abd Bastola<span class="accent-dot">.</span
       ><span class="wordmark-tag" aria-hidden="true">AI · {site.location}</span>
     </a>
@@ -20,7 +22,7 @@ const isCurrent = (href: string) =>
         nav.primary.map((item) => (
           <a
             class="nav-link"
-            href={item.href}
+            href={rootUrl(item.href)}
             aria-current={isCurrent(item.href) ? 'page' : undefined}
           >
             {item.label}
