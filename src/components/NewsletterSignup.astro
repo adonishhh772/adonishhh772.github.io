@@ -36,7 +36,12 @@ const linkedinUrl = social.linkedin;
     {
       hasForm ? (
         <>
-          <form class="signup-form" method="post" action={newsletter.formUrl}>
+          <form
+            class="signup-form"
+            method="post"
+            action={newsletter.formUrl}
+            target="newsletter-submit-frame"
+          >
             <label class="visually-hidden" for={inputId}>
               Email address
             </label>
@@ -54,9 +59,17 @@ const linkedinUrl = social.linkedin;
               {buttonLabel}
             </button>
           </form>
+          {/* Keeps the provider response in a hidden frame so the reader stays put */}
+          <iframe
+            name="newsletter-submit-frame"
+            title="Newsletter subscription result"
+            tabindex="-1"
+            aria-hidden="true"
+            class="signup-frame"
+          ></iframe>
           <p class="signup-foot" id="signup-footnote">
-            One concise daily briefing — no noise, no spam. Unsubscribe
-            anytime.
+            One concise daily briefing — no noise, no spam. A confirmation
+            email will arrive in your inbox.
           </p>
         </>
       ) : (
@@ -92,5 +105,15 @@ const linkedinUrl = social.linkedin;
     clip: rect(0 0 0 0);
     white-space: nowrap;
     border: 0;
+  }
+
+  .signup :global(.signup-frame) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    border: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
   }
 </style>
