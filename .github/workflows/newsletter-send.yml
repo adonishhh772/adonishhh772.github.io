@@ -1,0 +1,52 @@
+name: Newsletter — send new posts to subscribers
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/content/writing/*.md']
+  workflow_dispatch:
+    inputs:
+      files:
+        description: 'Article path(s) under src/content/writing to send, space-separated (default: none)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Detect newly added articles
+        id: files
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            files="${{ inputs.files }}"
+          else
+            before="${{ github.event.before }}"
+            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              files=""
+            else
+              files="$(git diff --name-only --diff-filter=A "$before" "${{ github.sha }}" -- src/content/writing | tr '\n' ' ')"
+            fi
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+
+      - name: Send new articles to subscribers
+        if: steps.files.outputs.files != ''
+        env:
+          BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
+          SITE_URL: https://adonishhh772.github.io
+          INPUT_FILES: ${{ steps.files.outputs.files }}
+        run: node .github/scripts/send-newsletter.mjs
