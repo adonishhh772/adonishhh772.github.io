@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="t d">
+  <title id="t">Astra-class model with enterprise controls outside the model</title>
+  <desc id="d">A real-time multimodal agent sits inside your system; permissions, approvals, evaluation, audit, cost caps and data policy wrap around it as external controls.</desc>
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10131a"/>
+      <stop offset="1" stop-color="#0b0d10"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c8ff00" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#c8ff00" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- frame -->
+  <rect x="1" y="1" width="958" height="518" rx="18" fill="url(#g1)" stroke="#2a2f39" stroke-width="1.5"/>
+
+  <!-- "inside the model" region -->
+  <rect x="40" y="120" width="520" height="240" rx="14" fill="url(#glow)" stroke="#c8ff00" stroke-opacity="0.45" stroke-width="1.2" stroke-dasharray="6 5"/>
+  <text x="60" y="150" font-family="JetBrains Mono, Menlo, monospace" font-size="13" letter-spacing="2" fill="#c8ff00">INSIDE THE MODEL</text>
+
+  <!-- input box -->
+  <rect x="64" y="178" width="150" height="64" rx="10" fill="#0e1117" stroke="#3a4150" stroke-width="1.4"/>
+  <text x="139" y="205" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#f4f4f0">Audio · video</text>
+  <text x="139" y="227" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#f4f4f0">· text · screen</text>
+
+  <!-- arrow -->
+  <path d="M214 210 h24" stroke="#a4abb5" stroke-width="1.6" fill="none"/>
+  <path d="m238 204 10 6-10 6z" fill="#a4abb5"/>
+
+  <!-- model box -->
+  <rect x="248" y="170" width="180" height="80" rx="12" fill="#0b0d10" stroke="#c8ff00" stroke-width="1.8"/>
+  <text x="338" y="200" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="600" fill="#c8ff00">GPT-6 Astra</text>
+  <text x="338" y="222" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="12" fill="#a4abb5">real-time multimodal agent</text>
+
+  <!-- arrow -->
+  <path d="M428 210 h24" stroke="#a4abb5" stroke-width="1.6" fill="none"/>
+  <path d="m452 204 10 6-10 6z" fill="#a4abb5"/>
+
+  <!-- output box -->
+  <rect x="462" y="178" width="150" height="64" rx="10" fill="#0e1117" stroke="#3a4150" stroke-width="1.4"/>
+  <text x="537" y="205" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#f4f4f0">Plans · tool calls</text>
+  <text x="537" y="227" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#f4f4f0">· speech · actions</text>
+
+  <!-- caution line -->
+  <text x="60" y="340" font-family="Inter, Arial, sans-serif" font-size="13" fill="#a4abb5">The model is inside your system — but it is <tspan fill="#f4f4f0">not the owner</tspan> of it.</text>
+
+  <!-- "controls you own" region -->
+  <rect x="590" y="40" width="330" height="440" rx="14" fill="#0e1117" stroke="#3a4150" stroke-width="1.4"/>
+  <text x="610" y="70" font-family="JetBrains Mono, Menlo, monospace" font-size="13" letter-spacing="2" fill="#f4f4f0">CONTROLS YOU OWN</text>
+  <text x="610" y="92" font-family="Inter, Arial, sans-serif" font-size="12" fill="#a4abb5">enforced outside the model</text>
+
+  <!-- control items -->
+  <g font-family="Inter, Arial, sans-serif" font-size="13.5">
+    <rect x="610" y="112" width="290" height="40" rx="9" fill="#0b0d10" stroke="#2a2f39"/>
+    <circle cx="636" cy="132" r="4" fill="#c8ff00"/>
+    <text x="650" y="137" fill="#f4f4f0">Least-privilege tool permissions</text>
+
+    <rect x="610" y="162" width="290" height="40" rx="9" fill="#0b0d10" stroke="#2a2f39"/>
+    <circle cx="636" cy="182" r="4" fill="#c8ff00"/>
+    <text x="650" y="187" fill="#f4f4f0">Human approval checkpoints</text>
+
+    <rect x="610" y="212" width="290" height="40" rx="9" fill="#0b0d10" stroke="#2a2f39"/>
+    <circle cx="636" cy="232" r="4" fill="#c8ff00"/>
+    <text x="650" y="237" fill="#f4f4f0">Task-level evaluation suite</text>
+
+    <rect x="610" y="262" width="290" height="40" rx="9" fill="#0b0d10" stroke="#2a2f39"/>
+    <circle cx="636" cy="282" r="4" fill="#c8ff00"/>
+    <text x="650" y="287" fill="#f4f4f0">Audit trail &amp; tool-call logging</text>
+
+    <rect x="610" y="312" width="290" height="40" rx="9" fill="#0b0d10" stroke="#2a2f39"/>
+    <circle cx="636" cy="332" r="4" fill="#c8ff00"/>
+    <text x="650" y="337" fill="#f4f4f0">Per-run cost caps &amp; model routing</text>
+
+    <rect x="610" y="362" width="290" height="40" rx="9" fill="#0b0d10" stroke="#2a2f39"/>
+    <circle cx="636" cy="382" r="4" fill="#c8ff00"/>
+    <text x="650" y="387" fill="#f4f4f0">Data policy &amp; consent boundaries</text>
+
+    <rect x="610" y="412" width="290" height="40" rx="9" fill="#0b0d10" stroke="#2a2f39"/>
+    <circle cx="636" cy="432" r="4" fill="#c8ff00"/>
+    <text x="650" y="437" fill="#f4f4f0">Fallback &amp; escalation to humans</text>
+  </g>
+
+  <!-- bottom note -->
+  <text x="60" y="470" font-family="Inter, Arial, sans-serif" font-size="12.5" fill="#6b7280">Value comes from the model's capability · trust comes from the controls around it.</text>
+</svg>

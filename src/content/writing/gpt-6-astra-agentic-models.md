@@ -47,6 +47,22 @@ Real-time voice plus vision plus agentic tool loops consumes tokens at a rate th
 
 Recording consent, retention of voice and video streams, model-version churn, vendor lock-in and risk classification: most enterprises have no policy that even names "agentic multimodal assistant" as a use case. That gap is a real difficulty, and also a real opportunity — the teams that write the first sensible playbook for piloting these models will set the standard their industry follows.
 
+## The advantages are real too
+
+None of the above is an argument that Astra-class models are not useful — it is an argument about how to let them be useful. The upside, when the controls are in place, is substantial:
+
+- **A natural interface for real work.** Voice, video and screen context let users describe work the way they actually do it, rather than the way a form expects. That lowers the training cost of every tool the assistant wraps.
+- **Grounding in what you are looking at.** Real-time multimodal understanding removes much of the ambiguity text-only assistants struggle with — a spreadsheet, a diagram, a live system state — so questions stop needing to be re-explained.
+- **Follow-through, not just answers.** Planning and tool use turn "here is what to do" into "it is done, here is the audit trail" — the difference between advice and execution that makes agentic models genuinely different from chat.
+- **Platform leverage.** Bundled speech, tool-calling and serving infrastructure let teams pilot far faster than assembling every component themselves, and the capability cadence means the ceiling keeps rising between releases.
+
+The condition attached to all of it: these advantages are only realised inside the boundaries above. A model with strong controls is a force multiplier; the same model without them is a liability wearing a productivity costume.
+
+<figure>
+  <img src="/images/astra-control-diagram.svg" alt="Diagram: a GPT-6 Astra class model handling audio, video, text and screens, with controls you own — least-privilege permissions, human approvals, evaluation, audit trails, cost caps, data policy and human escalation — enforced outside the model." width="960" height="520" />
+  <figcaption>Capability lives inside the model; trust has to live in the controls you build around it.</figcaption>
+</figure>
+
 ## What this means for your roadmap
 
 None of this is a reason to ignore Astra-class models. It is a reason to enter with the boring infrastructure already in place: a defined task and evaluation set, a bounded pilot with human checkpoints, an external permission layer, per-run cost accounting and a data policy that predates the first conversation. Let the vendors race on capability. Race on evaluation, governance and reliability — that is where the durable value is, and where the coverage will never follow.

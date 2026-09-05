@@ -1058,6 +1058,28 @@ textarea {
   margin: 2.6em 0;
 }
 
+/* Figures and images inside articles */
+.prose figure {
+  margin: 2.4em 0;
+}
+
+.prose figure img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+}
+
+.prose figure figcaption {
+  margin-top: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  line-height: 1.6;
+  color: var(--faint);
+}
+
 /* "The takeaway" closing block gets an accent frame */
 .prose .takeaway-anchor {
   scroll-margin-top: 6rem;
