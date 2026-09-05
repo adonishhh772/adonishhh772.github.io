@@ -58,11 +58,6 @@ None of the above is an argument that Astra-class models are not useful — it i
 
 The condition attached to all of it: these advantages are only realised inside the boundaries above. A model with strong controls is a force multiplier; the same model without them is a liability wearing a productivity costume.
 
-<figure>
-  <img src="/images/astra-control-diagram.svg" alt="Diagram: a GPT-6 Astra class model handling audio, video, text and screens, with controls you own — least-privilege permissions, human approvals, evaluation, audit trails, cost caps, data policy and human escalation — enforced outside the model." width="960" height="520" />
-  <figcaption>Capability lives inside the model; trust has to live in the controls you build around it.</figcaption>
-</figure>
-
 ## What this means for your roadmap
 
 None of this is a reason to ignore Astra-class models. It is a reason to enter with the boring infrastructure already in place: a defined task and evaluation set, a bounded pilot with human checkpoints, an external permission layer, per-run cost accounting and a data policy that predates the first conversation. Let the vendors race on capability. Race on evaluation, governance and reliability — that is where the durable value is, and where the coverage will never follow.

@@ -23,11 +23,6 @@ Speech-to-speech (S2S) models, where audio goes in and audio comes out of a sing
 
 A few hundred milliseconds decides some products and is irrelevant to others. Know which one you are before choosing an architecture for it.
 
-<figure>
-  <img src="/images/voice-architecture-diagram.svg" alt="Two architectures: a cascaded pipeline with separate STT, LLM and TTS stages plus a text-layer gate for redaction, disclaimers, guardrails and audit at roughly 300–500 ms, versus a fused speech-to-speech model at roughly 200–300 ms with no auditable text layer." width="960" height="430" />
-  <figcaption>Cascaded keeps a compliance checkpoint before anything is spoken; fused trades that control point for a few hundred milliseconds.</figcaption>
-</figure>
-
 ## Route 1 — the all-in-one platform (ElevenLabs)
 
 A managed conversational-AI platform gives you the whole loop: speech-to-text, the dialogue model, text-to-speech, telephony and tool calling, maintained for you. [ElevenLabs publishes detailed guidance](https://elevenlabs.io/blog/voice-agent-latency-optimization) on tuning their stack, and the pitch is honest: you trade engineering effort for a platform that is fast out of the box and produces remarkably natural voice.
