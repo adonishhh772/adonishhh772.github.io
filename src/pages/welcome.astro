@@ -1,0 +1,95 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ArticleCard from '../components/ArticleCard.astro';
+import CoffeeCard from '../components/CoffeeCard.astro';
+import NewsletterSignup from '../components/NewsletterSignup.astro';
+import Icon from '../components/Icon.astro';
+import { newsletter, social, rootUrl } from '../site.config';
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('writing'))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const title = `Welcome to ${newsletter.name}`;
+const description =
+  'A short welcome — what Reliable AI is about and the best places to start reading on building production-ready AI agents, RAG and enterprise AI delivery.';
+---
+
+<BaseLayout title={title} description={description}>
+  <section class="page-head">
+    <div class="wrap">
+      <span class="kicker">Reliable AI — Newsletter</span>
+      <h1 class="display display--page" style="margin-top: 0.9rem;">
+        Welcome<span class="accent">*</span>
+      </h1>
+      <p class="lede">
+        Thanks for subscribing. Every so often — daily, concise — you’ll get
+        one practical note on building production-ready AI agents, RAG
+        systems, evaluation and enterprise AI delivery. No hype, no vendor
+        spin; just what works in production and what quietly doesn’t.
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section-head-row">
+        <div>
+          <span class="kicker">Start here</span>
+          <h2 class="section-title" id="start" style="margin-top: 0.8rem;">
+            Where to begin
+          </h2>
+        </div>
+      </div>
+
+      <div class="issue-list">
+        {posts.slice(0, 3).map((post) => <ArticleCard article={post} />)}
+      </div>
+
+      <p class="muted" style="margin-top: 1.6rem; max-width: 60ch;">
+        Prefer everything at once? The full archive lives on the{' '}
+        <a class="link-inline" href={rootUrl('/writing')}>Writing</a> page,
+        and you can follow along on{' '}
+        <a class="link-inline" href={social.linkedin} target="_blank" rel="noopener noreferrer">
+          LinkedIn
+        </a>{' '}
+        or{' '}
+        <a class="link-inline" href={social.github} target="_blank" rel="noopener noreferrer">
+          GitHub
+        </a>
+        .
+      </p>
+
+      <div class="hero-actions" style="margin-top: 1.8rem;">
+        <a
+          class="btn btn--ghost"
+          href={social.linkedin}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Icon name="linkedin" size={15} />
+          Follow on LinkedIn
+        </a>
+        <a class="btn btn--ghost" href={newsletter.rssPath}>
+          <Icon name="rss" size={15} />
+          RSS feed
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap" style="margin-block: 1rem 3rem;">
+    <NewsletterSignup />
+  </div>
+
+  <section class="section section--tight wrap" aria-label="Support the writing">
+    <CoffeeCard />
+  </section>
+</BaseLayout>
+
+<style>
+  .accent {
+    color: var(--accent);
+  }
+</style>
