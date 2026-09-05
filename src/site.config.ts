@@ -109,8 +109,7 @@ export const newsletter = {
 export const coffee = {
   copy: 'If these notes help you think more clearly about AI, you can support the writing with a coffee.',
   buttonLabel: 'Buy me a coffee',
-  // TODO: replace with the real Buy Me a Coffee username.
-  url: 'https://buymeacoffee.com/<BUY_ME_A_COFFEE_USERNAME>',
+  url: 'https://buymeacoffee.com/abdabastola',
 };
 
 /** Contact details. */

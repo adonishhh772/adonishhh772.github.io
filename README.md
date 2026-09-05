@@ -64,9 +64,9 @@ Everything user-facing that you will want to change lives in
 **`src/site.config.ts`**:
 
 - **GitHub / LinkedIn URLs** — `nav.external`, plus `social.github` /
-  `social.linkedin` (placeholders marked `TODO`).
+  `social.linkedin`.
 - **Buy Me a Coffee URL** — `coffee.url`
-  (change `<BUY_ME_A_COFFEE_USERNAME>` to your username).
+  (currently `https://buymeacoffee.com/abdabastola`).
 - **Contact email** — `contact.email`.
 - Newsletter copy, hero copy, location, meta description — same file.
 
