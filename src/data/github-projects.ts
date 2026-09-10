@@ -8,7 +8,7 @@ export interface GithubProject {
   description: string;
   url: string;
   language: string;
-  category: 'AI & agents' | 'ML & RL research' | 'Automation & platform' | 'Earlier web work';
+  category: 'AI & agents' | 'ML & RL research' | 'Automation & platform';
   /** Show this one on the home page strip. */
   featured?: boolean;
 }
@@ -115,27 +115,6 @@ export const githubProjects: GithubProject[] = [
     language: 'Python',
     category: 'Automation & platform',
     featured: true,
-  },
-  {
-    name: 'angular-ample',
-    description: 'AMPLE Conduct CRM front end built with Angular.',
-    url: 'https://github.com/adonishhh772/angular-ample',
-    language: 'TypeScript',
-    category: 'Earlier web work',
-  },
-  {
-    name: 'react-esca',
-    description: 'React application built during an internship placement.',
-    url: 'https://github.com/adonishhh772/react-esca',
-    language: 'React',
-    category: 'Earlier web work',
-  },
-  {
-    name: 'evo_visa',
-    description: 'TypeScript product build exploring visa workflows.',
-    url: 'https://github.com/adonishhh772/evo_visa',
-    language: 'TypeScript',
-    category: 'Earlier web work',
   },
 ];
 
