@@ -1,75 +1,30 @@
-﻿---
+---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
-import { site, newsletter, social, contact, rootUrl } from '../site.config';
+import { site, social, contact, rootUrl } from '../site.config';
 
 const title = 'CV — Abd Bastola';
 
-const focusAreas = [
-  'Enterprise RAG & GraphRAG',
-  'AI agents & orchestration',
-  'Evaluation & response validation',
-  'Guardrails & responsible AI',
-  'Prompt engineering & versioning',
-  'Document intelligence',
-  'Azure AI Foundry / GCP delivery',
-  'LLMOps & production support',
-];
-
-const toolkit = [
-  'Python',
-  'SQL',
-  'JavaScript',
-  'TypeScript',
-  'React',
-  'LLM applications',
-  'RAG',
-  'Semantic retrieval',
-  'Prompt engineering',
-  'Prompt evaluation',
-  'AI agents',
-  'Response validation',
-  'Guardrails',
-  'OpenAI API',
-  'Claude',
-  'Azure AI Foundry',
-  'LangChain',
-  'LangGraph',
-  'Custom GPT workflows',
-  'FastAPI',
-  'REST APIs',
-  'Full-stack delivery',
-  'API integration',
-  'Backend orchestration',
-  'Embeddings',
-  'Vector search',
-  'Data pipelines',
-  'Reporting workflows',
-  'Large-context systems',
-  'GCP',
-  'AWS',
-  'Azure',
-  'Docker',
-  'Kubernetes',
-  'CI/CD',
-  'Linux',
-  'Redis',
-  'GCP Pub/Sub',
-  'Debugging',
-  'Production support',
+const quickFacts = [
+  { label: 'Based', value: 'London, UK' },
+  { label: 'Current role', value: 'Lead AI Engineer, AWTG Ltd' },
+  { label: 'Focus', value: 'Enterprise GenAI & agents' },
+  { label: 'Status', value: 'Open to conversations' },
 ];
 
 const experience = [
   {
     role: 'Lead AI Engineer / GenAI Specialist',
     org: 'AWTG Ltd',
-    period: 'May 2022 – Present',
     where: 'London, UK',
+    period: 'May 2022 – Present',
+    current: true,
+    stack: ['RAG', 'GraphRAG', 'LangGraph', 'Azure AI Foundry', 'GCP', 'FastAPI'],
     bullets: [
       'Contribute to the KAI AI platform — production-grade LLM workflows, Python/FastAPI services, backend systems, data pipelines and reusable AI capabilities — supporting enterprise AI adoption for 65,000+ active users, including the British Council.',
-      'Led AI engineering delivery for an education platform (not yet publicly launched) — translating product, pedagogy and user needs into scalable, AI-enabled platform features and production-ready capabilities.',
+      'Led AI engineering delivery for an education platform (not yet publicly launched) — translating product, pedagogy and user needs into scalable, AI-enabled platform features.',
       'Built RAG and document-grounded AI workflows across approved knowledge sources, retrieval logic, structured context, embeddings and vector search, prompt construction and response validation.',
-      'Designed agent-style AI workflows and LangGraph/LangChain-style orchestration that connect LLMs with retrieval, backend APIs and tool-style service calls — multi-step logic, error handling and validated outputs.',
+      'Designed agent-style AI workflows and LangGraph/LangChain-style orchestration connecting LLMs with retrieval, backend APIs and tool-style service calls — multi-step logic, error handling and validated outputs.',
       'Improved document-intelligence workflows by processing structured and unstructured data, running data-quality checks and preparing content for retrieval.',
       'Strengthened safe, responsible AI delivery through prompt versioning, approved knowledge sources, guardrails, response constraints, controlled releases and mitigation of hallucination, data leakage, prompt injection and unsafe outputs.',
       'Reduced manual reporting effort by 40% with automated data pipelines and reporting workflows, and improved network energy efficiency by 28% across 200+ network nodes with optimisation, analytics and decision-support tooling.',
@@ -79,8 +34,10 @@ const experience = [
   {
     role: 'AI Research and Computing Support Apprenticeship',
     org: 'Teesside University',
-    period: 'Sep 2022 – May 2023',
     where: 'United Kingdom',
+    period: 'Sep 2022 – May 2023',
+    current: false,
+    stack: ['Python', 'Linux', 'Research computing'],
     bullets: [
       'Supported AI-focused research prototypes by configuring Python workflows, reproducible environments, automation tools, testing and technical documentation.',
       'Improved reliability of research computing environments through Linux setup, access management, performance checks, troubleshooting and issue investigation.',
@@ -90,8 +47,10 @@ const experience = [
   {
     role: 'Machine Learning Engineer',
     org: 'Unifun',
-    period: 'Oct 2017 – Oct 2020',
     where: 'Kathmandu, Nepal',
+    period: 'Oct 2017 – Oct 2020',
+    current: false,
+    stack: ['Python', 'NLP', 'Recommenders', 'MLOps'],
     bullets: [
       'Delivered AI and machine-learning capabilities for product and business use cases — data preparation, model experimentation, backend integration, testing, deployment and documentation.',
       'Built Python-based ML and automation workflows processing structured and unstructured data, with predictive analysis and repeatable data-driven tasks.',
@@ -102,19 +61,117 @@ const experience = [
 ];
 
 const achievements = [
-  'Improved automation workflow coverage by 35% through backend logic and API integrations for orchestration and intelligent task execution.',
-  'Accelerated 5G validation and test-cycle analysis by 70% through improved data-ingestion and visualisation modules.',
-  'Contributed to scalable CI/CD and operational practices supporting 99.9% uptime for telecom AI and automation services.',
+  {
+    value: '35%',
+    label: 'Automation coverage',
+    detail: 'Backend logic and API integrations for orchestration and intelligent task execution.',
+  },
+  {
+    value: '70%',
+    label: 'Faster 5G validation',
+    detail: 'Improved data-ingestion and visualisation modules for test-cycle analysis.',
+  },
+  {
+    value: '99.9%',
+    label: 'Service uptime',
+    detail: 'CI/CD and operational practices for telecom AI and automation services.',
+  },
+];
+
+const engagements = [
+  {
+    id: 'kai',
+    name: 'KAI — Enterprise knowledge assistant',
+    tag: 'Enterprise AI platform · AWTG',
+    line: 'Production LLM services, RAG and document-grounded answers serving 65,000+ active users, including the British Council.',
+  },
+  {
+    id: 'education-platform',
+    name: 'Education platform — GraphRAG for complex learning content',
+    tag: 'EdTech · Not yet public',
+    line: 'GraphRAG and document intelligence for connected, verifiable knowledge with measured citation accuracy.',
+  },
+  {
+    id: 'hyperran',
+    name: 'Hiper-RAN — AI optimisation for telecom networks',
+    tag: 'Telecom network optimisation',
+    line: 'Optimisation, analytics and decision-support tooling for RAN — improving network energy efficiency by 28% across 200+ network nodes.',
+  },
+];
+
+const toolkit = [
+  { label: 'Languages', items: ['Python', 'SQL', 'JavaScript', 'TypeScript'] },
+  {
+    label: 'AI engineering',
+    items: [
+      'LLM applications',
+      'RAG',
+      'Semantic retrieval',
+      'Prompt engineering',
+      'Prompt evaluation',
+      'AI agents',
+      'Response validation',
+      'Guardrails',
+    ],
+  },
+  {
+    label: 'Models & frameworks',
+    items: [
+      'OpenAI API',
+      'Claude',
+      'Azure AI Foundry',
+      'LangChain',
+      'LangGraph',
+      'Custom GPT workflows',
+    ],
+  },
+  {
+    label: 'Product & backend',
+    items: [
+      'FastAPI',
+      'REST APIs',
+      'Backend orchestration',
+      'API integration',
+      'Full-stack delivery',
+      'React',
+    ],
+  },
+  {
+    label: 'Data & retrieval',
+    items: [
+      'Embeddings',
+      'Vector search',
+      'Neo4j',
+      'Data pipelines',
+      'Reporting workflows',
+      'Large-context systems',
+    ],
+  },
+  {
+    label: 'Cloud & delivery',
+    items: [
+      'GCP',
+      'AWS',
+      'Azure',
+      'Docker',
+      'Kubernetes',
+      'CI/CD',
+      'Linux',
+      'Redis',
+      'GCP Pub/Sub',
+      'Observability',
+    ],
+  },
 ];
 
 const education = [
   {
-    degree: 'MSc Computing, Distinction',
+    degree: 'MSc Computing — Distinction',
     org: 'Teesside University',
     period: '2021 – 2023',
   },
   {
-    degree: 'BSc Computing, First Class Honours',
+    degree: 'BSc Computing — First Class Honours',
     org: 'Leeds Beckett University',
     period: '2018',
   },
@@ -126,252 +183,660 @@ const activities = [
   'Contributor to open-source AI projects and MLOps best-practice sharing at cloud and AI engineering meetups.',
 ];
 
-const engagements = [
-  {
-    id: 'kai',
-    name: 'KAI — Enterprise knowledge assistant',
-    tag: 'Enterprise AI platform · AWTG',
-    line: 'The AI platform behind enterprise knowledge workflows — production LLM services, RAG and document-grounded answers serving 65,000+ active users, including the British Council.',
-  },
-  {
-    id: 'education-platform',
-    name: 'Education platform — GraphRAG for complex learning content',
-    tag: 'EdTech · Not yet public',
-    line: 'GraphRAG and document intelligence for complex learning content — connected, verifiable knowledge with measured citation accuracy (platform not yet launched).',
-  },
-  {
-    id: 'hyperran',
-    name: 'Hiper-RAN — AI optimisation for telecom networks',
-    tag: 'Telecom network optimisation',
-    line: 'Optimisation, analytics and decision-support tooling for RAN — improving network energy efficiency by 28% across 200+ network nodes.',
-  },
+const sections = [
+  { id: 'summary', label: 'Summary' },
+  { id: 'experience', label: 'Experience' },
+  { id: 'achievements', label: 'Achievements' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'skills', label: 'Skills' },
+  { id: 'education', label: 'Education' },
+  { id: 'activities', label: 'Community' },
+  { id: 'contact', label: 'Contact' },
 ];
+
+const mailto = `mailto:${contact.email}?subject=${encodeURIComponent('Hello Abd')}`;
+const tel = `tel:${contact.phone.replace(/\s/g, '')}`;
 ---
 
 <BaseLayout
   title={title}
-  description={`CV for ${site.name}: Lead AI Engineer at AWTG Ltd (London) — experience, skills, selected projects, education and contact.`}
+  description={`CV for ${site.name}: Lead AI Engineer at AWTG Ltd (London) — experience, achievements, projects, skills and education.`}
 >
-  <section class="page-head">
+  <section class="page-head cv-head">
     <div class="wrap">
-      <span class="kicker">CV</span>
-      <h1 class="display display--page" style="margin-top: 0.9rem;">
-        {site.name}
-      </h1>
-      <p class="lede">
-        Lead AI Engineer · AWTG Ltd, London, UK. Building reliable enterprise
-        AI systems across RAG, GraphRAG, agents, evaluation and responsible
-        AI delivery.
-      </p>
+      <div class="cv-head-inner">
+        <div>
+          <span class="kicker">Curriculum vitae</span>
+          <h1 class="display display--page" style="margin: 0.9rem 0 0.6rem;">
+            {site.name}
+          </h1>
+          <p class="lede">
+            Lead AI Engineer · AWTG Ltd, London. Building reliable enterprise AI
+            systems across RAG, GraphRAG, agents, evaluation and responsible AI
+            delivery.
+          </p>
+        </div>
+
+        <figure class="cv-portrait">
+          <img
+            src={rootUrl('/images/abd-bastola.jpg')}
+            alt="Portrait of Abd Bastola"
+            width="800"
+            height="800"
+            loading="lazy"
+          />
+          <figcaption>Open to conversations</figcaption>
+        </figure>
+      </div>
+
       <div class="page-head-actions">
-        <a class="btn btn--ghost" href={`mailto:${contact.email}`}>
-          <Icon name="mail" size={15} />
+        <a class="btn btn--primary" href={mailto}>
+          <Icon name="mail" size={16} />
           {contact.email}
         </a>
-        <a class="btn btn--ghost" href={`tel:${contact.phone.replace(/\s/g, '')}`}>
-          {contact.phone}
-        </a>
-        <a
-          class="btn btn--ghost"
-          href={social.github}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Icon name="github" size={15} />
-          GitHub
-        </a>
-        <a
-          class="btn btn--ghost"
-          href={social.linkedin}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
+        <a class="btn btn--ghost" href={social.linkedin} target="_blank" rel="noopener noreferrer">
           <Icon name="linkedin" size={15} />
           LinkedIn
         </a>
+        <a class="btn btn--ghost" href={social.github} target="_blank" rel="noopener noreferrer">
+          <Icon name="github" size={15} />
+          GitHub
+        </a>
+        <button class="btn btn--ghost" type="button" id="print-cv">Print / save PDF</button>
       </div>
     </div>
   </section>
 
-  <section class="wrap">
-    <!-- Summary -->
-    <div class="cv-section">
-      <h2 class="cv-section-title">Summary</h2>
-      <p class="cv-summary">
-        Lead AI Engineer in London with a track record of taking AI from
-        prototype to production in enterprise settings. Currently leading AI
-        engineering for AWTG — contributing to the KAI AI platform and leading
-        delivery on an education-platform project — with a career
-        spanning machine learning engineering, research-computing support and
-        production GenAI. Comfortable across the whole delivery arc: problem
-        definition, retrieval and RAG/GraphRAG design, agent orchestration,
-        response validation, guardrails, evaluation and cloud-native
-        operations on Azure AI Foundry and GCP. Works at the intersection of
-        consulting, product thinking and hands-on engineering.
-      </p>
-    </div>
-
-    <!-- Focus areas -->
-    <div class="cv-section">
-      <h2 class="cv-section-title">Focus areas</h2>
-      <ul class="chips" style="row-gap: 0.6rem;">
-        {focusAreas.map((area) => (
-          <li class="chip chip--lg">{area}</li>
-        ))}
+  <div class="wrap cv-layout">
+    <!-- Sticky section nav -->
+    <nav class="cv-toc" aria-label="CV sections">
+      <span class="cv-toc-label mono">Contents</span>
+      <ul>
+        {
+          sections.map((section, i) => (
+            <li>
+              <a href={`#${section.id}`} data-toc-link={section.id}>
+                <span class="mono">{String(i + 1).padStart(2, '0')}</span>
+                {section.label}
+              </a>
+            </li>
+          ))
+        }
       </ul>
-    </div>
+    </nav>
 
-    <!-- Experience -->
-    <div class="cv-section">
-      <h2 class="cv-section-title">Experience</h2>
-      {experience.map((job) => (
-        <div class="cv-row">
-          <div>
-            <h3>{job.role}</h3>
-            <p class="org">
-              {job.org} · {job.where}
-            </p>
-            <ul>
-              {job.bullets.map((b) => (
-                <li>{b}</li>
-              ))}
-            </ul>
-          </div>
-          <div class="period">{job.period}</div>
+    <div class="cv-main">
+      <!-- Summary -->
+      <section class="cv-section" id="summary" aria-labelledby="summary-title">
+        <h2 class="cv-section-title" id="summary-title">Summary</h2>
+        <p class="cv-summary">
+          Lead AI Engineer in London with a track record of taking AI from
+          prototype to production in enterprise settings. Currently leading AI
+          engineering for AWTG — contributing to the KAI AI platform and leading
+          delivery on an education-platform project — with a career spanning
+          machine learning engineering, research-computing support and
+          production GenAI. Comfortable across the whole delivery arc: problem
+          definition, retrieval and RAG/GraphRAG design, agent orchestration,
+          response validation, guardrails, evaluation and cloud-native
+          operations on Azure AI Foundry and GCP.
+        </p>
+
+        <ul class="quick-facts">
+          {
+            quickFacts.map((fact) => (
+              <li>
+                <span class="mono label">{fact.label}</span>
+                <span>{fact.value}</span>
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+
+      <!-- Experience -->
+      <section class="cv-section" id="experience" aria-labelledby="experience-title">
+        <h2 class="cv-section-title" id="experience-title">Experience</h2>
+
+        <div class="timeline">
+          {
+            experience.map((job, i) => (
+              <article class="tl-entry" data-reveal style={`--reveal-delay: ${i * 70}ms`}>
+                <div class="card tl-card">
+                  <div class="tl-head">
+                    <div>
+                      <h3>{job.role}</h3>
+                      <p class="org">
+                        {job.org} · {job.where}
+                      </p>
+                    </div>
+                    <span class:list={['tl-period', { 'tl-period--current': job.current }]}>
+                      {job.current ? 'Current' : job.period}
+                    </span>
+                  </div>
+
+                  <ul class="tl-bullets">
+                    {job.bullets.map((bullet) => (
+                      <li>{bullet}</li>
+                    ))}
+                  </ul>
+
+                  <ul class="chips" aria-label={`${job.org} technologies`}>
+                    {job.stack.map((item) => (
+                      <li class="chip">{item}</li>
+                    ))}
+                  </ul>
+
+                  {!job.current && <span class="tl-dates mono">{job.period}</span>}
+                </div>
+              </article>
+            ))
+          }
         </div>
-      ))}
-    </div>
+      </section>
 
-    <!-- Selected projects -->
-    <div class="cv-section">
-      <h2 class="cv-section-title">Selected projects</h2>
-      <div class="projects-list">
-        {engagements.map((project, i) => (
-          <a class="cv-project" href={rootUrl(`/work/${project.id}/`)}>
-            <span class="cv-project-num mono">
-              {String(i + 1).padStart(2, '0')}
-            </span>
-            <span class="cv-project-body">
-              <strong>{project.name}</strong>
-              <span class="mono cv-project-tag">{project.tag}</span>
-              <span class="cv-project-line">{project.line}</span>
-            </span>
-            <span class="cv-project-arrow">
-              <Icon name="arrow-up-right" size={16} />
-            </span>
+      <!-- Achievements -->
+      <section class="cv-section" id="achievements" aria-labelledby="achievements-title">
+        <h2 class="cv-section-title" id="achievements-title">Achievements</h2>
+        <div class="metric-grid">
+          {
+            achievements.map((item, i) => (
+              <div class="card metric" data-reveal style={`--reveal-delay: ${i * 70}ms`}>
+                <span class="metric-value">{item.value}</span>
+                <span class="metric-label">{item.label}</span>
+                <p class="metric-detail">{item.detail}</p>
+              </div>
+            ))
+          }
+        </div>
+      </section>
+
+      <!-- Projects -->
+      <section class="cv-section" id="projects" aria-labelledby="projects-title">
+        <h2 class="cv-section-title" id="projects-title">Selected projects</h2>
+        <div class="project-list">
+          {
+            engagements.map((project, i) => (
+              <a
+                class="card card--hover cv-project"
+                href={rootUrl(`/work/${project.id}/`)}
+                data-reveal
+                style={`--reveal-delay: ${i * 60}ms`}
+              >
+                <span class="cv-project-num mono">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span class="cv-project-body">
+                  <strong>{project.name}</strong>
+                  <span class="mono cv-project-tag">{project.tag}</span>
+                  <span class="cv-project-line">{project.line}</span>
+                </span>
+                <span class="cv-project-arrow">
+                  <Icon name="arrow-up-right" size={16} />
+                </span>
+              </a>
+            ))
+          }
+        </div>
+      </section>
+
+      <!-- Skills -->
+      <section class="cv-section" id="skills" aria-labelledby="skills-title">
+        <h2 class="cv-section-title" id="skills-title">Technical toolkit</h2>
+        <div class="skill-groups">
+          {
+            toolkit.map((group, i) => (
+              <div class="skill-group" data-reveal style={`--reveal-delay: ${i * 50}ms`}>
+                <h3 class="mono">{group.label}</h3>
+                <ul class="chips">
+                  {group.items.map((item) => (
+                    <li class="chip">{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          }
+        </div>
+      </section>
+
+      <!-- Education -->
+      <section class="cv-section" id="education" aria-labelledby="education-title">
+        <h2 class="cv-section-title" id="education-title">Education</h2>
+        <div class="timeline timeline--compact">
+          {
+            education.map((entry, i) => (
+              <article class="tl-entry" data-reveal style={`--reveal-delay: ${i * 70}ms`}>
+                <div class="card tl-card">
+                  <div class="tl-head">
+                    <div>
+                      <h3>{entry.degree}</h3>
+                      <p class="org">{entry.org}</p>
+                    </div>
+                    <span class="tl-period">{entry.period}</span>
+                  </div>
+                </div>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+
+      <!-- Activities -->
+      <section class="cv-section" id="activities" aria-labelledby="activities-title">
+        <h2 class="cv-section-title" id="activities-title">Activities &amp; community</h2>
+        <ul class="achievement-list">
+          {
+            activities.map((item, i) => (
+              <li>
+                <span class="achievement-num mono">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span>{item}</span>
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+
+      <!-- Contact -->
+      <section class="cv-section" id="contact" aria-labelledby="contact-title">
+        <h2 class="cv-section-title" id="contact-title">Contact</h2>
+        <div class="contact-links">
+          <a class="btn btn--ghost" href={mailto}>
+            <Icon name="mail" size={15} />
+            Email
           </a>
-        ))}
-      </div>
-    </div>
-
-    <!-- Achievements -->
-    <div class="cv-section">
-      <h2 class="cv-section-title">Achievements</h2>
-      <ul class="achievement-list">
-        {achievements.map((item, i) => (
-          <li>
-            <span class="achievement-num mono">
-              {String(i + 1).padStart(2, '0')}
-            </span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-
-    <!-- Technical toolkit -->
-    <div class="cv-section">
-      <h2 class="cv-section-title">Technical toolkit</h2>
-      <ul class="chips">
-        {toolkit.map((tool) => (
-          <li class="chip">{tool}</li>
-        ))}
-      </ul>
-    </div>
-
-    <!-- Education -->
-    <div class="cv-section">
-      <h2 class="cv-section-title">Education</h2>
-      {education.map((entry) => (
-        <div class="cv-row">
-          <div>
-            <h3>{entry.degree}</h3>
-            <p class="org">{entry.org}</p>
-          </div>
-          <div class="period">{entry.period}</div>
+          <a class="btn btn--ghost" href={tel}>{contact.phone}</a>
+          <a class="btn btn--ghost" href={social.linkedin} target="_blank" rel="noopener noreferrer">
+            <Icon name="linkedin" size={15} />
+            LinkedIn
+          </a>
+          <a class="btn btn--ghost" href={social.github} target="_blank" rel="noopener noreferrer">
+            <Icon name="github" size={15} />
+            GitHub
+          </a>
+          <a class="btn btn--ghost" href={rootUrl('/contact')}>
+            <Icon name="calendar" size={15} />
+            Book a call
+          </a>
         </div>
-      ))}
+        <p class="cv-note muted">
+          Full résumé available on request — {contact.location}.
+        </p>
+      </section>
     </div>
-
-    <!-- Activities -->
-    <div class="cv-section">
-      <h2 class="cv-section-title">Activities & community</h2>
-      <ul class="achievement-list">
-        {activities.map((item, i) => (
-          <li>
-            <span class="achievement-num mono">
-              {String(i + 1).padStart(2, '0')}
-            </span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-
-    <!-- Contact -->
-    <div class="cv-section">
-      <h2 class="cv-section-title">Contact</h2>
-      <div class="contact-links">
-        <a class="btn btn--ghost" href={`mailto:${contact.email}`}>
-          <Icon name="mail" size={15} />
-          Email
-        </a>
-        <a class="btn btn--ghost" href={`tel:${contact.phone.replace(/\s/g, '')}`}>
-          {contact.phone}
-        </a>
-        <a
-          class="btn btn--ghost"
-          href={social.github}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Icon name="github" size={15} />
-          GitHub
-        </a>
-        <a
-          class="btn btn--ghost"
-          href={social.linkedin}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Icon name="linkedin" size={15} />
-          LinkedIn
-        </a>
-        <a class="btn btn--ghost" href={newsletter.rssPath}>
-          <Icon name="rss" size={15} />
-          RSS
-        </a>
-      </div>
-    </div>
-  </section>
+  </div>
 </BaseLayout>
 
+<script is:inline>
+  (function () {
+    var printButton = document.getElementById('print-cv');
+    if (printButton) {
+      printButton.addEventListener('click', function () {
+        window.print();
+      });
+    }
+
+    var links = document.querySelectorAll('[data-toc-link]');
+    if (!links.length || !('IntersectionObserver' in window)) return;
+
+    var map = {};
+    links.forEach(function (link) {
+      map[link.getAttribute('data-toc-link')] = link;
+    });
+
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          links.forEach(function (link) {
+            link.classList.remove('is-active');
+          });
+          var active = map[entry.target.id];
+          if (active) active.classList.add('is-active');
+        });
+      },
+      { rootMargin: '-25% 0px -65% 0px', threshold: 0 }
+    );
+
+    document.querySelectorAll('.cv-section[id]').forEach(function (section) {
+      observer.observe(section);
+    });
+  })();
+</script>
+
 <style>
+  .cv-head-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180px;
+    gap: clamp(1.5rem, 4vw, 3rem);
+    align-items: center;
+  }
+
+  .cv-portrait {
+    margin: 0;
+    justify-self: end;
+  }
+
+  .cv-portrait img {
+    width: 100%;
+    max-width: 180px;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 1px solid var(--hairline-strong);
+    box-shadow: 0 0 0 8px var(--accent-soft);
+  }
+
+  .cv-portrait figcaption {
+    margin-top: 0.7rem;
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--faint);
+    text-align: center;
+  }
+
+  @media (max-width: 760px) {
+    .cv-head-inner {
+      grid-template-columns: 1fr;
+    }
+
+    .cv-portrait {
+      justify-self: start;
+    }
+  }
+
+  /* Layout with sticky contents rail */
+  .cv-layout {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: clamp(1.5rem, 4vw, 3.5rem);
+    align-items: start;
+    padding-block: clamp(2.5rem, 6vw, 4rem) clamp(3rem, 8vw, 5rem);
+  }
+
+  @media (max-width: 1000px) {
+    .cv-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .cv-toc {
+    position: sticky;
+    top: 5.5rem;
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  @media (max-width: 1000px) {
+    .cv-toc {
+      position: static;
+    }
+
+    .cv-toc ul {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+  }
+
+  .cv-toc-label {
+    font-size: 0.66rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .cv-toc ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .cv-toc a {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    border-left: 2px solid transparent;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.88rem;
+    color: var(--muted);
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+      background-color var(--dur) var(--ease);
+  }
+
+  .cv-toc a .mono {
+    font-size: 0.66rem;
+    color: var(--faint);
+  }
+
+  .cv-toc a:hover {
+    color: var(--text);
+    background: var(--hover-bg);
+  }
+
+  .cv-toc a.is-active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .cv-main {
+    display: grid;
+    gap: clamp(2.4rem, 5vw, 3.4rem);
+    min-width: 0;
+  }
+
+  .cv-section {
+    scroll-margin-top: 5.5rem;
+  }
+
+  .cv-section-title {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 1.4rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid var(--hairline);
+  }
+
   .cv-summary {
     max-width: 72ch;
     color: var(--muted);
     line-height: 1.75;
-    margin-bottom: 0;
+    margin: 0 0 1.8rem;
   }
 
-  .chip--lg {
-    font-family: var(--font-sans);
-    font-size: 0.85rem;
-    padding: 0.4rem 0.85rem;
+  .quick-facts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem 1.4rem;
+  }
+
+  @media (max-width: 620px) {
+    .quick-facts {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .quick-facts li {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+  }
+
+  .quick-facts .label {
+    font-size: 0.64rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .quick-facts span:last-child {
+    color: var(--text-soft);
+    font-size: 0.92rem;
+  }
+
+  /* Timeline */
+  .timeline {
+    position: relative;
+    display: grid;
+    gap: 1.3rem;
+  }
+
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 10px;
+    bottom: 10px;
+    width: 1px;
+    background: var(--hairline-strong);
+  }
+
+  .tl-entry {
+    position: relative;
+    padding-left: 2rem;
+  }
+
+  .tl-entry::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.85rem;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--accent);
+  }
+
+  .tl-card {
+    padding: 1.3rem 1.4rem 1.4rem;
+  }
+
+  .tl-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.7rem 1rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .tl-head h3 {
+    margin: 0 0 0.3rem;
+    font-size: 1.06rem;
+    letter-spacing: -0.01em;
+  }
+
+  .tl-card .org {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .tl-period {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    border: 1px solid var(--hairline-strong);
+    border-radius: 999px;
+    padding: 0.28rem 0.7rem;
+    white-space: nowrap;
+  }
+
+  .tl-period--current {
+    color: var(--btn-fg);
+    background: var(--accent-fill);
+    border-color: var(--accent-fill);
+  }
+
+  .tl-bullets {
+    margin: 0 0 1.1rem;
+    padding-left: 1.15rem;
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  .tl-bullets li {
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.62;
+  }
+
+  .tl-bullets li::marker {
+    color: var(--accent);
+  }
+
+  .tl-dates {
+    display: block;
+    margin-top: 0.9rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  /* Metrics */
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  @media (max-width: 820px) {
+    .metric-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .metric {
+    display: grid;
+    gap: 0.35rem;
+    padding: 1.3rem 1.35rem 1.4rem;
+  }
+
+  .metric-value {
+    font-size: clamp(1.8rem, 3.4vw, 2.5rem);
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .metric-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
     color: var(--text-soft);
   }
 
-  .projects-list {
+  .metric-detail {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.55;
+  }
+
+  /* Projects */
+  .project-list {
     display: grid;
     gap: 0.9rem;
   }
@@ -382,15 +847,6 @@ const engagements = [
     gap: 0.9rem;
     align-items: start;
     padding: 1.15rem 1.2rem;
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
-    background: var(--surface-2);
-    transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
-  }
-
-  .cv-project:hover {
-    border-color: var(--accent-line);
-    transform: translateY(-2px);
   }
 
   .cv-project-num {
@@ -428,6 +884,21 @@ const engagements = [
     transform: translate(2px, -2px);
   }
 
+  /* Skills */
+  .skill-groups {
+    display: grid;
+    gap: 1.2rem;
+  }
+
+  .skill-group h3 {
+    margin: 0 0 0.7rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* Activities */
   .achievement-list {
     list-style: none;
     margin: 0;
@@ -456,5 +927,51 @@ const engagements = [
     display: flex;
     flex-wrap: wrap;
     gap: 0.8rem;
+  }
+
+  .cv-note {
+    margin-top: 1.4rem;
+    font-size: 0.9rem;
+  }
+
+  /* Print / save as PDF */
+  @media print {
+    :global(.site-header),
+    :global(.site-footer),
+    :global(.skip-link),
+    .cv-toc,
+    .page-head-actions {
+      display: none !important;
+    }
+
+    :global(body) {
+      background: #fff !important;
+      color: #000 !important;
+    }
+
+    :global(.has-reveal [data-reveal]) {
+      opacity: 1 !important;
+      transform: none !important;
+    }
+
+    .cv-layout {
+      display: block;
+      padding-block: 0;
+    }
+
+    :global(.card) {
+      background: #fff !important;
+      border-color: #d5d5d0 !important;
+      box-shadow: none !important;
+      break-inside: avoid;
+    }
+
+    :global(a) {
+      color: #000 !important;
+    }
+
+    .timeline::before {
+      background: #ccc;
+    }
   }
 </style>
