@@ -118,13 +118,15 @@ const socialLinks = [
 
       <aside class="aside" aria-label="Focus and interests">
         <figure class="about-portrait card">
-          <img
-            src={rootUrl('/images/abd-bastola.jpg')}
-            alt="Portrait of Abd Bastola"
-            width="480"
-            height="480"
-            loading="lazy"
-          />
+          <span class="about-portrait-frame">
+            <img
+              src={rootUrl('/images/abd-bastola.jpg')}
+              alt="Portrait of Abd Bastola"
+              width="800"
+              height="800"
+              loading="lazy"
+            />
+          </span>
           <figcaption>Abd Bastola · London</figcaption>
         </figure>
 
@@ -191,14 +193,20 @@ const socialLinks = [
     padding: 0.7rem;
   }
 
-  .about-portrait img {
-    width: 100%;
-    height: auto;
-    aspect-ratio: 1 / 1;
-    object-fit: cover;
-    border-radius: 50%;
-    border: 1px solid var(--hairline-strong);
+  .about-portrait-frame {
     display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid var(--hairline);
+  }
+
+  .about-portrait-frame img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .about-portrait figcaption {

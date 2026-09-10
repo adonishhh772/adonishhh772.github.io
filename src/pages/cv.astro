@@ -218,13 +218,15 @@ const tel = `tel:${contact.phone.replace(/\s/g, '')}`;
         </div>
 
         <figure class="cv-portrait">
-          <img
-            src={rootUrl('/images/abd-bastola.jpg')}
-            alt="Portrait of Abd Bastola"
-            width="800"
-            height="800"
-            loading="lazy"
-          />
+          <span class="cv-portrait-frame">
+            <img
+              src={rootUrl('/images/abd-bastola-avatar.jpg')}
+              alt="Portrait of Abd Bastola"
+              width="200"
+              height="200"
+              loading="lazy"
+            />
+          </span>
           <figcaption>Open to conversations</figcaption>
         </figure>
       </div>
@@ -507,7 +509,7 @@ const tel = `tel:${contact.phone.replace(/\s/g, '')}`;
 <style>
   .cv-head-inner {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 180px;
+    grid-template-columns: minmax(0, 1fr) 150px;
     gap: clamp(1.5rem, 4vw, 3rem);
     align-items: center;
   }
@@ -515,16 +517,26 @@ const tel = `tel:${contact.phone.replace(/\s/g, '')}`;
   .cv-portrait {
     margin: 0;
     justify-self: end;
+    width: 150px;
   }
 
-  .cv-portrait img {
+  /* Fixed-size circular frame: cannot stretch regardless of parent sizing. */
+  .cv-portrait-frame {
+    display: block;
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid var(--hairline-strong);
+    box-shadow: 0 0 0 6px var(--accent-soft);
+  }
+
+  .cv-portrait-frame img {
+    display: block;
     width: 100%;
-    max-width: 180px;
-    aspect-ratio: 1 / 1;
+    height: 100%;
     object-fit: cover;
     border-radius: 50%;
-    border: 1px solid var(--hairline-strong);
-    box-shadow: 0 0 0 8px var(--accent-soft);
   }
 
   .cv-portrait figcaption {
@@ -544,6 +556,12 @@ const tel = `tel:${contact.phone.replace(/\s/g, '')}`;
 
     .cv-portrait {
       justify-self: start;
+      width: 120px;
+    }
+
+    .cv-portrait-frame {
+      width: 120px;
+      height: 120px;
     }
   }
 
