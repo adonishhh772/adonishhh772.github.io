@@ -14,8 +14,18 @@ const isCurrent = (rawHref: string) => {
 <header class="site-header">
   <div class="wrap header-inner">
     <a class="wordmark" href={rootUrl('/')} aria-label={`${site.name} — home`}>
-      Abd Bastola<span class="accent-dot">.</span
-      ><span class="wordmark-tag" aria-hidden="true">AI · {site.location}</span>
+      <img
+        class="header-avatar"
+        src={rootUrl('/images/abd-bastola-avatar.jpg')}
+        alt=""
+        width="32"
+        height="32"
+        loading="eager"
+      />
+      <span class="wordmark-text">
+        Abd Bastola<span class="accent-dot">.</span>
+      </span>
+      <span class="wordmark-tag" aria-hidden="true">AI · {site.location}</span>
     </a>
 
     <nav class="nav" aria-label="Primary">
@@ -52,3 +62,36 @@ const isCurrent = (rawHref: string) => {
     </nav>
   </div>
 </header>
+
+<style>
+  .wordmark {
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .wordmark-text {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.2rem;
+  }
+
+  .header-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--hairline-strong);
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  }
+
+  .wordmark:hover .header-avatar {
+    border-color: var(--accent-line);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  @media (max-width: 520px) {
+    .wordmark-tag {
+      display: none;
+    }
+  }
+</style>

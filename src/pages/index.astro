@@ -306,18 +306,19 @@ const title = `${site.name} — ${site.role}`;
     height: auto;
     aspect-ratio: 1 / 1;
     object-fit: cover;
-    border-radius: var(--radius-lg);
+    border-radius: 50%;
     border: 1px solid var(--hairline-strong);
-    box-shadow: 0 24px 60px -40px var(--shadow-accent);
+    box-shadow: 0 0 0 10px var(--accent-soft), 0 24px 60px -40px var(--shadow-accent);
   }
 
   .hero-portrait figcaption {
-    margin-top: 0.7rem;
+    margin-top: 0.9rem;
     font-family: var(--font-mono);
     font-size: 0.7rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--faint);
+    text-align: center;
   }
 
   @media (max-width: 900px) {
