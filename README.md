@@ -86,6 +86,41 @@ While the variable is empty the site renders a graceful placeholder
 (“Daily issues are launching soon…”) instead of a broken form, so you can
 ship before connecting an email provider.
 
+**Auto-sending new posts:** the `Newsletter — send new posts to subscribers`
+workflow (`.github/workflows/newsletter-send.yml`) emails each newly added
+article to your Buttondown list automatically, using the
+`BUTTONDOWN_API_KEY` secret.
+
+### Contact form + meeting scheduling (two more values)
+
+- **`CONTACT_ACCESS_KEY`** — free [Web3Forms](https://web3forms.com) key that
+  powers the `/contact` form; submissions are emailed to the address you sign
+  up with (no backend). When unset, `/contact` shows a mailto button instead.
+- **`BOOKING_URL`** — your scheduling link (e.g. a free
+  [Cal.com](https://cal.com) page or Calendly). “Schedule a meeting” buttons
+  appear on the homepage and `/contact`; when unset the site offers to
+  arrange a call by email.
+
+Set both locally in `.env` and in CI under **Settings → Secrets and variables
+→ Actions → Variables**.
+
+### Light / dark theme
+
+Both themes ship by default. The choice is stored in `localStorage`, defaults
+to the visitor’s system preference, and is applied before first paint (no
+flash). All colours are tokens at the top of `src/styles/global.css`.
+
+### Public GitHub projects
+
+`src/data/github-projects.ts` holds the curated repositories shown on the home
+page and in the “Open source & builds” section of `/work`. Add an entry to
+list another repo.
+
+### Portrait photo
+
+The photo lives at `public/images/abd-bastola.jpg` and is used in the homepage
+hero and on the About page.
+
 ### Adding a newsletter article
 
 1. Create a new file in `src/content/writing/`, e.g.

@@ -74,6 +74,7 @@ export const nav = {
     { label: 'Writing', href: '/writing' },
     { label: 'About', href: '/about' },
     { label: 'CV', href: '/cv' },
+    { label: 'Contact', href: '/contact' },
   ],
   external: [
     { label: 'GitHub', href: social.github },
@@ -117,4 +118,24 @@ export const contact = {
   email: 'abdabastola97@gmail.com',
   phone: '+44 7459 687089',
   location: 'London, UK',
+  /**
+   * Contact form endpoint (Web3Forms — free, no backend required).
+   * Set CONTACT_ACCESS_KEY locally in .env and as an Actions variable in CI.
+   * When empty, the contact page falls back to a mailto link.
+   */
+  formEndpoint: 'https://api.web3forms.com/submit',
+  formAccessKey: env.CONTACT_ACCESS_KEY ?? '',
+};
+
+/** Meeting scheduling. */
+export const booking = {
+  label: 'Schedule a meeting',
+  heading: 'Book a 30-minute call',
+  copy: 'Pick a slot that works for you — we can talk through your AI systems, architecture or delivery questions.',
+  /**
+   * Scheduling link (e.g. a free Cal.com or Calendly page).
+   * Set BOOKING_URL locally in .env and as an Actions variable in CI.
+   * When empty, the site offers email instead.
+   */
+  url: env.BOOKING_URL ?? '',
 };

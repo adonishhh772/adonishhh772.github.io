@@ -1,0 +1,38 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+import { rootUrl, social } from '../site.config';
+
+const title = 'Message sent';
+---
+
+<BaseLayout
+  title={title}
+  description="Thanks for getting in touch — your message has been sent."
+>
+  <section class="notfound">
+    <div class="wrap">
+      <span class="kicker" style="justify-content: center;">Message sent</span>
+      <h1 class="section-title" style="margin: 1rem auto 0.6rem; max-width: 22ch;">
+        Thanks — that landed in my inbox.
+      </h1>
+      <p class="muted" style="margin: 0 auto 2rem; max-width: 48ch;">
+        I read everything personally and usually reply within a day or two. In
+        the meantime, the writing is probably the best place to start.
+      </p>
+      <div class="hero-actions" style="justify-content: center; margin-top: 0;">
+        <a class="btn btn--primary" href={rootUrl('/writing')}>
+          Read Reliable AI
+          <Icon name="arrow-right" size={16} />
+        </a>
+        <a class="btn btn--ghost" href={rootUrl('/work')}>
+          See selected work
+        </a>
+        <a class="btn btn--ghost" href={social.linkedin} target="_blank" rel="noopener noreferrer">
+          <Icon name="linkedin" size={15} />
+          LinkedIn
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

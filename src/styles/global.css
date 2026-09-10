@@ -1,10 +1,10 @@
-/* ─────────────────────────────────────────────────────────────────────
+﻿/* ─────────────────────────────────────────────────────────────────────
    Reliable AI / Abd Bastola — global design system
    Plain CSS. Near-black, soft-white, electric lime. Subtle grid & noise.
    ───────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Palette */
+  /* Palette (dark — default) */
   --bg: #0b0d10;
   --bg-raised: #10131a;
   --bg-sunken: #0d0f14;
@@ -13,11 +13,30 @@
   --muted: #a4abb5;
   --faint: #6b7280;
   --accent: #c8ff00;
+  --accent-fill: #c8ff00;
   --accent-soft: rgba(200, 255, 0, 0.08);
   --accent-line: rgba(200, 255, 0, 0.4);
+  --btn-fg: #0a0c02;
+  --shadow-accent: rgba(200, 255, 0, 0.45);
 
   --hairline: rgba(244, 244, 240, 0.09);
   --hairline-strong: rgba(244, 244, 240, 0.16);
+
+  /* Surfaces & effects */
+  --header-bg: rgba(11, 13, 16, 0.78);
+  --surface-1: rgba(16, 19, 26, 0.55);
+  --surface-2: rgba(16, 19, 26, 0.4);
+  --chip-bg: rgba(244, 244, 240, 0.03);
+  --hover-bg: rgba(244, 244, 240, 0.05);
+  --grid-line: rgba(244, 244, 240, 0.05);
+  --bloom: rgba(200, 255, 0, 0.09);
+  --panel-a: rgba(16, 19, 26, 0.95);
+  --panel-b: rgba(11, 13, 16, 0.98);
+  --code-bg: #0a0c10;
+  --code-fg: #d9e0ea;
+  --code-inline-bg: rgba(244, 244, 240, 0.07);
+  --code-inline-fg: #e6ff9e;
+  --noise-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
 
   --danger: #ff5d5d;
 
@@ -36,6 +55,45 @@
 
   --wrap: 1120px;
   --gutter: clamp(1.25rem, 5vw, 2rem);
+
+  color-scheme: dark;
+}
+
+/* ── Light theme ───────────────────────────────────────────────────── */
+:root[data-theme='light'] {
+  --bg: #f7f7f3;
+  --bg-raised: #ffffff;
+  --bg-sunken: #efefe9;
+  --text: #14171c;
+  --text-soft: #2e343d;
+  --muted: #55606e;
+  --faint: #6f7885;
+  --accent: #55700a;
+  --accent-fill: #c8ff00;
+  --accent-soft: rgba(85, 112, 10, 0.1);
+  --accent-line: rgba(85, 112, 10, 0.35);
+  --btn-fg: #0a0c02;
+  --shadow-accent: rgba(110, 140, 0, 0.3);
+
+  --hairline: rgba(20, 23, 28, 0.12);
+  --hairline-strong: rgba(20, 23, 28, 0.2);
+
+  --header-bg: rgba(247, 247, 243, 0.85);
+  --surface-1: rgba(255, 255, 255, 0.8);
+  --surface-2: rgba(255, 255, 255, 0.65);
+  --chip-bg: rgba(20, 23, 28, 0.045);
+  --hover-bg: rgba(20, 23, 28, 0.05);
+  --grid-line: rgba(20, 23, 28, 0.07);
+  --bloom: rgba(85, 112, 10, 0.12);
+  --panel-a: rgba(255, 255, 255, 0.98);
+  --panel-b: rgba(244, 244, 238, 0.98);
+  --code-bg: #f2f2ec;
+  --code-fg: #1e242c;
+  --code-inline-bg: rgba(20, 23, 28, 0.06);
+  --code-inline-fg: #3f5a00;
+  --noise-image: none;
+
+  color-scheme: light;
 }
 
 /* ── Reset-ish ─────────────────────────────────────────────────────── */
@@ -46,7 +104,6 @@
 }
 
 html {
-  color-scheme: dark;
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
 }
@@ -55,8 +112,8 @@ body {
   margin: 0;
   min-height: 100vh;
   background-color: var(--bg);
-  /* Subtle full-bleed noise texture (SVG turbulence, low opacity). */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  /* Subtle full-bleed noise texture (dark theme only). */
+  background-image: var(--noise-image);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 16px;
@@ -272,14 +329,14 @@ textarea {
 }
 
 .btn--primary {
-  background: var(--accent);
-  color: #0a0c02;
+  background: var(--accent-fill);
+  color: var(--btn-fg);
 }
 
 .btn--primary:hover {
   background: #d4ff4d;
   transform: translateY(-1px);
-  box-shadow: 0 6px 26px -10px rgba(200, 255, 0, 0.5);
+  box-shadow: 0 6px 26px -10px var(--shadow-accent);
 }
 
 .btn--ghost {
@@ -316,7 +373,7 @@ textarea {
   letter-spacing: 0.01em;
   color: var(--muted);
   border: 1px solid var(--hairline);
-  background: rgba(244, 244, 240, 0.025);
+  background: var(--chip-bg);
   border-radius: 999px;
   padding: 0.26rem 0.65rem;
   white-space: nowrap;
@@ -343,7 +400,7 @@ textarea {
   border: 1px solid var(--hairline-strong);
   border-radius: 999px;
   padding: 0.4rem 0.8rem;
-  background: rgba(244, 244, 240, 0.035);
+  background: var(--chip-bg);
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
     background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
@@ -370,7 +427,7 @@ textarea {
 }
 
 .card--hover:hover {
-  border-color: rgba(200, 255, 0, 0.32);
+  border-color: var(--accent-line);
   transform: translateY(-3px);
 }
 
@@ -399,7 +456,7 @@ textarea {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(11, 13, 16, 0.78);
+  background: var(--header-bg);
   -webkit-backdrop-filter: blur(14px) saturate(150%);
   backdrop-filter: blur(14px) saturate(150%);
   border-bottom: 1px solid var(--hairline);
@@ -460,7 +517,7 @@ textarea {
 
 .nav-link:hover {
   color: var(--text);
-  background: rgba(244, 244, 240, 0.05);
+  background: var(--hover-bg);
 }
 
 .nav-link[aria-current='page'] {
@@ -510,8 +567,8 @@ textarea {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(to right, rgba(244, 244, 240, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(244, 244, 240, 0.05) 1px, transparent 1px);
+  background-image: linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
   background-size: 72px 72px;
   -webkit-mask-image: radial-gradient(ellipse 90% 72% at 50% 0%, #000 28%, transparent 78%);
   mask-image: radial-gradient(ellipse 90% 72% at 50% 0%, #000 28%, transparent 78%);
@@ -526,7 +583,7 @@ textarea {
   left: -160px;
   width: 620px;
   height: 420px;
-  background: radial-gradient(closest-side, rgba(200, 255, 0, 0.09), transparent 72%);
+  background: radial-gradient(closest-side, var(--bloom), transparent 72%);
   pointer-events: none;
 }
 
@@ -606,7 +663,7 @@ textarea {
   padding: 0.7rem 1.1rem;
   border: 1px solid var(--hairline);
   border-radius: 999px;
-  background: rgba(16, 19, 26, 0.6);
+  background: var(--surface-1);
   font-size: 0.9rem;
   color: var(--muted);
 }
@@ -788,7 +845,7 @@ textarea {
   overflow: hidden;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius-lg);
-  background: linear-gradient(160deg, rgba(16, 19, 26, 0.95), rgba(11, 13, 16, 0.98));
+  background: linear-gradient(160deg, var(--panel-a), var(--panel-b));
   padding: clamp(2rem, 5.5vw, 3.6rem);
 }
 
@@ -799,7 +856,7 @@ textarea {
   right: -140px;
   width: 480px;
   height: 380px;
-  background: radial-gradient(closest-side, rgba(200, 255, 0, 0.1), transparent 70%);
+  background: radial-gradient(closest-side, var(--bloom), transparent 70%);
   pointer-events: none;
 }
 
@@ -882,7 +939,7 @@ textarea {
   padding: 1rem 1.2rem;
   border: 1px dashed var(--hairline-strong);
   border-radius: 12px;
-  background: rgba(11, 13, 16, 0.5);
+  background: var(--surface-2);
 }
 
 .signup-notice p {
@@ -1000,16 +1057,16 @@ textarea {
 .prose code {
   font-family: var(--font-mono);
   font-size: 0.85em;
-  background: rgba(244, 244, 240, 0.07);
+  background: var(--code-inline-bg);
   border: 1px solid var(--hairline);
   border-radius: 6px;
   padding: 0.14em 0.42em;
-  color: #e6ff9e;
+  color: var(--code-inline-fg);
   white-space: nowrap;
 }
 
 .prose pre {
-  background: #0a0c10;
+  background: var(--code-bg);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   padding: 1.1rem 1.3rem;
@@ -1021,7 +1078,7 @@ textarea {
   background: none;
   border: 0;
   padding: 0;
-  color: #d9e0ea;
+  color: var(--code-fg);
   white-space: pre;
 }
 
@@ -1103,7 +1160,7 @@ textarea {
   padding: 1.1rem 1.3rem;
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
-  background: rgba(16, 19, 26, 0.45);
+  background: var(--surface-2);
 }
 
 .coffee-icon {

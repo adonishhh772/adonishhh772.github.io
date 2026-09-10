@@ -1,0 +1,74 @@
+---
+// Light/dark theme toggle. The theme is applied before paint by an inline
+// script in BaseLayout; this button flips and persists it.
+import Icon from './Icon.astro';
+---
+
+<button
+  class="theme-toggle icon-link"
+  type="button"
+  id="theme-toggle"
+  aria-label="Switch color theme"
+  title="Switch color theme"
+>
+  <span class="theme-toggle-icon theme-toggle-icon--dark" aria-hidden="true">
+    <Icon name="moon" size={16} />
+  </span>
+  <span class="theme-toggle-icon theme-toggle-icon--light" aria-hidden="true">
+    <Icon name="sun" size={16} />
+  </span>
+</button>
+
+<style>
+  .theme-toggle {
+    background: transparent;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .theme-toggle-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    inset: 0;
+    transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+  }
+
+  /* Dark theme (default): show the moon; light theme: show the sun. */
+  .theme-toggle-icon--light {
+    opacity: 0;
+    transform: rotate(-40deg) scale(0.7);
+  }
+
+  :global(html[data-theme='light']) .theme-toggle-icon--dark {
+    opacity: 0;
+    transform: rotate(40deg) scale(0.7);
+  }
+
+  :global(html[data-theme='light']) .theme-toggle-icon--light {
+    opacity: 1;
+    transform: none;
+  }
+</style>
+
+<script is:inline>
+  (function () {
+    var button = document.getElementById('theme-toggle');
+    if (!button) return;
+    button.addEventListener('click', function () {
+      var root = document.documentElement;
+      var next = root.dataset.theme === 'light' ? 'dark' : 'light';
+      root.dataset.theme = next;
+      try {
+        localStorage.setItem('theme', next);
+      } catch (e) {
+        /* storage unavailable — theme still applies for this page */
+      }
+      button.setAttribute(
+        'aria-label',
+        next === 'light' ? 'Switch to dark theme' : 'Switch to light theme'
+      );
+    });
+  })();
+</script>

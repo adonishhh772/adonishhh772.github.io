@@ -117,6 +117,17 @@ const socialLinks = [
       </div>
 
       <aside class="aside" aria-label="Focus and interests">
+        <figure class="about-portrait card">
+          <img
+            src={rootUrl('/images/abd-bastola.jpg')}
+            alt="Abd Bastola in graduation robes at Teesside University"
+            width="400"
+            height="400"
+            loading="lazy"
+          />
+          <figcaption>MSc Computing (Distinction) · Teesside University</figcaption>
+        </figure>
+
         <div class="card aside-card">
           <span class="kicker kicker--plain">Focus areas</span>
           <ul class="focus-list">
@@ -175,6 +186,30 @@ const socialLinks = [
     top: 5.5rem;
   }
 
+  .about-portrait {
+    margin: 0;
+    padding: 0.7rem;
+  }
+
+  .about-portrait img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: calc(var(--radius) - 4px);
+    border: 1px solid var(--hairline);
+    display: block;
+  }
+
+  .about-portrait figcaption {
+    margin-top: 0.7rem;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
   .aside-card {
     padding: 1.4rem 1.4rem 1.6rem;
   }
@@ -215,7 +250,7 @@ const socialLinks = [
     display: flex;
     align-items: flex-start;
     gap: 0.9rem;
-    background: linear-gradient(160deg, rgba(200, 255, 0, 0.05), transparent 60%),
+    background: linear-gradient(160deg, var(--accent-soft), transparent 60%),
       linear-gradient(180deg, var(--bg-raised), var(--bg-sunken));
   }
 

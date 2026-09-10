@@ -1,0 +1,84 @@
+---
+// Compact card for a public GitHub repository.
+import type { GithubProject } from '../data/github-projects';
+import Icon from './Icon.astro';
+
+interface Props {
+  project: GithubProject;
+}
+
+const { project } = Astro.props;
+---
+
+<article class="card card--hover mini-project">
+  <div class="mini-project-top">
+    <span class="mini-project-name">
+      <Icon name="github" size={14} />
+      {project.name}
+    </span>
+    <span class="mini-project-lang">{project.language}</span>
+  </div>
+  <p class="mini-project-desc">{project.description}</p>
+  <a
+    class="link-arrow mini-project-link"
+    href={project.url}
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label={`${project.name} on GitHub (opens in a new tab)`}
+  >
+    View repository
+    <Icon name="arrow-up-right" size={14} />
+  </a>
+</article>
+
+<style>
+  .mini-project {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 1.15rem 1.2rem 1.2rem;
+  }
+
+  .mini-project-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.8rem;
+  }
+
+  .mini-project-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    color: var(--text);
+  }
+
+  .mini-project-lang {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    white-space: nowrap;
+  }
+
+  .mini-project-desc {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+
+  .mini-project-link {
+    margin-top: auto;
+    padding-top: 0.4rem;
+    font-size: 0.84rem;
+    color: var(--muted);
+  }
+
+  .mini-project:hover .mini-project-link {
+    color: var(--accent);
+  }
+</style>

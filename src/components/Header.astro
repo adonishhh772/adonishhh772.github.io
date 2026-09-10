@@ -1,6 +1,7 @@
 ---
 import { site, nav, rootUrl } from '../site.config';
 import Icon from './Icon.astro';
+import ThemeToggle from './ThemeToggle.astro';
 
 const { pathname } = Astro.url;
 
@@ -47,6 +48,7 @@ const isCurrent = (rawHref: string) => {
           </a>
         ))
       }
+      <ThemeToggle />
     </nav>
   </div>
 </header>
