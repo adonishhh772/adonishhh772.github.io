@@ -51,8 +51,12 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
     <meta name="twitter:title" content={documentTitle} />
     <meta name="twitter:description" content={description} />
 
-    <meta name="theme-color" content="#0b0d10" />
-    <link rel="icon" type="image/svg+xml" href={rootUrl('/favicon.svg')} />
+    <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f7f7f3" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href={rootUrl('/favicon.ico')} sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href={rootUrl('/favicon-32.png')} />
+    <link rel="icon" type="image/png" sizes="256x256" href={rootUrl('/favicon-256.png')} />
+    <link rel="apple-touch-icon" sizes="180x180" href={rootUrl('/apple-touch-icon.png')} />
     {/* Apply the saved (or system) theme before first paint to avoid a flash. */}
     <script is:inline>
       (function () {
