@@ -12,6 +12,14 @@ const categories: GithubProject['category'][] = [
   'Automation & platform',
 ];
 
+/** Slug used by the filter buttons and the category blocks. */
+const categorySlug = (category: GithubProject['category']) =>
+  category === 'AI & agents'
+    ? 'ai-agents'
+    : category === 'ML & RL research'
+      ? 'ml-research'
+      : 'automation';
+
 const projectOrder = ['kai', 'education-platform', 'hyperran'];
 const allProjects = await getCollection('projects');
 const projectsById = new Map(allProjects.map((p) => [p.id, p]));
@@ -45,12 +53,36 @@ const title = 'Work — Selected projects';
     </div>
   </section>
 
-  <section class="section" aria-label="Case studies">
+  <section class="section" aria-label="Projects">
     <div class="wrap">
-      <div class="work-list">
+      <div class="work-filters" role="group" aria-label="Filter projects">
+        <button class="filter-btn is-active" type="button" data-filter="all" aria-pressed="true">
+          All
+        </button>
+        <button class="filter-btn" type="button" data-filter="case-studies" aria-pressed="false">
+          Case studies
+        </button>
+        <button class="filter-btn" type="button" data-filter="ai-agents" aria-pressed="false">
+          AI &amp; agents
+        </button>
+        <button class="filter-btn" type="button" data-filter="ml-research" aria-pressed="false">
+          ML &amp; RL research
+        </button>
+        <button class="filter-btn" type="button" data-filter="automation" aria-pressed="false">
+          Automation &amp; platform
+        </button>
+        <p class="filter-count" id="filter-count" aria-live="polite"></p>
+      </div>
+
+      <div class="work-list" data-cat-block="case-studies">
         {
           projects.map((project, i) => (
-            <article class="card card--hover work-item">
+            <article
+              class="card card--hover work-item"
+              data-cat="case-studies"
+              data-reveal
+              style={`--reveal-delay: ${i * 70}ms`}
+            >
               <div class="work-item-meta">
                 <span class="project-index" aria-hidden="true">
                   {String(i + 1).padStart(2, '0')}
@@ -124,8 +156,8 @@ const title = 'Work — Selected projects';
             Open source &amp; builds
           </h2>
           <p class="lede" style="margin-top: 0.7rem;">
-            Agents, GraphRAG experiments, reinforcement learning for RAN,
-            automation tooling and earlier product work — all public on GitHub.
+            Agents, GraphRAG experiments, reinforcement learning for RAN and
+            automation tooling — all public on GitHub.
           </p>
         </div>
         <a
@@ -141,13 +173,13 @@ const title = 'Work — Selected projects';
 
       {
         categories.map((category) => (
-          <div class="project-category">
+          <div class="project-category" data-cat-block={categorySlug(category)}>
             <h3 class="project-category-title mono">{category}</h3>
             <div class="mini-project-grid">
               {githubProjects
                 .filter((project) => project.category === category)
-                .map((project) => (
-                  <MiniProjectCard project={project} />
+                .map((project, i) => (
+                  <MiniProjectCard project={project} delay={i * 60} />
                 ))}
             </div>
           </div>
@@ -155,6 +187,59 @@ const title = 'Work — Selected projects';
       }
     </div>
   </section>
+
+  <noscript>
+    <style>
+      .work-filters {
+        display: none;
+      }
+    </style>
+  </noscript>
+
+  <script is:inline>
+    (function () {
+      var buttons = document.querySelectorAll('.filter-btn[data-filter]');
+      var count = document.getElementById('filter-count');
+      if (!buttons.length) return;
+
+      var cards = document.querySelectorAll('[data-cat]');
+      var blocks = document.querySelectorAll('[data-cat-block]');
+      var total = cards.length;
+
+      function apply(filter) {
+        var shown = 0;
+        cards.forEach(function (card) {
+          var match = filter === 'all' || card.getAttribute('data-cat') === filter;
+          card.hidden = !match;
+          if (match) shown++;
+        });
+
+        blocks.forEach(function (block) {
+          var anyVisible = block.querySelector('[data-cat]:not([hidden])');
+          block.hidden = !anyVisible;
+        });
+
+        buttons.forEach(function (button) {
+          var active = button.getAttribute('data-filter') === filter;
+          button.classList.toggle('is-active', active);
+          button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+
+        if (count) {
+          count.textContent =
+            'Showing ' + shown + ' of ' + total + ' projects';
+        }
+      }
+
+      buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          apply(button.getAttribute('data-filter'));
+        });
+      });
+
+      apply('all');
+    })();
+  </script>
 </BaseLayout>
 
 <style>

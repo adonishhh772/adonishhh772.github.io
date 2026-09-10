@@ -4,6 +4,7 @@ import NewsletterSignup from '../components/NewsletterSignup.astro';
 import ProjectCard from '../components/ProjectCard.astro';
 import ArticleCard from '../components/ArticleCard.astro';
 import MiniProjectCard from '../components/MiniProjectCard.astro';
+import StatsBand from '../components/StatsBand.astro';
 import Icon from '../components/Icon.astro';
 import { site, newsletter, contact, booking, social, rootUrl } from '../site.config';
 import { featuredGithubProjects } from '../data/github-projects';
@@ -93,6 +94,9 @@ const title = `${site.name} — ${site.role}`;
     <NewsletterSignup />
   </div>
 
+  <!-- ── By the numbers ──────────────────────────────────────── -->
+  <StatsBand />
+
   <!-- ── Selected work ────────────────────────────────────────── -->
   <section class="section" aria-labelledby="selected-work">
     <div class="wrap">
@@ -112,7 +116,11 @@ const title = `${site.name} — ${site.role}`;
       <div class="project-grid">
         {
           selectedProjects.map((project, i) => (
-            <ProjectCard project={project} index={String(i + 1).padStart(2, '0')} />
+            <ProjectCard
+              project={project}
+              index={String(i + 1).padStart(2, '0')}
+              delay={i * 80}
+            />
           ))
         }
       </div>
@@ -139,7 +147,11 @@ const title = `${site.name} — ${site.role}`;
       </div>
 
       <div class="issue-list">
-        {latestWriting.map((article) => <ArticleCard article={article} />)}
+        {
+          latestWriting.map((article, i) => (
+            <ArticleCard article={article} delay={i * 70} />
+          ))
+        }
       </div>
     </div>
   </section>
@@ -171,8 +183,8 @@ const title = `${site.name} — ${site.role}`;
 
       <div class="mini-project-grid">
         {
-          featuredGithubProjects.slice(0, 6).map((project) => (
-            <MiniProjectCard project={project} />
+          featuredGithubProjects.slice(0, 6).map((project, i) => (
+            <MiniProjectCard project={project} delay={i * 60} />
           ))
         }
       </div>

@@ -8,14 +8,20 @@ interface Props {
   project: CollectionEntry<'projects'>;
   /** Zero-padded index label, e.g. "01". */
   index: string;
+  /** Stagger delay for the scroll reveal, in ms. */
+  delay?: number;
 }
 
-const { project, index } = Astro.props;
+const { project, index, delay = 0 } = Astro.props;
 const { data } = project;
 const href = rootUrl(`/work/${project.id}/`);
 ---
 
-<article class="card card--hover project-card">
+<article
+  class="card card--hover project-card"
+  data-reveal
+  style={`--reveal-delay: ${delay}ms`}
+>
   <div class="project-card-top">
     <span class="project-index" aria-hidden="true">{index}</span>
     <span class="project-status">{data.tag}</span>

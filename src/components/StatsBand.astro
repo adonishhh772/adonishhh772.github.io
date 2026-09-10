@@ -1,0 +1,149 @@
+---
+// "By the numbers" band with count-up animation.
+// Values are real and verifiable: career start Oct 2017, KAI platform users and
+// network nodes from the CV, repositories from the public GitHub API.
+interface Stat {
+  value: number;
+  suffix?: string;
+  label: string;
+}
+
+const stats: Stat[] = [
+  { value: 7, suffix: '+', label: 'Years in AI & ML' },
+  { value: 65000, suffix: '+', label: 'Users on the KAI platform' },
+  { value: 200, suffix: '+', label: 'Network nodes optimised' },
+  { value: 26, label: 'Public repositories' },
+];
+
+const format = (n: number) => n.toLocaleString('en-GB');
+---
+
+<section class="section section--tight" aria-label="By the numbers">
+  <div class="wrap">
+    <div class="stats-band card">
+      {
+        stats.map((stat, i) => (
+          <div class="stat" data-reveal style={`--reveal-delay: ${i * 70}ms`}>
+            <span
+              class="stat-value"
+              data-count-to={stat.value}
+              data-suffix={stat.suffix ?? ''}
+            >
+              {format(stat.value)}
+              {stat.suffix ?? ''}
+            </span>
+            <span class="stat-label">{stat.label}</span>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<script is:inline>
+  (function () {
+    var values = document.querySelectorAll('[data-count-to]');
+    if (!values.length) return;
+
+    var reduce =
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || !('IntersectionObserver' in window)) return; // keep final numbers
+
+    function animate(el) {
+      var target = Number(el.getAttribute('data-count-to'));
+      var suffix = el.getAttribute('data-suffix') || '';
+      var duration = 900;
+      var start = null;
+
+      function frame(now) {
+        if (start === null) start = now;
+        var progress = Math.min((now - start) / duration, 1);
+        var eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = Math.round(target * eased).toLocaleString('en-GB') + suffix;
+        if (progress < 1) requestAnimationFrame(frame);
+      }
+
+      el.textContent = '0' + suffix;
+      requestAnimationFrame(frame);
+    }
+
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            animate(entry.target);
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.4 }
+    );
+
+    values.forEach(function (el) {
+      observer.observe(el);
+    });
+  })();
+</script>
+
+<style>
+  .stats-band {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: clamp(1.4rem, 3vw, 2rem) clamp(1.2rem, 3vw, 2rem);
+    gap: 1.4rem;
+  }
+
+  .stat {
+    display: grid;
+    gap: 0.35rem;
+    padding-left: 1.2rem;
+    border-left: 1px solid var(--hairline);
+  }
+
+  .stat:first-child {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .stat-value {
+    font-size: clamp(1.6rem, 3.2vw, 2.4rem);
+    font-weight: 640;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    line-height: 1.5;
+  }
+
+  @media (max-width: 880px) {
+    .stats-band {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.2rem 1rem;
+    }
+
+    .stat:nth-child(3) {
+      border-left: 0;
+      padding-left: 0;
+    }
+  }
+
+  @media (max-width: 460px) {
+    .stats-band {
+      grid-template-columns: 1fr;
+    }
+
+    .stat {
+      border-left: 0;
+      padding-left: 0;
+    }
+  }
+</style>

@@ -7,15 +7,21 @@ import { rootUrl } from '../site.config';
 interface Props {
   article: CollectionEntry<'writing'>;
   showDescription?: boolean;
+  /** Stagger delay for the scroll reveal, in ms. */
+  delay?: number;
 }
 
-const { article, showDescription = true } = Astro.props;
+const { article, showDescription = true, delay = 0 } = Astro.props;
 const { data } = article;
 const href = rootUrl(`/writing/${article.id}/`);
 const readMins = readTimeInMinutes(article.body ?? '');
 ---
 
-<article class="card card--hover issue-item">
+<article
+  class="card card--hover issue-item"
+  data-reveal
+  style={`--reveal-delay: ${delay}ms`}
+>
   <div class="issue-item-row">
     <span class="issue-number">
       {data.issue ? `Issue ${String(data.issue).padStart(2, '0')}` : 'Note'}

@@ -1,4 +1,4 @@
-﻿/* ─────────────────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────────────────
    Reliable AI / Abd Bastola — global design system
    Plain CSS. Near-black, soft-white, electric lime. Subtle grid & noise.
    ───────────────────────────────────────────────────────────────────── */
@@ -415,6 +415,74 @@ textarea {
 .project-ext-links a svg {
   flex: 0 0 auto;
   color: var(--accent);
+}
+
+/* ── Scroll reveal (added only when JS + motion allowed) ───────────── */
+.has-reveal [data-reveal] {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.has-reveal [data-reveal].is-visible {
+  opacity: 1;
+  transform: none;
+  transition: opacity 520ms var(--ease) var(--reveal-delay, 0ms),
+    transform 520ms var(--ease) var(--reveal-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .has-reveal [data-reveal] {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Filters (projects gallery) ────────────────────────────────────── */
+.work-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.6rem;
+}
+
+.filter-btn {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  padding: 0.42rem 0.85rem;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.filter-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-line);
+}
+
+.filter-btn.is-active {
+  color: var(--btn-fg);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+}
+
+.filter-count {
+  margin: 0 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+
+@media (max-width: 620px) {
+  .filter-count {
+    margin-left: 0;
+    width: 100%;
+  }
 }
 
 /* ── Noise-free elevated card surface ──────────────────────────────── */

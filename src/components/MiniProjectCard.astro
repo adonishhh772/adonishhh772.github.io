@@ -5,12 +5,27 @@ import Icon from './Icon.astro';
 
 interface Props {
   project: GithubProject;
+  /** Stagger delay for the scroll reveal, in ms. */
+  delay?: number;
 }
 
-const { project } = Astro.props;
+const { project, delay = 0 } = Astro.props;
+
+/** Category slug used by the /work filter buttons. */
+const categorySlug =
+  project.category === 'AI & agents'
+    ? 'ai-agents'
+    : project.category === 'ML & RL research'
+      ? 'ml-research'
+      : 'automation';
 ---
 
-<article class="card card--hover mini-project">
+<article
+  class="card card--hover mini-project"
+  data-cat={categorySlug}
+  data-reveal
+  style={`--reveal-delay: ${delay}ms`}
+>
   <div class="mini-project-top">
     <span class="mini-project-name">
       <Icon name="github" size={14} />
