@@ -1,6 +1,7 @@
 ---
 // Light/dark theme toggle. The theme is applied before paint by an inline
-// script in BaseLayout; this button flips and persists it.
+// script in BaseLayout; this button flips, persists, and notifies the
+// observatory (which recolours the 3D world to match) via a DOM event.
 import Icon from './Icon.astro';
 ---
 
@@ -12,10 +13,10 @@ import Icon from './Icon.astro';
   title="Switch color theme"
 >
   <span class="theme-toggle-icon theme-toggle-icon--dark" aria-hidden="true">
-    <Icon name="moon" size={16} />
+    <Icon name="moon" size={15} />
   </span>
   <span class="theme-toggle-icon theme-toggle-icon--light" aria-hidden="true">
-    <Icon name="sun" size={16} />
+    <Icon name="sun" size={15} />
   </span>
 </button>
 
@@ -32,7 +33,8 @@ import Icon from './Icon.astro';
     justify-content: center;
     position: absolute;
     inset: 0;
-    transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+    transition: opacity var(--dur-2) var(--ease-out),
+      transform var(--dur-2) var(--ease-out);
   }
 
   /* Dark theme (default): show the moon; light theme: show the sun. */
@@ -68,6 +70,10 @@ import Icon from './Icon.astro';
       button.setAttribute(
         'aria-label',
         next === 'light' ? 'Switch to dark theme' : 'Switch to light theme'
+      );
+      /* The observatory listens for this and recolours the world. */
+      document.dispatchEvent(
+        new CustomEvent('themechange', { detail: { theme: next } })
       );
     });
   })();

@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import Icon from '../../components/Icon.astro';
+import ProjectDiagram from '../../components/observatory/ProjectDiagram.astro';
 import { rootUrl } from '../../site.config';
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 
@@ -17,8 +18,17 @@ interface Props {
 }
 
 const { project } = Astro.props;
-const { Content } = await render(project);
+const { Content, headings } = await render(project);
 const { data } = project;
+
+/** Section navigation from the case study's own h2 headings. */
+const sections = headings.filter((heading) => heading.depth === 2);
+
+const diagramCaptions: Record<string, string> = {
+  kai: 'Multi-agent RAG: route, retrieve, synthesise, verify — with guardrails and an approval gate.',
+  'education-platform': 'Document structure → schema-validated extraction → knowledge graph → cited answers.',
+  hyperran: 'Demand forecast feeding a policy constrained by a non-negotiable QoS floor.',
+};
 
 const title = `${data.title} — case study`;
 ---
@@ -70,8 +80,37 @@ const title = `${data.title} — case study`;
     </header>
 
     <div class="wrap article-body-wrap">
-      <div class="prose">
-        <Content />
+      <div class="case-layout">
+        {
+          sections.length > 2 ? (
+            <nav class="case-contents" aria-label="Sections of this case study">
+              <span class="contents-label mono">On this page</span>
+              <ol>
+                {sections.map((section, index) => (
+                  <li>
+                    <a href={`#${section.slug}`} data-case-link={section.slug}>
+                      <span class="mono num">{String(index + 1).padStart(2, '0')}</span>
+                      {section.text}
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          ) : (
+            <div />
+          )
+        }
+
+        <div>
+          <ProjectDiagram
+            projectId={project.id}
+            caption={diagramCaptions[project.id] ?? data.tag}
+          />
+
+          <div class="prose">
+            <Content />
+          </div>
+        </div>
       </div>
 
       <footer class="case-footer">
@@ -89,109 +128,102 @@ const title = `${data.title} — case study`;
 </BaseLayout>
 
 <style>
-  .article-kicker {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.6rem;
-    margin: 0 0 1.4rem;
-    font-family: var(--font-mono);
-    font-size: 0.74rem;
-    letter-spacing: 0.1em;
+  .project-figure {
+    margin: 0 0 2rem;
+    max-width: 38rem;
+  }
+
+  .contents-label {
+    font-size: 0.64rem;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--faint);
   }
 
-  .article-kicker a.back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    color: var(--muted);
-    transition: color var(--dur) var(--ease);
-  }
-
-  .article-kicker a.back-link:hover {
-    color: var(--accent);
-  }
-
-  .article-kicker a.back-link svg {
-    transform: rotate(180deg);
-  }
-
-  .article-title {
-    max-width: 26ch;
-  }
-
-  .article-lead {
-    max-width: 64ch;
-    color: var(--muted);
-    font-size: 1.08rem;
-    line-height: 1.75;
-    margin: 0 0 1.6rem;
-  }
-
-  .case-links-block {
-    margin-top: 1.6rem;
-    display: grid;
-    gap: 0.6rem;
-    justify-items: start;
-  }
-
-  .case-links-label {
-    color: var(--accent);
-  }
-
-  .case-links {
+  .case-contents ol {
     list-style: none;
-    margin: 0;
+    margin: 0.9rem 0 0;
     padding: 0;
+    display: grid;
+    gap: 0.15rem;
+    counter-reset: none;
+  }
+
+  .case-contents a {
     display: flex;
-    flex-wrap: wrap;
+    align-items: baseline;
     gap: 0.55rem;
+    min-height: 36px;
+    padding: 0.35rem 0.6rem;
+    border-left: 2px solid transparent;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    color: var(--muted);
+    font-size: 0.86rem;
+    line-height: 1.4;
+    transition: color var(--dur-2) var(--ease-out),
+      border-color var(--dur-2) var(--ease-out),
+      background-color var(--dur-2) var(--ease-out);
   }
 
-  .case-links a {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    font-family: var(--font-mono);
-    font-size: 0.78rem;
-    letter-spacing: 0.01em;
-    color: var(--text);
-    border: 1px solid var(--hairline-strong);
-    border-radius: 10px;
-    padding: 0.55rem 0.95rem;
-    background: var(--chip-bg);
-    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
-      background-color var(--dur) var(--ease), transform var(--dur) var(--ease);
-  }
-
-  .case-links a:hover {
-    color: var(--accent);
-    border-color: var(--accent-line);
-    background: var(--accent-soft);
-    transform: translateY(-1px);
-  }
-
-  .case-links a svg {
-    color: var(--accent);
-  }
-
-  .case-footer {
-    margin-top: 3rem;
-    padding-top: 1.6rem;
-    border-top: 1px solid var(--hairline);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.8rem 1.5rem;
-  }
-
-  .case-footer p {
-    margin: 0;
+  .case-contents a .num {
+    font-size: 0.62rem;
     color: var(--faint);
-    font-size: 0.82rem;
-    max-width: 46ch;
+  }
+
+  .case-contents a:hover {
+    color: var(--text);
+    background: var(--hover-bg);
+  }
+
+  .case-contents a.is-active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  @media (max-width: 999px) {
+    .case-contents {
+      position: static;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius);
+      background: var(--surface-1);
+      padding: 0.9rem 1rem 1rem;
+      margin-bottom: 1.6rem;
+    }
+
+    .case-contents ol {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+    }
   }
 </style>
+
+<script is:inline>
+  /* Highlight the section currently being read. */
+  (function () {
+    var links = document.querySelectorAll('[data-case-link]');
+    if (!links.length || !('IntersectionObserver' in window)) return;
+
+    var map = {};
+    links.forEach(function (link) {
+      map[link.getAttribute('data-case-link')] = link;
+    });
+
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          links.forEach(function (link) {
+            link.classList.remove('is-active');
+          });
+          var active = map[entry.target.id];
+          if (active) active.classList.add('is-active');
+        });
+      },
+      { rootMargin: '-20% 0px -70% 0px', threshold: 0 }
+    );
+
+    document.querySelectorAll('.prose h2[id]').forEach(function (heading) {
+      observer.observe(heading);
+    });
+  })();
+</script>

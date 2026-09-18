@@ -1,0 +1,213 @@
+---
+/**
+ * The observatory poster.
+ *
+ * Inline SVG, so it paints with the document and costs no extra request:
+ * this is the LCP-friendly first impression, and the honest fallback when
+ * WebGL is unavailable. It uses the same `--world-*` tokens as the 3D
+ * scene, so switching theme recolours both together.
+ */
+import { hero } from '../../site.config';
+---
+
+<svg
+  viewBox="0 0 800 680"
+  preserveAspectRatio="xMidYMid slice"
+  role="img"
+  aria-label={hero.stage.posterAlt}
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <linearGradient id="obs-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--world-sky-top)" />
+      <stop offset="52%" stop-color="var(--world-sky-horizon)" />
+      <stop offset="72%" stop-color="var(--world-fog)" />
+      <stop offset="100%" stop-color="var(--world-fog)" />
+    </linearGradient>
+    <radialGradient id="obs-glow" cx="0.72" cy="0.24" r="0.42">
+      <stop offset="0%" stop-color="var(--world-key)" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="var(--world-key)" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="obs-mist" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="var(--world-mist)" stop-opacity="0.55" />
+      <stop offset="100%" stop-color="var(--world-mist)" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="obs-rock" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--world-stone)" />
+      <stop offset="38%" stop-color="var(--world-stone-deep)" />
+      <stop offset="100%" stop-color="var(--world-fog)" />
+    </linearGradient>
+    <linearGradient id="obs-plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--world-stone)" />
+      <stop offset="100%" stop-color="var(--world-stone-deep)" />
+    </linearGradient>
+  </defs>
+
+  <!-- Sky -->
+  <rect width="800" height="680" fill="url(#obs-sky)" />
+  <rect width="800" height="680" fill="url(#obs-glow)" />
+
+  <!-- Distant hills -->
+  <g opacity="0.5" fill="var(--world-mist)">
+    <path d="M0 452 L86 404 L152 438 L238 386 L318 432 L404 396 L486 440 L574 398 L660 436 L742 402 L800 430 L800 520 L0 520 Z" />
+  </g>
+  <g opacity="0.32" fill="var(--world-fog)">
+    <ellipse cx="180" cy="520" rx="300" ry="46" />
+    <ellipse cx="640" cy="546" rx="280" ry="40" />
+  </g>
+
+  <!-- Mist under the island -->
+  <ellipse cx="400" cy="566" rx="330" ry="86" fill="url(#obs-mist)" />
+  <ellipse cx="400" cy="614" rx="250" ry="62" fill="url(#obs-mist)" />
+
+  <!-- Floating island -->
+  <g>
+    <path
+      d="M118 372 L152 356 L214 348 L292 344 L400 342 L508 344 L586 348 L648 356 L682 372
+         L672 396 L640 424 L596 462 L540 502 L472 540 L400 566 L332 540 L262 502 L206 462
+         L162 424 L128 396 Z"
+      fill="url(#obs-rock)"
+    />
+    <ellipse cx="400" cy="356" rx="284" ry="26" fill="url(#obs-plate)" />
+    <!-- Strata -->
+    <g stroke="var(--world-fog)" stroke-opacity="0.35" stroke-width="2" fill="none">
+      <path d="M150 404 Q400 442 650 404" />
+      <path d="M186 450 Q400 488 614 450" />
+      <path d="M242 498 Q400 530 558 498" />
+    </g>
+  </g>
+
+  <!-- Walkway ring -->
+  <path
+    d="M152 378 Q400 320 648 378 Q706 400 668 442 Q400 486 132 442 Q94 400 152 378"
+    fill="none"
+    stroke="var(--world-stone-deep)"
+    stroke-width="13"
+    stroke-linejoin="round"
+    opacity="0.9"
+  />
+  <path
+    d="M152 378 Q400 320 648 378 Q706 400 668 442 Q400 486 132 442 Q94 400 152 378"
+    fill="none"
+    stroke="var(--world-signal)"
+    stroke-width="2.5"
+    stroke-dasharray="2 26"
+    stroke-linecap="round"
+    opacity="0.85"
+  />
+
+  <!-- Signal tower (right) -->
+  <g>
+    <ellipse cx="648" cy="404" rx="52" ry="18" fill="var(--world-stone)" />
+    <path d="M622 400 L640 262 M674 400 L656 262 M648 400 L648 250" stroke="var(--world-metal)" stroke-width="6" stroke-linecap="round" />
+    <g stroke="var(--world-metal)" stroke-width="3" opacity="0.9">
+      <path d="M624 364 L672 364 M627 328 L669 328 M631 296 L665 296" />
+      <path d="M624 364 L669 328 M627 328 L665 296" />
+    </g>
+    <circle cx="648" cy="248" r="12" fill="var(--world-signal)" />
+    <circle cx="648" cy="248" r="24" fill="var(--world-signal)" opacity="0.22" />
+    <path d="M648 248 L596 214" stroke="var(--world-signal)" stroke-width="3" stroke-linecap="round" opacity="0.5" />
+  </g>
+
+  <!-- Work pavilion (left) -->
+  <g>
+    <ellipse cx="238" cy="416" rx="86" ry="30" fill="var(--world-stone)" />
+    <path d="M162 404 Q238 356 314 404" fill="none" stroke="var(--world-stone)" stroke-width="12" stroke-linecap="round" />
+    <path d="M164 404 L164 424 M312 404 L312 424" stroke="var(--world-metal)" stroke-width="5" />
+    <g fill="var(--world-metal)">
+      <rect x="196" y="398" width="30" height="22" rx="4" />
+      <rect x="238" y="394" width="30" height="26" rx="4" />
+      <rect x="280" y="398" width="30" height="22" rx="4" />
+    </g>
+    <g fill="var(--world-signal)">
+      <circle cx="211" cy="404" r="5" />
+      <circle cx="253" cy="401" r="6" />
+    </g>
+    <circle cx="295" cy="404" r="5" fill="var(--world-practical)" />
+  </g>
+
+  <!-- Contact beacon (front right) -->
+  <g>
+    <ellipse cx="556" cy="462" rx="56" ry="19" fill="var(--world-stone)" />
+    <ellipse cx="556" cy="462" rx="44" ry="14" fill="none" stroke="var(--world-practical)" stroke-width="3" opacity="0.7" />
+    <path d="M556 462 L556 396" stroke="var(--world-stone)" stroke-width="9" stroke-linecap="round" />
+    <path d="M528 452 Q556 400 584 452" fill="none" stroke="var(--world-stone)" stroke-width="7" stroke-linecap="round" />
+    <path d="M498 452 L498 466 M614 452 L614 466" stroke="var(--world-stone)" stroke-width="6" />
+    <circle cx="556" cy="386" r="13" fill="var(--world-practical)" />
+    <circle cx="556" cy="386" r="26" fill="var(--world-practical)" opacity="0.2" />
+  </g>
+
+  <!-- Knowledge garden (back right) -->
+  <g>
+    <ellipse cx="520" cy="366" rx="66" ry="22" fill="var(--world-stone)" />
+    <g stroke="var(--world-signal)" stroke-width="1.6" opacity="0.75" fill="none">
+      <path d="M492 356 L516 342 L544 352 L556 336" />
+      <path d="M516 342 L536 326 L556 336" />
+      <path d="M492 356 L504 334 L536 326" />
+      <path d="M504 334 L516 342" />
+    </g>
+    <g fill="var(--world-signal)">
+      <circle cx="492" cy="356" r="4" />
+      <circle cx="516" cy="342" r="4" />
+      <circle cx="544" cy="352" r="3" />
+      <circle cx="556" cy="336" r="4.5" />
+      <circle cx="536" cy="326" r="3.5" />
+      <circle cx="504" cy="334" r="3" />
+    </g>
+  </g>
+
+  <!-- Studio (back left) -->
+  <g>
+    <ellipse cx="286" cy="362" rx="56" ry="19" fill="var(--world-stone)" />
+    <path d="M250 356 L250 330 L322 330 L322 356 Z" fill="var(--world-stone)" />
+    <path d="M242 330 L286 312 L330 330 Z" fill="var(--world-metal)" />
+    <rect x="298" y="336" width="18" height="14" rx="2" fill="var(--world-practical)" />
+    <rect x="258" y="338" width="12" height="18" rx="2" fill="var(--world-metal)" />
+  </g>
+
+  <!-- Central observatory -->
+  <g>
+    <ellipse cx="400" cy="374" rx="122" ry="42" fill="var(--world-stone)" />
+    <ellipse cx="400" cy="368" rx="96" ry="32" fill="var(--world-stone-deep)" opacity="0.55" />
+    <rect x="336" y="300" width="128" height="58" rx="8" fill="var(--world-stone)" />
+    <g stroke="var(--world-stone-deep)" stroke-width="6" opacity="0.9">
+      <path d="M352 300 L352 356 M400 300 L400 356 M448 300 L448 356" />
+    </g>
+    <ellipse cx="400" cy="300" rx="74" ry="24" fill="var(--world-stone)" />
+    <path d="M326 300 A74 74 0 0 1 474 300 Z" fill="var(--world-stone)" />
+    <g fill="none" stroke="var(--world-metal)" stroke-width="2.5" opacity="0.85">
+      <path d="M326 300 A74 74 0 0 1 400 226" />
+      <path d="M474 300 A74 74 0 0 0 400 226" />
+      <path d="M342 288 A74 74 0 0 1 458 288" />
+    </g>
+    <rect x="392" y="230" width="18" height="70" rx="4" fill="var(--world-metal)" opacity="0.85" />
+
+    <!-- Orbital mechanism -->
+    <g fill="none" stroke-linecap="round">
+      <ellipse cx="400" cy="206" rx="76" ry="22" stroke="var(--world-signal)" stroke-width="2.5" opacity="0.75" />
+      <ellipse cx="400" cy="206" rx="52" ry="52" stroke="var(--world-metal)" stroke-width="2" opacity="0.7" />
+      <ellipse cx="400" cy="206" rx="26" ry="60" stroke="var(--world-signal)" stroke-width="2" opacity="0.6" />
+    </g>
+    <circle cx="400" cy="206" r="9" fill="var(--world-signal)" />
+    <circle cx="476" cy="206" r="4.5" fill="var(--world-practical)" />
+    <circle cx="348" cy="166" r="4" fill="var(--world-signal)" />
+
+    <!-- Lanterns -->
+    <g fill="var(--world-practical)" opacity="0.85">
+      <circle cx="300" cy="344" r="4" />
+      <circle cx="500" cy="344" r="4" />
+      <circle cx="400" cy="398" r="4" />
+    </g>
+  </g>
+
+  <!-- Guide drone -->
+  <g>
+    <path d="M132 258 L120 246 M172 258 L184 246" stroke="var(--world-metal)" stroke-width="4" stroke-linecap="round" />
+    <ellipse cx="152" cy="262" rx="30" ry="11" fill="var(--world-stone)" />
+    <ellipse cx="152" cy="256" rx="22" ry="9" fill="var(--world-metal)" />
+    <circle cx="152" cy="262" r="5" fill="var(--world-signal)" />
+  </g>
+
+  <!-- Foreground mist -->
+  <ellipse cx="220" cy="600" rx="260" ry="70" fill="url(#obs-mist)" />
+</svg>

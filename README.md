@@ -1,47 +1,153 @@
 # adonishhh772.github.io
 
-Personal portfolio and writing hub for **Abd Bastola** — AI Engineer building
-reliable enterprise AI systems in London. Publisher of the **Reliable AI**
-newsletter.
+Personal portfolio and writing hub for **Abd Bastola** — Lead AI Engineer
+building reliable enterprise AI systems in London. Publisher of the **Reliable
+AI** newsletter.
 
 Live at **https://adonishhh772.github.io/**
 
-Built with [Astro](https://astro.build) (static site generation), plain CSS,
-and zero backend. Deploys to GitHub Pages from GitHub Actions.
+Built with [Astro](https://astro.build) (static generation), plain CSS and
+[three.js](https://threejs.org). No backend, no framework runtime, no paid
+asset services. Deploys to GitHub Pages from GitHub Actions.
 
 ## What's on the site
 
-| Route                  | Purpose                                                     |
-| ---------------------- | ----------------------------------------------------------- |
-| `/`                    | Home — hero, newsletter sign-up, selected work, latest writing |
-| `/work`                | Selected work index                                         |
-| `/work/[slug]`         | Individual anonymised case studies (`kai`, `aruva`, `hyperran`) |
-| `/writing`             | Reliable AI newsletter landing page + article archive       |
-| `/writing/[slug]`      | Individual newsletter articles                              |
-| `/about`               | Professional biography                                      |
-| `/cv`                  | Web CV                                                      |
-| `/rss.xml`             | RSS feed for the newsletter                                 |
-| `/404`                 | Custom 404 page                                             |
+| Route           | Purpose                                                            |
+| --------------- | ------------------------------------------------------------------ |
+| `/`             | Home — the AI Observatory, by-the-numbers, work, writing, contact   |
+| `/work`         | Selected work index with diagrams and filters                       |
+| `/work/[slug]`  | Case studies (`kai`, `education-platform`, `hyperran`) with contents |
+| `/writing`      | Reliable AI newsletter landing page, featured issue and archive     |
+| `/writing/[slug]` | Individual articles, with a contents rail on long pieces          |
+| `/about`        | Professional biography, portrait, focus areas                       |
+| `/cv`           | Web CV with sticky contents, print/PDF output                       |
+| `/contact`      | Email, LinkedIn, contact form and optional booking                  |
+| `/rss.xml`      | RSS feed for the newsletter                                         |
+| `/robots.txt`   | Crawler policy with a deployment-aware sitemap URL                   |
+| `/404`          | Custom 404 page                                                     |
 
-## Project structure
+## The AI Observatory
+
+The home page hero is a miniature, art-directed world: a floating island with a
+central observatory (a ribbed dome over a colonnade, carrying a slowly turning
+orbital mechanism), a work pavilion with three exhibit vitrines, a knowledge-graph
+garden, a signal tower, a personal studio and a contact beacon — joined by lit
+walkways, patrolled by a small guide drone, and hiding three light markers that
+switch the observatory's lanterns on.
+
+Everything is generated procedurally at runtime. There are no external models or
+textures to download.
+
+### Behaviour
+
+- **Default browsing** is ordinary page scrolling. The world has ambient motion;
+  scrolling never moves the camera.
+- **Explore the world** (or selecting any station) enters a bounded exploration
+  mode: labelled stations travel the camera to a composed viewpoint (700–1100 ms,
+  interruptible), with **Reset view** and **Exit exploration** always available.
+  Desktop may drag to orbit within tight limits; touch devices never orbit and
+  page scrolling is never captured.
+- **Hotspots** are real DOM buttons projected from the world each frame, with
+  occlusion culling, overlap culling and a per-viewport label budget. Occluded
+  labels leave the tab order; the station menu still reaches every destination.
+- **Preview panels** are dialogs with focus management, Escape to close and focus
+  restoration. On phones they become a bottom sheet with internal scrolling.
+- **Simple view** keeps every content destination reachable with no WebGL,
+  no JavaScript and no canvas.
+- **Reduced motion** removes camera travel and all ambient animation.
+
+### Source layout
 
 ```
-.
-├── .github/workflows/deploy.yml   # GitHub Pages deployment
-├── astro.config.mjs               # Astro config (site URL, sitemap)
-├── public/                        # favicon, robots.txt
-└── src/
-    ├── site.config.ts             # ★ single config file for copy + links
-    ├── content.config.ts          # content collection schemas
-    ├── content/
-    │   ├── writing/               # ★ newsletter articles (Markdown)
-    │   └── projects/              # ★ case studies (Markdown)
-    ├── components/                # nav, footer, cards, sign-up, coffee card
-    ├── layouts/                   # BaseLayout
-    ├── lib/                       # date/reading-time helpers
-    ├── pages/                     # routes (home, work, writing, about, cv, 404, rss)
-    └── styles/global.css          # design tokens + all site CSS
+src/lib/observatory/
+├── theme.ts        palette bridge — reads the --world-* tokens from CSS
+├── quality.ts      tiers, device detection, frame-time monitor
+├── materials.ts    one material library, recoloured in place
+├── parts.ts        procedural geometry (island, dome, lattice, graph, drone)
+├── lighting.ts     sky dome, key/fill/practical lights, PMREM environment
+├── world.ts        the world: stations, pathways, drone, discoveries, animation
+├── camera.ts       shot-to-shot travel, bounded orbit
+└── controller.ts   scene lifecycle, loop, quality, theme, interaction, hotspot
+                    projection, panels, teardown
+
+src/components/observatory/
+├── Observatory.astro     hero stage markup + the deferred bootstrap
+├── StationPoster.astro   inline-SVG poster (first paint and WebGL fallback)
+├── ProjectDiagram.astro  one architecture sketch per case study
+└── (icons live in src/components/Icon.astro)
 ```
+
+Only `index.astro` imports `Observatory.astro`, so three.js is never fetched or
+executed on interior pages.
+
+### Quality management
+
+| Tier     | DPR cap | Shadows       | Vegetation | Mist | Signals | Detail |
+| -------- | ------- | ------------- | ---------- | ---- | ------- | ------ |
+| Full     | 2.0     | 2048 PCF      | 3 rings    | 5    | 5       | yes    |
+| Balanced | 1.75    | 1024 PCF      | 2 rings    | 3    | 3       | yes    |
+| Lite     | 1.25    | off           | 1 ring     | 2    | 2       | no     |
+
+The initial tier is chosen conservatively from `deviceMemory`,
+`hardwareConcurrency`, pointer type, DPR, connection type and reduced-motion
+preference. A rolling 90-frame median then downgrades on sustained slowness and
+may upgrade once if the device comfortably holds 60 fps. The choice is stored in
+`localStorage` (`observatory:quality`); the visible **Quality** control switches
+between Auto, Full, Balanced and Lite.
+
+Rendering pauses when the tab is hidden or the stage scrolls out of view.
+
+## Design system
+
+Palette (defined once in `:root` of `src/styles/global.css`):
+
+| Token            | Night     | Day       | Notes                                 |
+| ---------------- | --------- | --------- | ------------------------------------- |
+| `--bg`           | `#0B1020` | `#F3F0E8` | Midnight ink / warm ivory             |
+| `--accent`       | `#6EE7D8` | `#0B6D66` | Teal; darkened in day for text use    |
+| `--signal`       | `#F4B860` | `#8A4F0D` | Warm amber for lamps and highlights   |
+| `--text`         | `#F3F0E8` | `#0F1421` | 16.6:1 / 16.1:1 on the background     |
+| `--muted`        | `#A7AEBE` | `#4C5566` | 8.5:1 / 6.6:1 on the background       |
+| `--faint`        | `#7E8798` | `#61697B` | 5.2:1 / 4.8:1 on the background       |
+
+All foreground/background pairs above meet WCAG AA; measured ratios are in the
+commit notes. The 3D world reads the same tokens through `--world-*`, so the
+canvas and the page can never drift apart — switching theme recolours both.
+
+Type: **Fraunces Variable** for display (one variable file), **Inter Variable**
+for body, **JetBrains Mono Variable** for labels and technical metadata. All
+served locally via Fontsource; the two faces used above the fold are preloaded,
+which removed the font-swap layout shift entirely.
+
+## Performance
+
+Measured on the production build (`npm run build`), Chrome 153, headless,
+1440×1000, served locally (`npm run preview`):
+
+| Metric                                          | Measured                        |
+| ----------------------------------------------- | ------------------------------- |
+| Initial non-3D JavaScript                        | **1.2 KB gzip** (one chunk)     |
+| 3D payload (three.js + world + controller)       | **159.9 KB gzip** / 612.2 KB raw |
+| CSS                                              | 15.4 KB gzip (13.3 KB brotli)   |
+| Fonts actually fetched (Latin subsets)           | 122.3 KB woff2                  |
+| Scene complexity                                 | 40,628 triangles, 135 draw calls |
+| Poster / first paint                             | inline SVG, no extra request    |
+
+Field-style measurements taken with `PerformanceObserver` in the same harness:
+
+| Page                        | LCP     | CLS    |
+| --------------------------- | ------- | ------ |
+| `/` 1920×1200               | 848 ms  | 0.0000 |
+| `/writing` 1920×1200        | 580 ms  | 0.0000 |
+| `/work/kai` 1920×1200       | 204 ms  | 0.0000 |
+| `/work/kai` 390×844         | 84 ms   | 0.0000 |
+| `/cv` 390×844               | 96 ms   | 0.0000 |
+| `/contact` 768×1024         | 84 ms   | 0.0000 |
+
+Because the JavaScript is a `requestIdleCallback` dynamic import fired after
+`load`, the numbers above describe a single-run local harness rather than a
+throttled Lighthouse profile: they are honest but optimistic on network. The
+architectural claim they support is directional, not a field measurement.
 
 ## Local development
 
@@ -52,147 +158,113 @@ npm install
 npm run dev        # http://localhost:4321
 npm run build      # production build → dist/
 npm run preview    # preview the production build locally
+npm run check      # Astro + TypeScript diagnostics
 ```
 
-`npm run check` runs the Astro/TypeScript language check.
+> If the default npm cache is not writable, pass a local one:
+> `npm ci --cache .npm-cache`.
 
 ## Editing content
 
-### Social links, coffee link, navigation (one file)
+### Copy, links and the world's stations — one file
 
-Everything user-facing that you will want to change lives in
-**`src/site.config.ts`**:
+`src/site.config.ts` holds the site name, role, meta description, hero copy,
+navigation, social links, contact details, booking and newsletter
+configuration, **and** the observatory's station map (`stations`). Each station
+declares a plain `label` ("Work", "Writing"), an in-world `alias`, a `blurb`, a
+`body`, key facts and real `links` — so the world can never point at a route
+that does not exist. `exhibits` on the `work` station is resolved against the
+projects collection at build time.
 
-- **GitHub / LinkedIn URLs** — `nav.external`, plus `social.github` /
-  `social.linkedin`.
-- **Buy Me a Coffee URL** — `coffee.url`
-  (currently `https://buymeacoffee.com/abdabastola`).
-- **Contact email** — `contact.email`.
-- Newsletter copy, hero copy, location, meta description — same file.
-
-### Newsletter form URL (environment variable)
-
-The sign-up form posts to a single environment/config value:
+### Newsletter form (environment variable)
 
 ```
 NEWSLETTER_FORM_URL=https://your-provider-form-endpoint
 ```
 
-Copy `.env.example` to `.env` and fill it in for local builds. In CI, set a
-repository **Actions variable** named `NEWSLETTER_FORM_URL` (Settings →
-Secrets and variables → Actions → Variables) — the workflow already reads it.
+Copy `.env.example` to `.env` locally; in CI set a repository **Actions
+variable** with the same name (Settings → Secrets and variables → Actions →
+Variables). While the variable is empty the site renders a graceful
+"launching soon" note instead of a broken form.
 
-While the variable is empty the site renders a graceful placeholder
-(“Daily issues are launching soon…”) instead of a broken form, so you can
-ship before connecting an email provider.
+**Auto-sending new posts:** `.github/workflows/newsletter-send.yml` emails each
+newly added article to the Buttondown list using the `BUTTONDOWN_API_KEY`
+secret.
 
-**Auto-sending new posts:** the `Newsletter — send new posts to subscribers`
-workflow (`.github/workflows/newsletter-send.yml`) emails each newly added
-article to your Buttondown list automatically, using the
-`BUTTONDOWN_API_KEY` secret.
+### Contact form and scheduling
 
-### Contact form + meeting scheduling (two more values)
-
-- **`CONTACT_ACCESS_KEY`** — free [Web3Forms](https://web3forms.com) key that
-  powers the `/contact` form; submissions are emailed to the address you sign
-  up with (no backend). When unset, `/contact` shows a mailto button instead.
-- **`BOOKING_URL`** — your scheduling link (e.g. a free
-  [Cal.com](https://cal.com) page or Calendly). “Schedule a meeting” buttons
-  appear on the homepage and `/contact`; when unset the site offers to
-  arrange a call by email.
-
-Set both locally in `.env` and in CI under **Settings → Secrets and variables
-→ Actions → Variables**.
-
-### Light / dark theme
-
-Both themes ship by default. The choice is stored in `localStorage`, defaults
-to the visitor’s system preference, and is applied before first paint (no
-flash). All colours are tokens at the top of `src/styles/global.css`.
-
-### Public GitHub projects
-
-`src/data/github-projects.ts` holds the curated repositories shown on the home
-page and in the “Open source & builds” section of `/work`. Add an entry to
-list another repo.
-
-### Portrait photo
-
-The photo lives at `public/images/abd-bastola.jpg` and is used in the homepage
-hero and on the About page.
+- **`CONTACT_ACCESS_KEY`** — free [Web3Forms](https://web3forms.com) key for the
+  `/contact` form. When unset, `/contact` offers a mailto button instead.
+- **`BOOKING_URL`** — a scheduling link (Cal.com, Calendly). When unset, the
+  site offers to arrange a call by email.
 
 ### Adding a newsletter article
 
-1. Create a new file in `src/content/writing/`, e.g.
-   `src/content/writing/my-new-article.md`. The file name becomes the URL
-   slug (`/writing/my-new-article`).
-2. Copy the frontmatter shape from an existing article:
-
-   ```md
-   ---
-   title: 'Your title'
-   description: 'One or two sentences used on cards, meta and RSS.'
-   pubDate: 2026-09-15
-   issue: 4
-   tags: [agents, evaluation]
-   draft: false
-   ---
-   ```
-
-3. Write the body in Markdown. End with a short `## The takeaway` list if
-   you want the closing block to match the other issues.
-4. The article automatically appears on `/writing`, the home page “Latest
-   writing” (if within the newest three), the RSS feed and its own route.
-
-To draft without publishing, set `draft: true` — the article is then hidden
-from all indexes, the RSS feed and its page.
+1. Create `src/content/writing/my-new-article.md`; the file name becomes the
+   slug.
+2. Frontmatter: `title`, `description`, `pubDate`, optional `updatedDate`,
+   `issue`, `tags`, `draft`.
+3. Write Markdown. Articles with four or more `##` sections automatically get a
+   contents rail and scroll-spy.
+4. Set `draft: true` to hide an article from every index, the RSS feed and its
+   own route.
 
 ### Adding or editing case studies
 
-Same pattern in `src/content/projects/`. Each study should cover the
-problem, your role, the approach, architecture/themes, outcomes (kept
-qualitative and clearly separated from implementation detail) and what you
-learned. Cards on `/` and `/work` are generated from the frontmatter.
+Same pattern in `src/content/projects/`. Each study should cover the problem,
+your role, the approach, architecture/themes, outcomes (qualitative and clearly
+separated from implementation detail) and what was learned. `##` headings become
+the on-page contents. The home-page order is the `projectOrder` array in
+`src/pages/index.astro` and `src/pages/work.astro`.
 
-To change the order of the three home-page cards, edit the `projectOrder`
-array at the top of `src/pages/index.astro` (and `src/pages/work.astro`).
+Each case study also renders a `ProjectDiagram` — a hand-drawn inline SVG
+architecture sketch. Add an entry to `diagramCaptions` when you add a project.
 
-### CV placeholders
+### Portrait photo
 
-`src/pages/cv.astro` contains clearly marked `[placeholder]` fields for
-earlier experience and education — replace them with your real detail and
-delete the surrounding `TODO` comments.
+`public/images/abd-bastola.jpg` (About, CV) and
+`public/images/abd-bastola-avatar.jpg` (header).
+
+## Accessibility
+
+- Semantic landmarks, one `h1` per page, skip link, visible focus rings.
+- Every destination is reachable without the 3D scene: the station menu is a
+  native `<details>`, the simple view lists all six stations, and every preview
+  panel carries real links.
+- Occluded hotspot labels are removed from the tab order rather than left
+  focusable but invisible.
+- Panels are dialogs with Escape-to-close and focus restoration to a visible
+  control.
+- `prefers-reduced-motion` removes camera travel and ambient animation; a
+  visible **Pause motion** control does the same on demand.
+- Text contrast meets WCAG AA in both themes (ratios in the table above).
 
 ## Deployment (GitHub Pages)
 
-This repository — `adonishhh772/adonishhh772.github.io` — is a GitHub Pages
-**user site**, so the built site is served at the domain root:
-**https://adonishhh772.github.io/**.
+This repository (`adonishhh772/adonishhh772.github.io`) is a user site, so the
+build is served from the domain root: **https://adonishhh772.github.io/**.
 
 `astro.config.mjs` resolves `site`/`base` from the `GITHUB_REPOSITORY`
-environment variable that GitHub Actions injects, so builds are correct for
-user-site (root) or project-site (`/<repo>/`) hosting. Local development
-(no `GITHUB_REPOSITORY`) defaults to `https://adonishhh772.github.io`.
+environment variable that Actions injects, so builds are correct for user-site
+(root) or project-site (`/<repo>/`) hosting. Local development defaults to the
+user-site identity.
 
-To deploy:
+1. Push to GitHub.
+2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+3. `.github/workflows/deploy.yml` runs on every push to `main` and on manual
+   dispatch.
 
-1. Push the repository to GitHub.
-2. In **Settings → Pages**, set “Build and deployment” → **Source** to
-   **GitHub Actions** (not “Deploy from a branch” — branch deployment runs
-   Jekyll over the Astro sources and fails).
-3. The `Deploy to GitHub Pages` workflow (`.github/workflows/deploy.yml`)
-   runs on every push to `main` and on manual dispatch.
+## Third-party assets
 
-## Design notes
+| Asset                              | Licence            | How it is used                    |
+| ---------------------------------- | ------------------ | --------------------------------- |
+| three.js                           | MIT                | the observatory renderer          |
+| Fontsource: Fraunces, Inter, JetBrains Mono | SIL OFL 1.1 | self-hosted webfonts              |
 
-- Palette: near-black `#0B0D10`, soft-white `#F4F4F0`, muted `#A4ABB5`,
-  electric-lime accent `#C8FF00`.
-- Fonts: Inter (variable) for text, JetBrains Mono (variable) for labels,
-  bundled locally via Fontsource — no runtime font CDN.
-- Subtle grid + noise texture, restrained hover states, semantic HTML,
-  skip-to-content link, per-page meta/OG tags, RSS, sitemap, custom 404,
-  mobile-first responsive layout, `prefers-reduced-motion` support.
+No textures, models, audio or paid assets are downloaded at runtime. All
+geometry, the sky gradient, the mist falloff, the environment probe and the
+poster illustration are generated locally (canvas or inline SVG).
 
-## License
+## Licence
 
 MIT — see [LICENSE](LICENSE).

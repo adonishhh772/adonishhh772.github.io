@@ -26,8 +26,12 @@ interface Props {
 
 const { post } = Astro.props;
 const { data } = post;
-const { Content } = await render(post);
+const { Content, headings } = await render(post);
 const readMins = readTimeInMinutes(post.body ?? '');
+
+/** Contents rail for genuinely long pieces — not for short notes. */
+const sections = headings.filter((heading) => heading.depth === 2);
+const showContents = sections.length >= 4;
 
 // Related reading: the two most recent articles other than this one.
 const others = (await getCollection('writing'))
@@ -54,6 +58,8 @@ const title = data.title;
               Issue {String(data.issue).padStart(2, '0')}
             </>
           )}
+          <span aria-hidden="true">·</span>
+          {readMins} min read
         </p>
 
         <h1 class="article-title">{data.title}</h1>
@@ -62,8 +68,12 @@ const title = data.title;
           <time datetime={data.pubDate.toISOString()}>
             {formatDate(data.pubDate)}
           </time>
-          <span class="sep" aria-hidden="true">/</span>
-          <span>{readMins} min read</span>
+          {data.updatedDate && (
+            <>
+              <span class="sep" aria-hidden="true">/</span>
+              <span>Updated {formatDate(data.updatedDate)}</span>
+            </>
+          )}
           {data.tags.length > 0 && (
             <>
               <span class="sep" aria-hidden="true">/</span>
@@ -76,8 +86,30 @@ const title = data.title;
 
     <!-- Article body -->
     <div class="wrap article-body-wrap">
-      <div class="prose">
-        <Content />
+      <div class:list={['article-layout', { 'article-layout--railed': showContents }]}>
+        {
+          showContents ? (
+            <nav class="case-contents" aria-label="Sections of this article">
+              <span class="contents-label mono">On this page</span>
+              <ol>
+                {sections.map((section, index) => (
+                  <li>
+                    <a href={`#${section.slug}`} data-case-link={section.slug}>
+                      <span class="mono num">{String(index + 1).padStart(2, '0')}</span>
+                      {section.text}
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          ) : (
+            <div />
+          )
+        }
+
+        <div class="prose">
+          <Content />
+        </div>
       </div>
 
       <!-- Bottom of every article: sign-up + support -->
@@ -97,7 +129,9 @@ const title = data.title;
             <div class="related">
               <p class="related-label micro">Keep reading</p>
               <div class="related-grid">
-                {others.map((other) => <ArticleCard article={other} showDescription={false} />)}
+                {others.map((other) => (
+                  <ArticleCard article={other} showDescription={false} />
+                ))}
               </div>
             </div>
           )
@@ -108,33 +142,82 @@ const title = data.title;
 </BaseLayout>
 
 <style>
-  .article-kicker {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.6rem;
-    margin: 0 0 1.4rem;
-    font-family: var(--font-mono);
-    font-size: 0.74rem;
-    letter-spacing: 0.1em;
+  .article-layout {
+    display: grid;
+    gap: clamp(1.5rem, 4vw, 3rem);
+    align-items: start;
+  }
+
+  @media (min-width: 1060px) {
+    .article-layout--railed {
+      grid-template-columns: 13rem minmax(0, 1fr);
+    }
+  }
+
+  .article-layout .prose {
+    max-width: 68ch;
+  }
+
+  .contents-label {
+    font-size: 0.64rem;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--faint);
   }
 
-  .article-kicker a.back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
+  .case-contents ol {
+    list-style: none;
+    margin: 0.9rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .case-contents a {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    min-height: 36px;
+    padding: 0.35rem 0.6rem;
+    border-left: 2px solid transparent;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
     color: var(--muted);
-    transition: color var(--dur) var(--ease);
+    font-size: 0.86rem;
+    line-height: 1.4;
+    transition: color var(--dur-2) var(--ease-out),
+      border-color var(--dur-2) var(--ease-out),
+      background-color var(--dur-2) var(--ease-out);
   }
 
-  .article-kicker a.back-link:hover {
+  .case-contents a .num {
+    font-size: 0.62rem;
+    color: var(--faint);
+  }
+
+  .case-contents a:hover {
+    color: var(--text);
+    background: var(--hover-bg);
+  }
+
+  .case-contents a.is-active {
     color: var(--accent);
+    border-left-color: var(--accent);
+    background: var(--accent-soft);
   }
 
-  .article-kicker a.back-link svg {
-    transform: rotate(180deg);
+  @media (max-width: 1059px) {
+    .case-contents {
+      position: static;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius);
+      background: var(--surface-1);
+      padding: 0.9rem 1rem 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .case-contents ol {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+    }
   }
 
   .post-end {
@@ -142,14 +225,14 @@ const title = data.title;
   }
 
   .article-end-nav {
-    margin-top: 3.2rem;
+    margin-top: 3rem;
     display: grid;
-    gap: 2.2rem;
+    gap: 2rem;
   }
 
   .related-label {
     color: var(--faint);
-    margin: 0 0 0.9rem;
+    margin: 0 0 0.8rem;
   }
 
   .related-grid {

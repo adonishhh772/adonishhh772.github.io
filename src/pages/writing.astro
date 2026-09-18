@@ -4,14 +4,28 @@ import ArticleCard from '../components/ArticleCard.astro';
 import NewsletterSignup from '../components/NewsletterSignup.astro';
 import CoffeeCard from '../components/CoffeeCard.astro';
 import Icon from '../components/Icon.astro';
-import { newsletter, social } from '../site.config';
+import { newsletter, social, rootUrl } from '../site.config';
+import { formatDate, readTimeInMinutes } from '../lib/format';
 import { getCollection } from 'astro:content';
 
 const posts = (await getCollection('writing'))
   .filter((post) => !post.data.draft)
   .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
 
-// TODO: LinkedIn placeholder — replace in src/site.config.ts → social.linkedin
+const featured = posts[0];
+const rest = posts.slice(1);
+
+/** Topic index built from the tags that actually appear in the archive. */
+const topicCounts = new Map<string, number>();
+for (const post of posts) {
+  for (const tag of post.data.tags) {
+    topicCounts.set(tag, (topicCounts.get(tag) ?? 0) + 1);
+  }
+}
+const topics = [...topicCounts.entries()]
+  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  .slice(0, 10);
+
 const linkedinUrl = social.linkedin;
 
 const title = `${newsletter.name} — Notes on reliable enterprise AI`;
@@ -20,31 +34,139 @@ const description =
 ---
 
 <BaseLayout title={title} description={description}>
-  <!-- Newsletter masthead -->
+  <!-- Publication masthead -->
   <section class="page-head">
-    <div class="wrap">
-      <span class="kicker">Newsletter</span>
-      <h1 class="display display--page" style="margin-top: 0.9rem;">
-        {newsletter.name}
-        <span class="issue-mark" aria-hidden="true">*</span>
-      </h1>
-      <p class="lede">{newsletter.tagline}</p>
+    <div class="wrap masthead">
+      <div>
+        <span class="kicker">Independent newsletter</span>
+        <h1 class="display display--page" style="margin-top: 0.8rem;">
+          {newsletter.name}
+          <span class="issue-mark" aria-hidden="true">*</span>
+        </h1>
+        <p class="lede">{newsletter.tagline}</p>
 
-      <div class="page-head-actions">
-        <a
-          class="btn btn--ghost"
-          href={linkedinUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Icon name="linkedin" size={15} />
-          Follow on LinkedIn
-        </a>
-        <a class="btn btn--ghost" href={newsletter.rssPath}>
-          <Icon name="rss" size={15} />
-          RSS feed
-        </a>
+        <div class="page-head-actions">
+          <a
+            class="btn btn--ghost"
+            href={linkedinUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Icon name="linkedin" size={15} />
+            Follow on LinkedIn
+          </a>
+          <a class="btn btn--ghost" href={newsletter.rssPath}>
+            <Icon name="rss" size={15} />
+            RSS feed
+          </a>
+        </div>
       </div>
+
+      <dl class="masthead-stats">
+        <div>
+          <dt>Issues published</dt>
+          <dd>{posts.length}</dd>
+        </div>
+        <div>
+          <dt>Latest</dt>
+          <dd>{featured ? formatDate(featured.data.pubDate) : '—'}</dd>
+        </div>
+        <div>
+          <dt>Topics</dt>
+          <dd>{topicCounts.size}</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <!-- Featured issue -->
+  {
+    featured && (
+      <section class="section section--tight" aria-labelledby="featured-issue">
+        <div class="wrap">
+          <div class="section-head-row">
+            <div>
+              <span class="kicker">Latest issue</span>
+              <h2 class="section-title" id="featured-issue" style="margin-top: 0.7rem;">
+                Start here
+              </h2>
+            </div>
+          </div>
+
+          <article class="feature card" data-reveal>
+            <div class="feature-body">
+              <span class="kicker kicker--plain">
+                {featured.data.issue
+                  ? `Issue ${String(featured.data.issue).padStart(2, '0')}`
+                  : 'Latest note'}
+                <span aria-hidden="true">·</span>
+                {readTimeInMinutes(featured.body ?? '')} min read
+              </span>
+              <h3 class="feature-title">
+                <a href={rootUrl(`/writing/${featured.id}/`)}>{featured.data.title}</a>
+              </h3>
+              <p class="feature-desc">{featured.data.description}</p>
+              <ul class="issue-tags" aria-label="Topics">
+                {featured.data.tags.map((tag) => <li>{tag}</li>)}
+              </ul>
+            </div>
+            <a class="btn btn--primary" href={rootUrl(`/writing/${featured.id}/`)}>
+              Read this issue
+              <Icon name="arrow-right" size={15} />
+            </a>
+          </article>
+        </div>
+      </section>
+    )
+  }
+
+  <!-- Highly visible sign-up -->
+  <div class="wrap">
+    <NewsletterSignup />
+  </div>
+
+  <!-- Archive -->
+  <section class="section section--rule" aria-labelledby="archive">
+    <div class="wrap">
+      <div class="section-head-row">
+        <div>
+          <span class="kicker">Archive</span>
+          <h2 class="section-title" id="archive" style="margin-top: 0.7rem;">
+            All issues
+          </h2>
+        </div>
+        <p class="issue-count" style="margin: 0;">
+          {posts.length} {posts.length === 1 ? 'article' : 'articles'}
+        </p>
+      </div>
+
+      {
+        topics.length > 0 && (
+          <ul class="topic-index" aria-label="Topics covered">
+            {topics.map(([tag, count]) => (
+              <li>
+                <span class="mono">{tag}</span>
+                <span class="count" aria-hidden="true">{count}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      {
+        rest.length > 0 ? (
+          <div class="issue-list">
+            {rest.map((post, i) => (
+              <ArticleCard article={post} delay={i * 50} />
+            ))}
+          </div>
+        ) : (
+          <p class="muted">
+            The next issue is being written. Subscribe above and it will land
+            in your inbox.
+          </p>
+        )
+      }
 
       <p class="independence-note">
         Independent writing on practical enterprise AI systems — no vendor
@@ -54,68 +176,165 @@ const description =
     </div>
   </section>
 
-  <!-- Highly visible sign-up -->
-  <div class="wrap" style="margin-block: clamp(2rem, 5vw, 3.5rem);">
-    <NewsletterSignup />
-  </div>
-
-  <!-- Article archive -->
-  <section class="section section--rule" aria-labelledby="archive">
-    <div class="wrap">
-      <div class="section-head-row">
-        <div>
-          <span class="kicker">Archive</span>
-          <h2 class="section-title" id="archive" style="margin-top: 0.8rem;">
-            Latest issues
-          </h2>
-        </div>
-        <p class="issue-count" style="margin: 0;">
-          {posts.length} {posts.length === 1 ? 'article' : 'articles'}
-        </p>
-      </div>
-
-      {
-        posts.length > 0 ? (
-          <div class="issue-list">
-            {posts.map((post) => <ArticleCard article={post} />)}
-          </div>
-        ) : (
-          <p class="muted">
-            The first issue is being written. Subscribe above and it will land
-            in your inbox.
-          </p>
-        )
-      }
-    </div>
-  </section>
-
-  <!-- Newsletter page footer: support card -->
+  <!-- Support card -->
   <section class="section section--tight wrap" aria-label="Support the writing">
     <CoffeeCard />
   </section>
 </BaseLayout>
 
 <style>
+  .masthead {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.8fr);
+    gap: clamp(1.5rem, 4vw, 3rem);
+    align-items: end;
+  }
+
+  @media (max-width: 880px) {
+    .masthead {
+      grid-template-columns: 1fr;
+      align-items: start;
+    }
+  }
+
+  .masthead-stats {
+    display: grid;
+    gap: 0.6rem;
+    margin: 0;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    background: var(--surface-1);
+  }
+
+  .masthead-stats div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 0.5rem;
+  }
+
+  .masthead-stats div:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .masthead-stats dt {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .masthead-stats dd {
+    margin: 0;
+    font-family: var(--font-display);
+    font-variation-settings: 'SOFT' 8, 'WONK' 1;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
   .issue-mark {
     color: var(--accent);
     font-weight: 400;
   }
 
-  .independence-note {
-    margin: 1.8rem 0 0;
-    max-width: 58ch;
+  .feature {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.2rem 2rem;
+    padding: clamp(1.4rem, 3vw, 2rem);
+    overflow: hidden;
+  }
+
+  .feature::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--signal), transparent 88%);
+  }
+
+  .feature-body {
+    flex: 1 1 22rem;
+    min-width: 0;
+  }
+
+  .feature-title {
+    margin: 0.7rem 0 0.6rem;
+    font-family: var(--font-display);
+    font-variation-settings: 'SOFT' 8, 'WONK' 1;
+    font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+    font-weight: 600;
+    line-height: 1.16;
+    letter-spacing: -0.018em;
+    text-wrap: balance;
+  }
+
+  .feature-title a {
+    transition: color var(--dur-2) var(--ease-out);
+  }
+
+  .feature:hover .feature-title a {
+    color: var(--accent);
+  }
+
+  .feature-desc {
+    margin: 0 0 0.8rem;
     color: var(--muted);
     font-size: 0.95rem;
-    line-height: 1.65;
-    border-left: 2px solid var(--hairline-strong);
-    padding-left: 1.1rem;
+    line-height: 1.6;
+    max-width: 64ch;
+  }
+
+  .topic-index {
+    list-style: none;
+    margin: 0 0 1.4rem;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .topic-index li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.3rem 0.65rem;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background: var(--chip-bg);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .topic-index .count {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--accent);
   }
 
   .issue-count {
     font-family: var(--font-mono);
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     color: var(--faint);
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  .independence-note {
+    margin: 2rem 0 0;
+    max-width: 58ch;
+    color: var(--muted);
+    font-size: 0.94rem;
+    line-height: 1.65;
+    border-left: 2px solid var(--hairline-strong);
+    padding-left: 1.1rem;
   }
 </style>

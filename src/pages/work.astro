@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
 import MiniProjectCard from '../components/MiniProjectCard.astro';
+import ProjectDiagram from '../components/observatory/ProjectDiagram.astro';
 import { site, social, rootUrl } from '../site.config';
 import { githubProjects, type GithubProject } from '../data/github-projects';
 import { getCollection, type CollectionEntry } from 'astro:content';
@@ -27,6 +28,12 @@ const projects = projectOrder
   .map((id) => projectsById.get(id))
   .filter((p): p is CollectionEntry<'projects'> => Boolean(p));
 
+const diagramCaptions: Record<string, string> = {
+  kai: 'Multi-agent RAG: route, retrieve, synthesise, verify — with guardrails and an approval gate.',
+  'education-platform': 'Document structure → schema-validated extraction → knowledge graph → cited answers.',
+  hyperran: 'Demand forecast feeding a policy constrained by a non-negotiable QoS floor.',
+};
+
 const title = 'Work — Selected projects';
 ---
 
@@ -49,11 +56,15 @@ const title = 'Work — Selected projects';
           More about how I work
           <Icon name="arrow-right" size={15} />
         </a>
+        <a class="btn btn--ghost" href={rootUrl('/cv')}>
+          <Icon name="document" size={15} />
+          View CV
+        </a>
       </div>
     </div>
   </section>
 
-  <section class="section" aria-label="Projects">
+  <section class="section" aria-label="Case studies">
     <div class="wrap">
       <div class="work-filters" role="group" aria-label="Filter projects">
         <button class="filter-btn is-active" type="button" data-filter="all" aria-pressed="true">
@@ -78,7 +89,8 @@ const title = 'Work — Selected projects';
         {
           projects.map((project, i) => (
             <article
-              class="card card--hover work-item"
+              class="card card--hover work-item case-item"
+              data-project={project.id}
               data-cat="case-studies"
               data-reveal
               style={`--reveal-delay: ${i * 70}ms`}
@@ -90,11 +102,17 @@ const title = 'Work — Selected projects';
                 <span class="project-status">{project.data.tag}</span>
               </div>
 
-              <div>
+              <div class="case-item-body">
                 <h2 class="work-item-title">
                   <a href={rootUrl(`/work/${project.id}/`)}>{project.data.title}</a>
                 </h2>
                 <p class="project-summary">{project.data.summary}</p>
+
+                <ProjectDiagram
+                  projectId={project.id}
+                  caption={diagramCaptions[project.id] ?? project.data.tag}
+                />
+
                 <ul class="chips" aria-label={`${project.data.shortTitle} themes`}>
                   {project.data.themes.map((theme) => (
                     <li class="chip">{theme}</li>
@@ -135,7 +153,7 @@ const title = 'Work — Selected projects';
         }
       </div>
 
-      <div class="work-note" style="margin-top: 2.2rem;">
+      <div class="work-note" style="margin-top: 2rem;">
         <p>
           Each engagement is different, but the shape of the work is
           consistent: understand the business problem, pressure-test the data,
@@ -151,11 +169,11 @@ const title = 'Work — Selected projects';
     <div class="wrap">
       <div class="section-head-row">
         <div>
-          <span class="kicker">GitHub · {githubProjects.length} public repositories</span>
-          <h2 class="section-title" id="open-source-title" style="margin-top: 0.8rem;">
+          <span class="kicker">GitHub · {githubProjects.length} curated repositories</span>
+          <h2 class="section-title" id="open-source-title" style="margin-top: 0.7rem;">
             Open source &amp; builds
           </h2>
-          <p class="lede" style="margin-top: 0.7rem;">
+          <p class="lede" style="margin-top: 0.6rem;">
             Agents, GraphRAG experiments, reinforcement learning for RAN and
             automation tooling — all public on GitHub.
           </p>
@@ -226,8 +244,7 @@ const title = 'Work — Selected projects';
         });
 
         if (count) {
-          count.textContent =
-            'Showing ' + shown + ' of ' + total + ' projects';
+          count.textContent = 'Showing ' + shown + ' of ' + total + ' projects';
         }
       }
 
@@ -246,25 +263,59 @@ const title = 'Work — Selected projects';
   .work-item-meta {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.5rem;
   }
 
   .project-index {
     font-family: var(--font-mono);
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: var(--accent);
   }
 
   .project-status {
     font-family: var(--font-mono);
-    font-size: 0.68rem;
+    font-size: 0.66rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--faint);
     line-height: 1.5;
   }
 
-  @media (min-width: 860px) {
+  .case-item {
+    --card-accent: var(--accent);
+  }
+
+  .case-item[data-project='education-platform'] {
+    --card-accent: var(--signal);
+  }
+
+  .case-item[data-project='hyperran'] {
+    --card-accent: #9db4ff;
+  }
+
+  .case-item .project-index {
+    color: var(--card-accent);
+  }
+
+  .case-item-body :global(.project-figure) {
+    margin: 0.9rem 0 1rem;
+    max-width: 34rem;
+  }
+
+  .case-item h2 a {
+    transition: color var(--dur-2) var(--ease-out);
+  }
+
+  .case-item:hover h2 a {
+    color: var(--card-accent);
+  }
+
+  .case-item .project-summary {
+    margin-bottom: 0;
+    max-width: 62ch;
+  }
+
+  @media (min-width: 880px) {
     .work-item-meta {
       padding-top: 0.3rem;
     }
@@ -276,25 +327,13 @@ const title = 'Work — Selected projects';
     }
   }
 
-  .work-item h2 a {
-    transition: color var(--dur) var(--ease);
-  }
-
-  .work-item:hover h2 a {
-    color: var(--accent);
-  }
-
-  .work-item .project-summary {
-    margin-bottom: 1.1rem;
-  }
-
   .work-note {
     max-width: 62ch;
     color: var(--muted);
-    font-size: 0.95rem;
+    font-size: 0.94rem;
     line-height: 1.7;
     border-left: 2px solid var(--hairline-strong);
-    padding-left: 1.2rem;
+    padding-left: 1.1rem;
   }
 
   .work-note p {
@@ -302,15 +341,15 @@ const title = 'Work — Selected projects';
   }
 
   .project-category + .project-category {
-    margin-top: 2.6rem;
+    margin-top: 2.4rem;
   }
 
   .project-category-title {
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--accent);
-    margin: 0 0 1rem;
+    margin: 0 0 0.9rem;
   }
 
   .mini-project-grid {

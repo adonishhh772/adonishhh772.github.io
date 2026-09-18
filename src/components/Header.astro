@@ -18,12 +18,12 @@ const isCurrent = (rawHref: string) => {
         class="header-avatar"
         src={rootUrl('/images/abd-bastola-avatar.jpg')}
         alt=""
-        width="32"
-        height="32"
+        width="30"
+        height="30"
         loading="eager"
       />
       <span class="wordmark-text">
-        Abd Bastola<span class="accent-dot">.</span>
+        {site.name}<span class="accent-dot">.</span>
       </span>
       <span class="wordmark-tag" aria-hidden="true">AI · {site.location}</span>
     </a>
@@ -40,58 +40,32 @@ const isCurrent = (rawHref: string) => {
           </a>
         ))
       }
-      <span class="nav-divider" aria-hidden="true"></span>
-      {
-        nav.external.map((item) => (
-          <a
-            class="nav-link"
-            href={item.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`${item.label} (opens in a new tab)`}
-          >
-            <Icon
-              name={item.label.toLowerCase() === 'github' ? 'github' : 'linkedin'}
-              size={15}
-            />
-            {item.label}
-          </a>
-        ))
-      }
-      <ThemeToggle />
     </nav>
+
+    <div class="nav-actions">
+      <!-- The CV is the one destination that must never be hunted for. -->
+      <a
+        class="nav-cv"
+        href={rootUrl(nav.cv.href)}
+        aria-current={isCurrent(nav.cv.href) ? 'page' : undefined}
+      >
+        <Icon name="document" size={13} />
+        {nav.cv.label}
+      </a>
+      <ThemeToggle />
+    </div>
   </div>
 </header>
 
-<style>
-  .wordmark {
-    align-items: center;
-    gap: 0.55rem;
-  }
-
-  .wordmark-text {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.2rem;
-  }
-
-  .header-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1px solid var(--hairline-strong);
-    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-  }
-
-  .wordmark:hover .header-avatar {
-    border-color: var(--accent-line);
-    box-shadow: 0 0 0 3px var(--accent-soft);
-  }
-
-  @media (max-width: 520px) {
-    .wordmark-tag {
-      display: none;
-    }
-  }
-</style>
+<script is:inline>
+  /* The header grows a signal line once the page has moved. */
+  (function () {
+    var header = document.querySelector('.site-header');
+    if (!header) return;
+    var update = function () {
+      header.toggleAttribute('data-scrolled', window.scrollY > 12);
+    };
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+  })();
+</script>

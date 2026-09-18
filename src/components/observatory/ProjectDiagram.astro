@@ -1,0 +1,226 @@
+---
+/**
+ * Project diagrams.
+ *
+ * One meaningful architecture sketch per case study, drawn from what the
+ * case study actually documents (multi-agent RAG with verification; a
+ * document → extraction → graph → hybrid retrieval pipeline; a forecasting
+ * plus constrained-policy control loop). Inline SVG, themed with the same
+ * tokens as the rest of the site, no external assets.
+ */
+interface Props {
+  projectId: string;
+  /** Short caption under the diagram. */
+  caption: string;
+}
+
+const { projectId, caption } = Astro.props;
+---
+
+<figure class="project-figure">
+  <svg viewBox="0 0 340 148" role="img" aria-label={caption} xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker
+        id={`arrow-${projectId}`}
+        viewBox="0 0 10 10"
+        refX="8"
+        refY="5"
+        markerWidth="5"
+        markerHeight="5"
+        orient="auto-start-reverse"
+      >
+        <path d="M0 1 L9 5 L0 9 z" fill="var(--hairline-strong)" />
+      </marker>
+    </defs>
+
+    {
+      projectId === 'kai' && (
+        <g
+          fill="none"
+          stroke="var(--hairline-strong)"
+          stroke-width="1.2"
+          marker-end={`url(#arrow-${projectId})`}
+          font-family="var(--font-mono)"
+        >
+          {/* Question → router → retrieval agents → synthesis → verification */}
+          <rect x="6" y="60" width="46" height="28" rx="5" fill="var(--surface-1)" />
+          <text x="29" y="78" fill="var(--muted)" font-size="9" text-anchor="middle" stroke="none">
+            ask
+          </text>
+
+          <rect x="72" y="60" width="46" height="28" rx="5" fill="var(--surface-1)" />
+          <text x="95" y="78" fill="var(--muted)" font-size="9" text-anchor="middle" stroke="none">
+            route
+          </text>
+          <path d="M52 74 H72" />
+
+          <rect x="138" y="18" width="46" height="24" rx="5" fill="var(--surface-1)" />
+          <rect x="138" y="62" width="46" height="24" rx="5" fill="var(--surface-1)" />
+          <rect x="138" y="106" width="46" height="24" rx="5" fill="var(--surface-1)" />
+          <text x="161" y="33" fill="var(--muted)" font-size="8" text-anchor="middle" stroke="none">
+            corpus
+          </text>
+          <text x="161" y="77" fill="var(--muted)" font-size="8" text-anchor="middle" stroke="none">
+            corpus
+          </text>
+          <text x="161" y="121" fill="var(--muted)" font-size="8" text-anchor="middle" stroke="none">
+            corpus
+          </text>
+          <path d="M118 70 L138 32" />
+          <path d="M118 74 H138" />
+          <path d="M118 78 L138 116" />
+
+          <rect x="204" y="60" width="52" height="28" rx="5" fill="var(--surface-1)" />
+          <text x="230" y="78" fill="var(--muted)" font-size="9" text-anchor="middle" stroke="none">
+            synthesise
+          </text>
+          <path d="M184 30 L204 66" />
+          <path d="M184 74 H204" />
+          <path d="M184 118 L204 82" />
+
+          <rect
+            x="276"
+            y="60"
+            width="56"
+            height="28"
+            rx="5"
+            fill="var(--accent-soft)"
+            stroke="var(--card-accent, var(--accent))"
+          />
+          <text x="304" y="78" fill="var(--card-accent, var(--accent))" font-size="9" text-anchor="middle" stroke="none">
+            cite
+          </text>
+          <path d="M256 74 H276" stroke="var(--card-accent, var(--accent))" />
+
+          {/* Guardrails wrap the whole flow; approval gates the final action. */}
+          <path
+            d="M4 108 H130 M130 108 V132 H272 M272 132 V108 M272 108 H336"
+            stroke-dasharray="4 5"
+            opacity="0.85"
+          />
+          <text x="170" y="145" fill="var(--faint)" font-size="8" text-anchor="middle" stroke="none">
+            guardrails · trace every tool call
+          </text>
+          <path d="M304 88 V108" stroke="var(--card-accent, var(--accent))" stroke-dasharray="3 4" />
+          <text x="304" y="52" fill="var(--faint)" font-size="8" text-anchor="middle" stroke="none">
+            human approval
+          </text>
+          <path d="M304 56 V60" stroke-dasharray="3 4" />
+        </g>
+      )
+    }
+
+    {
+      projectId === 'education-platform' && (
+        <g font-family="var(--font-mono)">
+          {/* Documents → structure recovery → knowledge graph → citation */}
+          <g fill="var(--surface-1)" stroke="var(--hairline-strong)" stroke-width="1.2">
+            <rect x="8" y="30" width="44" height="30" rx="4" />
+            <rect x="8" y="66" width="44" height="30" rx="4" />
+            <rect x="8" y="102" width="44" height="30" rx="4" />
+          </g>
+          <g fill="var(--faint)" font-size="8">
+            <text x="30" y="49" text-anchor="middle">doc</text>
+            <text x="30" y="85" text-anchor="middle">table</text>
+            <text x="30" y="121" text-anchor="middle">doc</text>
+          </g>
+
+          <g fill="none" stroke="var(--hairline-strong)" stroke-width="1.2">
+            <path d="M52 45 C74 45 74 74 92 74" />
+            <path d="M52 81 H92" />
+            <path d="M52 117 C74 117 74 74 92 74" />
+          </g>
+
+          {/* Extraction schema */}
+          <rect x="92" y="60" width="46" height="28" rx="5" fill="var(--surface-1)" stroke="var(--hairline-strong)" />
+          <text x="115" y="78" fill="var(--muted)" font-size="8" text-anchor="middle">extract</text>
+
+          {/* The graph itself */}
+          <g fill="none" stroke="var(--card-accent, var(--accent))" stroke-width="1.3" opacity="0.9">
+            <path d="M196 46 L232 32 M196 46 L232 62 M196 46 L186 84 M232 32 L262 48 M232 62 L262 48 M186 84 L232 62 M186 84 L216 108 M232 62 L216 108" />
+          </g>
+          <g fill="var(--card-accent, var(--accent))">
+            <circle cx="196" cy="46" r="4.5" />
+            <circle cx="232" cy="32" r="3.6" />
+            <circle cx="232" cy="62" r="3.6" />
+            <circle cx="186" cy="84" r="3.6" />
+            <circle cx="262" cy="48" r="4.2" />
+            <circle cx="216" cy="108" r="3.4" />
+          </g>
+          <path d="M138 74 H186" fill="none" stroke="var(--hairline-strong)" stroke-width="1.2" />
+          <text x="162" y="70" fill="var(--faint)" font-size="7.5" text-anchor="middle">
+            schema
+          </text>
+          <text x="228" y="132" fill="var(--faint)" font-size="8" text-anchor="middle">
+            entities &amp; relationships · Neo4j
+          </text>
+
+          {/* Citation card */}
+          <rect
+            x="286"
+            y="60"
+            width="46"
+            height="30"
+            rx="5"
+            fill="var(--accent-soft)"
+            stroke="var(--card-accent, var(--accent))"
+            stroke-width="1.2"
+          />
+          <text x="309" y="74" fill="var(--card-accent, var(--accent))" font-size="8" text-anchor="middle">cited</text>
+          <text x="309" y="84" fill="var(--card-accent, var(--accent))" font-size="8" text-anchor="middle">answer</text>
+          <path d="M266 48 C280 48 280 70 286 72" fill="none" stroke="var(--card-accent, var(--accent))" stroke-width="1.2" />
+        </g>
+      )
+    }
+
+    {
+      projectId === 'hyperran' && (
+        <g font-family="var(--font-mono)">
+          {/* Demand forecast against a non-negotiable QoS floor */}
+          <rect x="8" y="18" width="188" height="112" rx="6" fill="var(--bg-sunken)" stroke="var(--hairline)" />
+          <g stroke="var(--hairline)" stroke-width="0.8">
+            <path d="M18 46 H186 M18 74 H186 M18 102 H186" />
+          </g>
+          <path
+            d="M18 96 C42 92 56 48 78 44 C98 40 112 88 134 92 C152 95 168 62 186 54"
+            fill="none"
+            stroke="var(--card-accent, var(--accent))"
+            stroke-width="2"
+          />
+          <path d="M18 88 H186" stroke="var(--faint)" stroke-width="1.2" stroke-dasharray="4 4" />
+          <text x="22" y="85" fill="var(--faint)" font-size="7.5">QoS floor</text>
+          <text x="22" y="32" fill="var(--faint)" font-size="7.5">demand forecast</text>
+
+          {/* Control loop */}
+          <g fill="none" stroke="var(--hairline-strong)" stroke-width="1.2">
+            <rect x="210" y="22" width="58" height="24" rx="5" fill="var(--surface-1)" />
+            <rect x="210" y="62" width="58" height="24" rx="5" fill="var(--surface-1)" />
+            <rect
+              x="210"
+              y="102"
+              width="58"
+              height="24"
+              rx="5"
+              fill="var(--accent-soft)"
+              stroke="var(--card-accent, var(--accent))"
+            />
+            <path d="M239 46 V62" />
+            <path d="M239 86 V102" stroke="var(--card-accent, var(--accent))" />
+            <path d="M268 114 H292 V34 H268" stroke-dasharray="4 4" />
+          </g>
+          <g fill="var(--muted)" font-size="8" text-anchor="middle">
+            <text x="239" y="37">forecast</text>
+            <text x="239" y="77">policy</text>
+          </g>
+          <text x="239" y="117" fill="var(--card-accent, var(--accent))" font-size="8" text-anchor="middle">
+            QoS gate
+          </text>
+          <text x="292" y="80" fill="var(--faint)" font-size="7.5" text-anchor="middle" transform="rotate(-90 292 80)">
+            offline replay
+          </text>
+        </g>
+      )
+    }
+  </svg>
+  <figcaption>{caption}</figcaption>
+</figure>
