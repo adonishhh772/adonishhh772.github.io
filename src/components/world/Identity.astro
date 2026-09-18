@@ -1,0 +1,171 @@
+---
+/**
+ * The campus identity.
+ *
+ * This is not navigation — the world is the navigation. It is the one piece
+ * of standing text that says whose site this is, and it doubles as the
+ * document heading in both modes: a compact caption in the corner while the
+ * world is running, the opening of the page when it is not.
+ */
+import { site, hero } from '../../site.config';
+---
+
+<section class="world-identity" aria-labelledby="identity-title">
+  <p class="identity-eyebrow">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span class="mono">{hero.eyebrow}</span>
+  </p>
+
+  <h1 class="identity-name" id="identity-title">
+    {site.name}<span class="dot">.</span>
+  </h1>
+
+  <p class="identity-headline">{hero.headline}</p>
+  <p class="identity-lead">{hero.lead}</p>
+
+  <p class="identity-currently">
+    <strong>Currently</strong>
+    {hero.currently}
+  </p>
+</section>
+
+<style>
+  /*
+    Simple mode is the readable page, so the identity becomes its opening:
+    same container as the rest of the page, full display sizes. The world-mode
+    rules below override all of this into a corner caption.
+  */
+  .world-identity {
+    width: 100%;
+    max-width: var(--wrap);
+    margin-inline: auto;
+    padding: clamp(3rem, 7vw, 5.5rem) var(--gutter) clamp(1.2rem, 2.6vw, 2.2rem);
+  }
+
+  .identity-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.55rem;
+  }
+
+  .identity-eyebrow .mono {
+    color: var(--accent);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .identity-name {
+    margin: 0 0 0.5rem;
+    font-family: var(--font-display);
+    font-variation-settings: 'SOFT' 8, 'WONK' 1;
+    font-size: var(--step-5);
+    font-weight: 620;
+    line-height: 1;
+    letter-spacing: -0.028em;
+  }
+
+  .identity-name .dot {
+    color: var(--accent);
+  }
+
+  .identity-headline {
+    margin: 0 0 0.9rem;
+    font-size: var(--step-3);
+    line-height: 1.28;
+    letter-spacing: -0.012em;
+    font-weight: 450;
+    color: var(--text-soft);
+    text-wrap: balance;
+  }
+
+  .identity-lead {
+    margin: 0 0 1rem;
+    max-width: 52ch;
+    color: var(--muted);
+    font-size: 1.03rem;
+    line-height: 1.65;
+  }
+
+  .identity-currently {
+    margin: 0;
+    max-width: 52ch;
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+  .identity-currently strong {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--signal);
+    margin-right: 0.4rem;
+  }
+
+  /*
+    While the world is running this is a caption in the corner: it must not
+    read as navigation and must not swallow a drag, so it ignores the pointer
+    entirely. In simple mode the same markup is the opening of the page.
+  */
+  :global(html[data-mode='world']) .world-identity {
+    position: fixed;
+    left: clamp(1rem, 3vw, 2.6rem);
+    bottom: clamp(1rem, 3vw, 2.2rem);
+    z-index: 20;
+    width: min(30rem, calc(100vw - 2rem));
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    pointer-events: none;
+    animation: identity-in 900ms var(--ease-out) 320ms both;
+  }
+
+  :global(html[data-mode='world']) .identity-lead {
+    font-size: 0.84rem;
+    max-width: 38ch;
+  }
+
+  :global(html[data-mode='world']) .identity-name {
+    font-size: clamp(1.35rem, 1.8vw, 1.75rem);
+  }
+
+  :global(html[data-mode='world']) .identity-headline {
+    font-size: clamp(0.95rem, 1.2vw, 1.1rem);
+  }
+
+  /* Phones: keep it, but out of the way of the scene and the sheet. */
+  @media (max-width: 860px) {
+    :global(html[data-mode='world']) .world-identity {
+      left: 1rem;
+      right: 1rem;
+      bottom: auto;
+      top: 0.9rem;
+      width: auto;
+    }
+
+    :global(html[data-mode='world']) .identity-lead,
+    :global(html[data-mode='world']) .identity-currently {
+      display: none;
+    }
+  }
+
+  @keyframes identity-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(html[data-mode='world']) .world-identity {
+      animation: none;
+    }
+  }
+</style>

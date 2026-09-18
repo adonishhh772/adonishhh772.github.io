@@ -104,16 +104,11 @@ export const hero = {
   currently:
     'Building and delivering enterprise AI systems at AWTG in London — including the KAI platform.',
   stage: {
-    pauseLabel: 'Pause motion',
-    resumeLabel: 'Resume motion',
-    simpleLabel: 'Simple view',
-    worldLabel: 'Back to the world',
-    resetLabel: 'Reset view',
     loadingLabel: 'Building the campus',
-    readyLabel: 'Campus online — choose a destination',
+    readyLabel: 'Campus online',
     errorLabel: 'The interactive campus is unavailable here',
     /** In-scene affordance, shown once, then retired. */
-    hint: 'Choose a destination, or select an object',
+    hint: 'Drag to look around · scroll to zoom · select a caption to go there',
     posterAlt:
       'Illustration of a miniature AI studio campus on a floating island: a domed observatory at the centre, with a studio, a project workshop, a library, an open-source workbench and a contact station around it.',
   },

@@ -28,7 +28,7 @@ the contact options. Nothing ejects you into a separate conventional page.
 
 | Destination  | Where it is            | What you read there                         |
 | ------------ | ---------------------- | ------------------------------------------- |
-| **Campus**   | the observatory        | a short welcome and four doors              |
+| **Campus**   | the observatory        | the overview; the identity caption          |
 | **Studio**   | low building, warm lit | the full CV (print/save) and the biography  |
 | **Workshop** | sawtooth canopy        | case studies, one installation per project  |
 | **Library**  | barrel-vaulted hall    | every published issue, one book per article |
@@ -39,23 +39,36 @@ Destinations are *places*; documents are read at them. One place can hold
 several documents — the studio holds the CV and the biography, the workshop
 holds every case study.
 
-### How it behaves
+### There is no navigation bar — the world is the navigation
 
-- **URLs are real.** Every destination and document has its own URL
-  (`/cv/`, `/writing/<slug>/`, `/work/<slug>/`, `/open-source/` …). Opening a
-  deep link starts the world at the right location with the right document
-  open; refresh works; Back and Forward work.
+Nothing is open when you arrive. You get the campus and its captions, and
+everything else follows from what you select.
+
+- **A place caption moves you there.** *CV*, *Projects*, *Writing*, *Open
+  source*, *Contact* and *Home* are buttons, not links: selecting one travels
+  the camera and reveals that place's own objects. The URL does not change,
+  because you have looked around — you have not opened anything.
+- **An object caption opens its document.** Once you are at a place its
+  objects appear: the CV and the biography at the studio, each project in the
+  workshop, each article on the library shelves, each repository on the
+  workbench. Those are real links with real URLs.
+- **Every place also has an index caption** — *All writing*, *All projects*,
+  *All repositories*, *Contact* — so the archive pages stay reachable from
+  the world alone.
+- **The camera is yours.** Drag to orbit, scroll or pinch to zoom,
+  double-click to recentre. Both are available everywhere, not in a special
+  mode, and are bounded so the island can never be lost.
+- **URLs are still real.** A deep link (`/cv/`, `/writing/<slug>/`) opens the
+  world at that place with that document already open; refresh works; Back
+  and Forward work.
 - **The renderer never restarts.** Astro's router swaps the page around a
   persisted canvas, so moving between destinations keeps one WebGL context,
   one scene and one camera. Only the reading surface is replaced.
 - **The camera composes for what is visible.** The reading surface is a side
   panel on desktop and a bottom sheet on a phone; the camera frames the
-  destination in the region the document leaves free, shifting on both axes.
-- **Reading settles the scenery.** Ambient motion pauses while a document is
-  open.
-- **Captions are links.** The projected captions are real anchors — the same
-  element type that makes Back/Forward and deep links work — and the floating
-  dock is a labelled `<nav>` that works with no JavaScript at all.
+  destination in the region the document leaves free, on both axes.
+- **Reading settles the scenery.** Ambient motion stops while a document is
+  open and starts again when it closes.
 
 ### Architecture
 
@@ -77,7 +90,8 @@ src/lib/observatory/  the world itself
 
 src/components/world/
 ├── WorldShell.astro  the persisted canvas + captions + status
-└── Dock.astro        the floating navigation dock
+└── Identity.astro    the campus heading: a corner caption in the world,
+                      the opening of the page in the fallback
 ```
 
 **The page declares where it is.** Each page sets four attributes on `<body>`:
@@ -96,19 +110,19 @@ per published article, the workbench one plaque per curated repository and the
 workshop one installation per project. Add a Markdown file and a new object
 appears.
 
-### Simple mode and fallbacks
+### When the world cannot run
 
-The conventional, readable pages still exist — as an explicit choice and as a
-genuine failure path.
+The conventional, readable pages still exist, as a genuine failure path
+rather than a mode you switch into.
 
 - A **pre-paint probe** decides `data-mode`: `world` when JavaScript and WebGL
   are both available, `simple` otherwise. With no JavaScript at all the
   attribute is simply absent, and the default CSS renders the ordinary pages.
-- The dock's **Simple view** control stores the preference; the header then
-  offers **Back to the world**, shown only when the browser can actually run it.
-- **three.js is a dynamic import gated on that mode**, so a simple-mode or
-  no-WebGL visitor never downloads the 3D bundle.
-- Losing the WebGL context swaps to the simple view with an honest message.
+- **three.js is a dynamic import gated on that mode**, so a visitor whose
+  browser cannot render the world never downloads the 3D bundle.
+- There is no manual switch: the world runs whenever it can, and there is no
+  state a visitor can get stuck in.
+- Losing the WebGL context swaps to the readable pages with an honest message.
 
 ### Quality
 
@@ -169,9 +183,10 @@ npm run check      # Astro + TypeScript diagnostics
 the shell and simple mode, navigation, social links, contact details, booking
 and newsletter configuration.
 
-`src/lib/world/destinations.ts` holds the campus map: each destination's dock
-label, longer name and which side its reading surface takes. Moving a
-destination to the other side of the screen is a one-word change there.
+`src/lib/world/destinations.ts` holds the campus map: each destination's
+caption label, longer name, which side its reading surface takes, and the
+index caption that leads to its archive page. Moving a destination to the
+other side of the screen is a one-word change there.
 
 ### Adding a newsletter article
 
@@ -220,6 +235,9 @@ new article to the Buttondown list using the `BUTTONDOWN_API_KEY` secret.
   the page, not text painted onto the canvas.
 - Skip link, one `h1` per page, visible focus rings, and the dock is a labelled
   navigation of real links.
+- Every caption is a real control: place captions are buttons that travel the
+  camera, object captions are links. Both are reachable by Tab and activated
+  by Enter.
 - Captions that are occluded, or that the reading surface covers, are removed
   from the tab order rather than left focusable but invisible.
 - `prefers-reduced-motion` removes camera travel and ambient animation; the

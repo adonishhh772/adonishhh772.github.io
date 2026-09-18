@@ -1,5 +1,5 @@
 ---
-import { site, nav, rootUrl, hero } from '../site.config';
+import { site, nav, rootUrl } from '../site.config';
 import Icon from './Icon.astro';
 import ThemeToggle from './ThemeToggle.astro';
 
@@ -43,12 +43,6 @@ const isCurrent = (rawHref: string) => {
     </nav>
 
     <div class="nav-actions">
-      {/* Only offered when the browser can actually run the world. */}
-      <button class="world-return" type="button" data-world-return>
-        <Icon name="compass" size={13} />
-        {hero.stage.worldLabel}
-      </button>
-
       <!-- The CV is the one destination that must never be hunted for. -->
       <a
         class="nav-cv"
@@ -75,18 +69,6 @@ const isCurrent = (rawHref: string) => {
       window.addEventListener('scroll', update, { passive: true });
     }
 
-    /* Leave the readable fallback for the world again. */
-    var back = document.querySelector('[data-world-return]');
-    if (back) {
-      back.addEventListener('click', function () {
-        try {
-          localStorage.setItem('world:mode', 'world');
-        } catch (error) {
-          /* storage unavailable — the reload picks the default anyway */
-        }
-        window.location.reload();
-      });
-    }
   })();
 </script>
 
@@ -95,30 +77,4 @@ const isCurrent = (rawHref: string) => {
     The world is the primary experience, so the way back to it appears only
     when the visitor is in the readable fallback and their browser can run it.
   */
-  .world-return {
-    display: none;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 38px;
-    padding: 0.4rem 0.8rem;
-    border: 1px solid var(--accent-line);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--accent);
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: background-color var(--dur-2) var(--ease-out),
-      color var(--dur-2) var(--ease-out);
-  }
-
-  .world-return:hover {
-    background: var(--accent-soft);
-  }
-
-  :global(html[data-mode='simple'][data-webgl='yes']) .world-return {
-    display: inline-flex;
-  }
 </style>

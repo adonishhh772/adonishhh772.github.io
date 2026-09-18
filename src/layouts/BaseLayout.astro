@@ -21,7 +21,7 @@ import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import Icon from '../components/Icon.astro';
 import WorldShell from '../components/world/WorldShell.astro';
-import Dock from '../components/world/Dock.astro';
+import Identity from '../components/world/Identity.astro';
 import { destinationMeta, type DestinationId, type SurfaceKind } from '../lib/world/destinations';
 import { surfaceLabel } from '../lib/world/state';
 import { site, newsletter, rootUrl, absoluteUrl } from '../site.config';
@@ -108,7 +108,6 @@ const hasSurface = surface !== 'none';
     <script is:inline>
       (function () {
         try {
-          var stored = localStorage.getItem('world:mode');
           var canvas = document.createElement('canvas');
           var gl =
             canvas.getContext('webgl2') ||
@@ -118,8 +117,13 @@ const hasSurface = surface !== 'none';
             var lose = gl.getExtension('WEBGL_lose_context');
             if (lose) lose.loseContext();
           }
-          document.documentElement.dataset.mode =
-            stored === 'simple' || !gl ? 'simple' : 'world';
+          /*
+           * No manual override: the world runs whenever the browser can render
+           * it, and the readable pages are the failure path. Ignoring the old
+           * preference also means nobody is stranded in a mode they have no
+           * control left to leave.
+           */
+          document.documentElement.dataset.mode = gl ? 'world' : 'simple';
           document.documentElement.dataset.webgl = gl ? 'yes' : 'no';
         } catch (error) {
           document.documentElement.dataset.mode = 'simple';
@@ -189,8 +193,8 @@ const hasSurface = surface !== 'none';
     <a class="skip-link" href="#surface-content">Skip to content</a>
 
     <Header />
-    <Dock destination={destination} />
     <WorldShell />
+    {destination === 'campus' && !hasSurface && <Identity />}
 
     <main
       id="surface-content"

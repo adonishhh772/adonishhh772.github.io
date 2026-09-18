@@ -101,7 +101,7 @@ export interface Shot {
 /** A pickable object in the world that stands for a piece of content. */
 export interface ObjectMarker {
   id: string;
-  kind: 'article' | 'project' | 'repo';
+  kind: 'article' | 'project' | 'repo' | 'cv' | 'about';
   place: DestinationId;
   label: string;
   meta: string;
@@ -1092,6 +1092,26 @@ export class ObservatoryWorld {
         });
         cvPage.rotation.x = -Math.PI / 2 + 0.38;
         cvPage.userData.objectId = 'cv';
+        this.objectMarkers.push({
+          id: 'cv',
+          kind: 'cv',
+          place: 'studio',
+          label: 'Curriculum vitae',
+          meta: 'Experience · skills · education',
+          href: '/cv/',
+          anchor: localToWorld(LAYOUT.studio, 1.28, surface + 1.62, 1.05),
+          pick: cvPage,
+        });
+        this.objectMarkers.push({
+          id: 'about',
+          kind: 'about',
+          place: 'studio',
+          label: 'About',
+          meta: 'Biography',
+          href: '/about/',
+          anchor: localToWorld(LAYOUT.studio, -0.3, surface + 1.86, 1.52),
+          pick: portrait,
+        });
 
         /* A floor lamp so the studio glows warm at night. */
         this.mesh(new THREE.CylinderGeometry(0.035, 0.045, 1.3, 6), this.materials.metalDark, group, 'studio-lamp-post', {
@@ -1239,6 +1259,16 @@ export class ObservatoryWorld {
             anchor: localToWorld(LAYOUT.workshop, x, surface + 1.75, z),
             pick: vitrine,
             glow: exhibitGlow,
+          });
+          this.objectMarkers.push({
+            id: project.id,
+            kind: 'project',
+            place: 'workshop',
+            label: project.label,
+            meta: project.meta,
+            href: project.href,
+            anchor: localToWorld(LAYOUT.workshop, x, surface + 1.95, z),
+            pick: vitrine,
           });
         });
 

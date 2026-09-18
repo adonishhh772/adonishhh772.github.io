@@ -987,13 +987,11 @@ textarea {
   attribute at all — script disabled, or the probe failed — the visitor gets
   the readable pages, never an empty canvas.
 */
-.world,
-.dock {
+.world {
   display: none;
 }
 
-html[data-mode='world'] .world,
-html[data-mode='world'] .dock {
+html[data-mode='world'] .world {
   display: block;
 }
 
@@ -1008,13 +1006,20 @@ html[data-mode='world'] body {
 
 /* The stage ------------------------------------------------------------ */
 
+.world-stage[data-dragging='true'] {
+  cursor: grabbing;
+}
+
 .world {
   position: fixed;
   inset: 0;
   z-index: 0;
 }
 
+/* The stage is grabbable: dragging it is how you look around. */
 .world-stage {
+  cursor: grab;
+  touch-action: none;
   position: absolute;
   inset: 0;
   overflow: hidden;
@@ -1239,140 +1244,6 @@ html[data-mode='world'] body {
   display: none;
 }
 
-/* The dock ------------------------------------------------------------- */
-
-.dock {
-  position: fixed;
-  z-index: 40;
-  top: max(0.75rem, env(safe-area-inset-top, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: calc(100vw - 1.5rem);
-  border: 1px solid var(--hairline-strong);
-  border-radius: 999px;
-  background: var(--bg-raised);
-  box-shadow: var(--shadow-2);
-}
-
-.dock-list {
-  display: flex;
-  align-items: center;
-  gap: 0.1rem;
-  list-style: none;
-  margin: 0;
-  padding: 0.3rem;
-}
-
-.dock-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-height: 40px;
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 0.87rem;
-  font-weight: 480;
-  transition: color var(--dur-2) var(--ease-out),
-    background-color var(--dur-2) var(--ease-out);
-}
-
-.dock-link:hover {
-  color: var(--text);
-  background: var(--hover-bg);
-}
-
-.dock-link[aria-current='page'] {
-  color: var(--on-accent);
-  background: var(--accent-fill);
-}
-
-.dock-link[aria-current='page'] .dock-mark {
-  color: var(--on-accent);
-}
-
-.dock-mark {
-  display: inline-flex;
-  color: var(--accent);
-}
-
-.dock-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0 0.9rem 0.5rem;
-  border-top: 1px solid var(--hairline);
-  margin-top: 0.05rem;
-}
-
-.dock-readout {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin: 0;
-  padding-top: 0.5rem;
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.dock-readout-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--signal);
-}
-
-.dock-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-  margin-left: auto;
-  padding-top: 0.5rem;
-}
-
-.dock-tool {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 34px;
-  padding: 0.25rem 0.6rem;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color var(--dur-2) var(--ease-out),
-    background-color var(--dur-2) var(--ease-out);
-}
-
-.dock-tool:hover {
-  color: var(--text);
-  background: var(--hover-bg);
-}
-
-.dock-tool[aria-pressed='true'] {
-  color: var(--accent);
-}
-
-.dock-quality select {
-  min-height: 30px;
-  padding: 0.1rem 0.35rem;
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
-  color: var(--text-soft);
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
-}
-
 /* Reading surfaces ----------------------------------------------------- */
 
 .surface-host {
@@ -1389,8 +1260,8 @@ html[data-mode='world'] .surface-host {
   width: min(44rem, 52vw);
   max-width: none;
   margin: 0;
-  /* Clear the floating dock so the surface heading never sits beside it. */
-  padding: clamp(5rem, 7vw, 6rem) clamp(1.1rem, 2.4vw, 2.4rem) 4rem;
+  /* A little air above the heading, and room to scroll past the end. */
+  padding: clamp(1.6rem, 3vw, 2.6rem) clamp(1.1rem, 2.4vw, 2.4rem) 4rem;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -1479,17 +1350,6 @@ html[data-mode='world'] .simple-only {
 /* Phone: the world keeps the top of the screen, the document takes the
    bottom, and the dock moves out of the document's way. */
 @media (max-width: 860px) {
-  .dock {
-    top: auto;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    transform: none;
-    max-width: none;
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    border-bottom: 0;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
 
   html[data-mode='world'] body:not([data-surface='none']) .dock {
     top: 0;
@@ -1498,56 +1358,6 @@ html[data-mode='world'] .simple-only {
     border-bottom: 1px solid var(--hairline-strong);
     padding-bottom: 0;
     padding-top: env(safe-area-inset-top, 0px);
-  }
-
-  .dock-list {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 0;
-    padding: 0.25rem;
-  }
-
-  .dock-link {
-    flex-direction: column;
-    gap: 0.1rem;
-    min-height: 52px;
-    padding: 0.4rem 0.1rem;
-    border-radius: var(--radius-sm);
-    font-size: 0.62rem;
-    letter-spacing: 0.02em;
-  }
-
-  .dock-link .dock-mark svg {
-    width: 15px;
-    height: 15px;
-  }
-
-  .dock-tools {
-    gap: 0.4rem;
-    padding: 0 0.6rem 0.4rem;
-  }
-
-  .dock-readout {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
-  .dock-quality span {
-    display: none;
-  }
-
-  /* Picking a destination already recentres the camera, so the explicit
-     reset is redundant here — and three tools fit on one row. */
-  .dock [data-world-reset] {
-    display: none;
-  }
-
-  .dock-tool {
-    min-height: 44px;
-    padding-inline: 0.5rem;
   }
 
   html[data-mode='world'] .surface-host {
@@ -1579,7 +1389,6 @@ html[data-mode='world'] .simple-only {
     width: min(48rem, 46vw);
   }
 }
-
 
 /* Reading surfaces: internal layout ------------------------------------ */
 
@@ -2792,7 +2601,6 @@ html[data-mode='world'] .surface-frame .lead-rail {
   .site-footer,
   .skip-link,
   .world,
-  .dock,
   .cv-toc,
   .page-head-actions {
     display: none !important;

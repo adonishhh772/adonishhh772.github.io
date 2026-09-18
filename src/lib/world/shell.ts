@@ -13,19 +13,20 @@
  *  - pause ambient motion while a document is open
  *  - survive client-side navigation, and tear down cleanly if asked
  *
- * Navigation itself is ordinary links: the ClientRouter intercepts them, the
- * URL updates, and Back/Forward work without any bespoke history code.
+ * Getting around is done in the world: a place caption is a button that
+ * travels the camera, an object caption is a real link that opens its
+ * document. Content links are ordinary anchors, so the ClientRouter
+ * intercepts them, the URL updates, and Back/Forward work with no bespoke
+ * history code — while the camera and the renderer stay alive throughout.
  */
 
 import * as THREE from 'three';
-import { DESTINATIONS, destinationMeta, hostsObjects, type DestinationId } from '../world/destinations';
+import { DESTINATIONS, PLACE_INDEX, hostsObjects, type DestinationId } from '../world/destinations';
 import {
   currentMode,
   isReading,
   readIndex,
   readState,
-  setMode,
-  storeModePreference,
   type WorldIndex,
   type WorldState,
 } from '../world/state';
@@ -33,9 +34,7 @@ import { Atmosphere } from '../observatory/lighting';
 import { Materials } from '../observatory/materials';
 import {
   PerformanceMonitor,
-  clearPreference,
   detectTier,
-  isQualityTier,
   loadPreference,
   nextDown,
   nextUp,
@@ -83,14 +82,16 @@ const OVERVIEW_TARGET = new THREE.Vector3(0, 2.9, 0);
 /** The campus overview: high enough to read every destination at once. */
 function overviewShot(aspect: number): Shot {
   const portrait = aspect < 1.15;
-  const radius = portrait ? 10.6 : 12.2;
+  const radius = portrait ? 9.6 : 12.2;
   const fov = portrait ? 46 : 36;
   const distance = fitDistance(radius, fov, aspect);
   const direction = portrait
-    ? new THREE.Vector3(0.4, 0.44, 0.66).normalize()
+    ? new THREE.Vector3(0.4, 0.36, 0.68).normalize()
     : new THREE.Vector3(0.58, 0.44, 0.67).normalize();
   const target = OVERVIEW_TARGET.clone();
-  target.y = portrait ? 1.5 : 2.4;
+  /* A phone screen is tall: aim above the island's centre so the buildings
+     fill it instead of leaving a dark band of ground underneath. */
+  target.y = portrait ? 2.1 : 2.4;
   return { position: target.clone().addScaledVector(direction, distance), target, fov };
 }
 
@@ -252,13 +253,12 @@ export function mountShell(root: WorldHost): ShellHandle {
   let state: WorldState = readState();
   let disposed = false;
   let onScreen = true;
-  let paused = false;
   let reading = false;
   let focusPlace: DestinationId = 'campus';
   let hintTimer = 0;
   let hintDone = false;
 
-  const hotspots = new Map<string, HTMLAnchorElement>();
+  const hotspots = new Map<string, HTMLElement>();
   const occluded = new Map<string, boolean>();
   const raycaster = new THREE.Raycaster();
   const occluders: THREE.Object3D[] = [];
@@ -328,10 +328,18 @@ export function mountShell(root: WorldHost): ShellHandle {
     label: string,
     meta: string,
     kind: 'place' | 'object',
-  ): HTMLAnchorElement {
-    const link = document.createElement('a');
+  ): HTMLElement {
+    /*
+     * A place caption moves the camera, so it is a button; an object caption
+     * opens a document, so it is a link with a real URL. That keeps history,
+     * deep links and middle-click working for content while the world itself
+     * stays the way you get around.
+     */
+    const link: HTMLElement =
+      kind === 'place' ? document.createElement('button') : document.createElement('a');
+    if (kind === 'place') (link as HTMLButtonElement).type = 'button';
+    else (link as HTMLAnchorElement).href = href;
     link.className = `world-hotspot world-hotspot--${kind}`;
-    link.href = href;
     link.dataset.worldHotspot = key;
     link.dataset.visible = 'false';
     link.tabIndex = -1;
@@ -354,15 +362,36 @@ export function mountShell(root: WorldHost): ShellHandle {
     link.addEventListener('focus', () => {
       link.dataset.visible = 'true';
     });
+    if (kind === 'place') {
+      const id = key.startsWith('place:') ? (key.slice(6) as DestinationId) : 'campus';
+      link.addEventListener('click', () => travelTo(id));
+    }
     return link;
   }
 
   interface Candidate {
     key: string;
-    link: HTMLAnchorElement;
+    link: HTMLElement;
     anchor: THREE.Vector3;
     priority: number;
     occluded: boolean;
+  }
+
+  /**
+   * Move to a destination without changing the URL. This is what a place
+   * caption does: the world is the navigation, so looking around and going
+   * somewhere are not the same act as opening a document.
+   */
+  function travelTo(id: DestinationId, immediate = false): void {
+    if (disposed) return;
+    focusPlace = id;
+    lastDestination = id === 'campus' ? null : id;
+    root.dataset.focus = id;
+    world.setPlaceState(id === 'campus' ? null : id);
+    if (id !== 'campus') world.triggerSignal(id);
+    rig.resetOrbit();
+    rebuildHotspots();
+    compose(immediate);
   }
 
   /** Which captions belong on screen for the current state. */
@@ -391,6 +420,22 @@ export function mountShell(root: WorldHost): ShellHandle {
       hotspots.set('place:campus', back);
 
       if (hostsObjects(focusPlace)) {
+        /*
+         * The way into the place's own index page. Without the dock this is
+         * what keeps every section reachable from the world alone.
+         */
+        const index = PLACE_INDEX[focusPlace];
+        if (index) {
+          const entry = makeHotspot(
+            `object:index:${focusPlace}`,
+            index.href,
+            index.label,
+            index.meta,
+            'object',
+          );
+          hotspots.set(`object:index:${focusPlace}`, entry);
+        }
+
         for (const marker of world.objectMarkers.filter((m) => m.place === focusPlace)) {
           const link = makeHotspot(
             `object:${marker.kind}:${marker.id}`,
@@ -416,6 +461,11 @@ export function mountShell(root: WorldHost): ShellHandle {
       return node ? node.anchor.clone() : null;
     }
     const parts = key.split(':');
+    if (parts[1] === 'index') {
+      const node = world.places.get(parts[2] as DestinationId);
+      /* Above the place, so it never sits on top of an object's caption. */
+      return node ? node.anchor.clone().add(new THREE.Vector3(0, 2.6, 0)) : null;
+    }
     const marker = world.objectMarkers.find((m) => m.kind === parts[1] && m.id === parts[2]);
     return marker ? marker.anchor.clone() : null;
   }
@@ -486,7 +536,11 @@ export function mountShell(root: WorldHost): ShellHandle {
         anchor,
         priority:
           (isFocused ? 500 : 0) +
-          (key.startsWith('object:') ? 100 : 0) +
+          /*
+           * The place's own index page is the only route to its archive, so
+           * it outranks the individual objects when the label budget bites.
+           */
+          (key.startsWith('object:index:') ? 200 : key.startsWith('object:') ? 100 : 0) +
           Math.max(0, 60 - distance),
         occluded: isOccluded || offscreen || underPanel,
       });
@@ -514,8 +568,14 @@ export function mountShell(root: WorldHost): ShellHandle {
 
       if (show) {
         const p = candidate.anchor.clone().project(rig.camera);
-        const x = (p.x * 0.5 + 0.5) * width;
         const y = (-p.y * 0.5 + 0.5) * height;
+        /* Keep the whole pill on screen: its own width decides the margin. */
+        const margin = 8;
+        const x = THREE.MathUtils.clamp(
+          (p.x * 0.5 + 0.5) * width,
+          w / 2 + margin,
+          Math.max(w / 2 + margin, width - w / 2 - margin),
+        );
         candidate.link.dataset.visible = 'true';
         candidate.link.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
         candidate.link.setAttribute('aria-hidden', 'false');
@@ -586,7 +646,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     return { stageWidth, stageHeight, free: whole };
   }
 
-  function shotFor(state: WorldState): Shot {
+  function shotFor(): Shot {
     const view = viewMetrics();
     /* Frame for the space that is actually visible, not the whole window. */
     const freeWidth = Math.max(view.free.right - view.free.left, 200);
@@ -594,36 +654,20 @@ export function mountShell(root: WorldHost): ShellHandle {
     const aspect = freeWidth / freeHeight;
     const overview = overviewShot(aspect);
 
-    /* The campus *is* the overview: whatever document is open there, the
-       visitor should still be looking at the whole place. */
-    if (state.destination === 'campus') {
+    /* The campus *is* the overview: whatever is open there, the visitor
+       should still be looking at the whole place. */
+    if (focusPlace === 'campus') {
       return reading ? readingShot(overview, view) : overview;
     }
     /* A wide, short strip needs the subject smaller than a tall one. */
     const band = freeHeight < view.stageHeight * 0.5;
-    const node = world.places.get(state.destination);
+    const node = world.places.get(focusPlace);
     const base = node ? placeShot(node.shot, aspect, band ? 1.45 : 1) : overview;
     return reading ? readingShot(base, view) : base;
   }
 
   function compose(immediate: boolean): void {
-    rig.goTo(shotFor(state), { immediate: immediate || reducedMotion });
-  }
-
-  /* ── Ambient motion ──────────────────────────────────────────────── */
-  function setPaused(next: boolean): void {
-    paused = next;
-    root.dataset.ambient = next ? 'paused' : 'playing';
-    for (const button of document.querySelectorAll<HTMLButtonElement>('[data-world-pause]')) {
-      button.setAttribute('aria-pressed', next ? 'true' : 'false');
-      const label = button.querySelector('[data-world-pause-label]');
-      if (label) {
-        label.textContent = next
-          ? (button.dataset.labelResume ?? 'Resume motion')
-          : (button.dataset.labelPause ?? 'Pause motion');
-      }
-    }
-    syncLoop();
+    rig.goTo(shotFor(), { immediate: immediate || reducedMotion });
   }
 
   /* ── Apply the page's state ──────────────────────────────────────── */
@@ -633,11 +677,15 @@ export function mountShell(root: WorldHost): ShellHandle {
     const previous = state;
     state = readState();
     reading = isReading(state);
-    focusPlace = reading || state.destination === 'campus' ? state.destination : 'campus';
-    /* Browsing the campus shows every destination; at a place we show that
-       place's own objects, so the caption budget is never exceeded. */
+    /*
+     * Where the camera starts for this page: the place the URL names, or the
+     * campus overview. Travel from there is the visitor's to change.
+     */
+    focusPlace = state.destination;
     if (state.surface === 'none') focusPlace = 'campus';
 
+    world.setPlaceState(focusPlace === 'campus' ? null : focusPlace);
+    lastDestination = focusPlace === 'campus' ? null : focusPlace;
     rebuildHotspots();
     measurePanel();
     compose(
@@ -646,22 +694,12 @@ export function mountShell(root: WorldHost): ShellHandle {
         previous.panel !== state.panel,
     );
 
-    if (state.destination !== lastDestination) {
-      world.setPlaceState(state.destination === 'campus' ? null : state.destination);
-      if (state.destination !== 'campus') world.triggerSignal(state.destination);
-      lastDestination = state.destination;
+    if (focusPlace !== lastDestination) {
+      if (focusPlace !== 'campus') world.triggerSignal(focusPlace);
+      lastDestination = focusPlace;
     }
     root.dataset.worldReading = reading ? 'true' : 'false';
-
-    for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-world-dock-link]')) {
-      const target = link.dataset.worldDockLink;
-      const active = target === state.destination;
-      if (active) link.setAttribute('aria-current', 'page');
-      else link.removeAttribute('aria-current');
-    }
-
-    const readout = document.querySelector<HTMLElement>('[data-world-readout]');
-    if (readout) readout.textContent = destinationMeta(state.destination).name;
+    root.dataset.focus = focusPlace;
 
     document.querySelectorAll<HTMLElement>('[data-surface-panel]').forEach((panel) => {
       if (panel.dataset.surfacePanel === state.surface) panel.removeAttribute('hidden');
@@ -685,46 +723,84 @@ export function mountShell(root: WorldHost): ShellHandle {
   /* ── Controls ────────────────────────────────────────────────────── */
   const cleanups: (() => void)[] = [];
 
-  function wireControls(): void {
-    for (const button of document.querySelectorAll<HTMLButtonElement>('[data-world-pause]')) {
-      if (button.dataset.wired) continue;
-      button.dataset.wired = '1';
-      button.addEventListener('click', () => {
-        setPaused(button.getAttribute('aria-pressed') !== 'true');
-      });
-    }
-    for (const button of document.querySelectorAll<HTMLButtonElement>('[data-world-simple]')) {
-      if (button.dataset.wired) continue;
-      button.dataset.wired = '1';
-      button.addEventListener('click', () => {
-        storeModePreference('simple');
-        setMode('simple');
-        window.location.reload();
-      });
-    }
-    const quality = document.querySelector<HTMLSelectElement>('[data-world-quality]');
-    if (quality && !quality.dataset.wired) {
-      quality.dataset.wired = '1';
-      quality.value = storedPreference ?? 'auto';
-      quality.addEventListener('change', () => {
-        const value = quality.value;
-        if (value === 'auto') {
-          clearPreference();
-          monitor.reset();
-          applyQuality(detectTier(), false);
-        } else if (isQualityTier(value)) {
-          applyQuality(value, true);
-        }
-      });
-    }
-    for (const button of document.querySelectorAll<HTMLButtonElement>('[data-world-reset]')) {
-      if (button.dataset.wired) continue;
-      button.dataset.wired = '1';
-      button.addEventListener('click', () => {
-        rig.resetOrbit();
-        compose(true);
-      });
-    }
+  /*
+   * Interaction: the world is the interface, so dragging it and zooming it
+   * are always available. One pointer orbits, two pinch to zoom, the wheel
+   * zooms. Pointer capture means a drag that leaves the stage keeps working.
+   */
+  function wireInteraction(): void {
+    if (stageEl.dataset.wired === '1') return;
+    stageEl.dataset.wired = '1';
+
+    const active = new Map<number, { x: number; y: number }>();
+    let pinchDistance = 0;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0 && event.pointerType === 'mouse') return;
+      active.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      stageEl.setPointerCapture(event.pointerId);
+      stageEl.dataset.dragging = 'true';
+      if (active.size === 2) pinchDistance = twoPointerDistance(active);
+      dismissHint();
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      const previous = active.get(event.pointerId);
+      if (!previous) return;
+      const dx = event.clientX - previous.x;
+      const dy = event.clientY - previous.y;
+      active.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (active.size >= 2) {
+        const next = twoPointerDistance(active);
+        if (pinchDistance > 0 && next > 0) rig.zoomBy((next - pinchDistance) / pinchDistance);
+        pinchDistance = next;
+        return;
+      }
+      if (dx || dy) rig.orbit(dx, dy);
+    };
+
+    const endPointer = (event: PointerEvent) => {
+      active.delete(event.pointerId);
+      if (active.size < 2) pinchDistance = 0;
+      if (active.size === 0) stageEl.dataset.dragging = 'false';
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (currentMode() !== 'world') return;
+      /* Line and page deltas normalise to roughly one notch. */
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
+      rig.zoomBy(THREE.MathUtils.clamp((event.deltaY * unit) / 600, -0.4, 0.4));
+      dismissHint();
+    };
+
+    const onDoubleClick = () => {
+      rig.resetOrbit();
+    };
+
+    stageEl.addEventListener('pointerdown', onPointerDown);
+    stageEl.addEventListener('pointermove', onPointerMove);
+    stageEl.addEventListener('pointerup', endPointer);
+    stageEl.addEventListener('pointercancel', endPointer);
+    stageEl.addEventListener('pointerleave', endPointer);
+    stageEl.addEventListener('wheel', onWheel, { passive: true });
+    stageEl.addEventListener('dblclick', onDoubleClick);
+    cleanups.push(() => {
+      stageEl.removeEventListener('pointerdown', onPointerDown);
+      stageEl.removeEventListener('pointermove', onPointerMove);
+      stageEl.removeEventListener('pointerup', endPointer);
+      stageEl.removeEventListener('pointercancel', endPointer);
+      stageEl.removeEventListener('pointerleave', endPointer);
+      stageEl.removeEventListener('wheel', onWheel);
+      stageEl.removeEventListener('dblclick', onDoubleClick);
+    });
+  }
+
+  /** Mean separation of two active pointers, for pinch zoom. */
+  function twoPointerDistance(points: Map<number, { x: number; y: number }>): number {
+    const [a, b] = [...points.values()];
+    if (!a || !b) return 0;
+    return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
   const onKeydown = (event: KeyboardEvent) => {
@@ -745,7 +821,7 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   function syncLoop(): void {
     const shouldRun =
-      !disposed && !paused && onScreen && currentMode() === 'world' && stageEl.clientHeight > 0;
+      !disposed && onScreen && currentMode() === 'world' && stageEl.clientHeight > 0;
     if (shouldRun && !running) {
       running = true;
       last = performance.now();
@@ -768,7 +844,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     const delta = Math.min(Math.max((now - last) / 1000, 0), 0.05);
     last = now;
     /* A document on screen means the scenery should settle, not perform. */
-    const animate = ambientAllowed && !paused && !reading;
+    const animate = ambientAllowed && !reading;
     if (animate) clock += delta;
     const step = animate ? delta : 0;
 
@@ -825,13 +901,13 @@ export function mountShell(root: WorldHost): ShellHandle {
   /* ── Navigation events ───────────────────────────────────────────── */
   const onAfterSwap = () => {
     restoreDocumentState();
-    wireControls();
+    wireInteraction();
     applyState();
     syncLoop();
   };
   const onPageLoad = () => {
     restoreDocumentState();
-    wireControls();
+    wireInteraction();
     applyState();
     syncLoop();
   };
@@ -866,7 +942,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   root.addEventListener('pointerdown', dismissHint, { once: true });
 
   resize();
-  wireControls();
+  wireInteraction();
   applyState();
   renderOnce();
   syncLoop();

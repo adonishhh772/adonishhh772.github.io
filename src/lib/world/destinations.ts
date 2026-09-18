@@ -111,5 +111,18 @@ export function isSurfaceKind(value: string | undefined | null): value is Surfac
  * installations, repository plaques) rather than the campus-wide markers.
  */
 export function hostsObjects(id: DestinationId): boolean {
-  return id === 'workshop' || id === 'library' || id === 'workbench';
+  return id === 'studio' || id === 'workshop' || id === 'library' || id === 'workbench' || id === 'contact';
 }
+
+/**
+ * The page each place opens when you select the place itself, rather than one
+ * of its objects. Every destination needs one: the world is the only way to
+ * get around, so a place with no way in would be unreachable. The studio is
+ * absent because its two documents are its objects.
+ */
+export const PLACE_INDEX: Partial<Record<DestinationId, { label: string; meta: string; href: string }>> = {
+  workshop: { label: 'All projects', meta: 'Index', href: '/work/' },
+  library: { label: 'All writing', meta: 'Archive', href: '/writing/' },
+  workbench: { label: 'All repositories', meta: 'Index', href: '/open-source/' },
+  contact: { label: 'Contact', meta: 'Email · LinkedIn · booking', href: '/contact/' },
+};
