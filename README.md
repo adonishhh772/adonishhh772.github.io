@@ -41,7 +41,10 @@ textures to download.
 ### Behaviour
 
 - **Default browsing** is ordinary page scrolling. The world has ambient motion;
-  scrolling never moves the camera.
+  scrolling never moves the camera. A short in-scene affordance ("Select a
+  station, or explore the world") appears once the camera settles and retires on
+  first interaction or after a few seconds, and a quiet scroll cue marks that the
+  page continues below the first screen.
 - **Explore the world** (or selecting any station) enters a bounded exploration
   mode: labelled stations travel the camera to a composed viewpoint (700–1100 ms,
   interruptible), with **Reset view** and **Exit exploration** always available.

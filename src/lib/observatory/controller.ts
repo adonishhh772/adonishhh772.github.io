@@ -194,6 +194,7 @@ export function mountObservatory(root: HTMLElement): ObservatoryHandle {
   const worldButtons = root.querySelectorAll<HTMLButtonElement>('[data-obs-world-toggle]');
   const controls = root.querySelector<HTMLElement>('[data-obs-controls]');
   const simpleView = root.querySelector<HTMLElement>('[data-obs-simple-view]');
+  const hint = root.querySelector<HTMLElement>('[data-obs-hint]');
 
   /* ── State ─────────────────────────────────────────────────────────── */
   let exploring = false;
@@ -484,6 +485,7 @@ export function mountObservatory(root: HTMLElement): ObservatoryHandle {
 
   function selectStation(id: StationId | null, exhibitId: string | null = null, returnTo?: HTMLElement | null): void {
     selected = id;
+    dismissHint();
     world.setStationState(id);
     for (const [key, button] of menuItems) {
       const on = key === id;
@@ -567,6 +569,7 @@ export function mountObservatory(root: HTMLElement): ObservatoryHandle {
   let dragState: { x: number; y: number; pointerId: number } | null = null;
 
   function onPointerDown(event: PointerEvent): void {
+    dismissHint();
     /* Orbit drag is exploration-only and never on touch. */
     if (!exploring || event.pointerType === 'touch' || event.button !== 0) return;
     dragState = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
@@ -628,6 +631,7 @@ export function mountObservatory(root: HTMLElement): ObservatoryHandle {
   /* ── Exploration mode ──────────────────────────────────────────────── */
   function enterExploration(): void {
     exploring = true;
+    dismissHint();
     root.dataset.exploring = 'true';
     if (controls) controls.dataset.mode = 'explore';
     stage!.dataset.exploring = 'true';
@@ -765,6 +769,7 @@ export function mountObservatory(root: HTMLElement): ObservatoryHandle {
   }
 
   function setSimpleView(on: boolean): void {
+    dismissHint();
     root.dataset.simple = on ? 'true' : 'false';
     if (simpleView) simpleView.hidden = !on;
     for (const button of simpleButtons) button.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -901,6 +906,32 @@ export function mountObservatory(root: HTMLElement): ObservatoryHandle {
   window.setTimeout(() => {
     if (!disposed && status) status.hidden = true;
   }, 3600);
+
+  /**
+   * Show the in-scene affordance after the camera has settled, then retire
+   * it: on any interaction, or after a few seconds on its own. It exists to
+   * answer "what is this and what can I do", once.
+   */
+  let hintTimer = 0;
+  let hintHidden = false;
+  function dismissHint(): void {
+    if (hintHidden || !hint) return;
+    hintHidden = true;
+    window.clearTimeout(hintTimer);
+    hint.dataset.leaving = 'true';
+    window.setTimeout(() => {
+      hint.hidden = true;
+      hint.dataset.leaving = 'false';
+    }, 460);
+  }
+  if (hint) {
+    hintTimer = window.setTimeout(() => {
+      if (!disposed) {
+        hint.hidden = false;
+        hintTimer = window.setTimeout(dismissHint, 7000);
+      }
+    }, 900);
+  }
 
   renderOnce();
   syncLoop();

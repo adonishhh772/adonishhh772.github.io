@@ -112,6 +112,10 @@ export const hero = {
     loadingLabel: 'Assembling the observatory',
     readyLabel: 'Observatory online — 6 stations',
     errorLabel: 'Interactive view unavailable',
+    /** In-scene affordance shown briefly once the world has settled. */
+    hint: 'Select a station, or explore the world',
+    /** Cue that the page continues past the first screen. */
+    scrollCue: 'Scroll for selected work',
     posterAlt:
       'Illustration of a miniature AI observatory on a floating island: a domed instrument at the centre, a project pavilion, a knowledge-graph garden, a signal tower, a studio and a contact beacon.',
   },

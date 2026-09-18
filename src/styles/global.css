@@ -1257,8 +1257,55 @@ textarea {
   }
 }
 
-/* Station hotspots — real buttons, projected from the world. */
-.obs-hotspots {
+/* A brief, quiet affordance in the empty sky: the world explaining itself
+   once, then getting out of the way. */
+.obs-hint {
+  position: absolute;
+  z-index: 5;
+  left: 0.85rem;
+  top: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line);
+  background: var(--bg-raised);
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  animation: hint-in var(--dur-4) var(--ease-out) both;
+  transition: opacity var(--dur-4) var(--ease-out);
+}
+
+.obs-hint[hidden] {
+  display: none;
+}
+
+.obs-hint[data-leaving='true'] {
+  opacity: 0;
+}
+
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.obs-hint-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+/* Station hotspots — real buttons, projected from the world. */.obs-hotspots {
   position: absolute;
   inset: 0;
   z-index: 4;
@@ -1536,6 +1583,49 @@ textarea {
 .obs-switch[aria-pressed='true'] .obs-switch-track::after {
   transform: translateX(14px);
   background: var(--accent);
+}
+
+/* Cue that there is more page below the fold: small, quiet, and only a
+   hairline of movement so it reads as an invitation rather than a fidget. */
+.scroll-cue {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: clamp(1.5rem, 4vw, 2.5rem);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.scroll-cue::before {
+  content: '';
+  width: 1px;
+  height: 26px;
+  background: linear-gradient(to bottom, transparent, var(--hairline-strong));
+}
+
+.scroll-cue svg {
+  width: 13px;
+  height: 13px;
+  animation: cue-nudge 2.8s var(--ease-in-out) infinite;
+}
+
+@keyframes cue-nudge {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(3px);
+  }
+}
+
+:root[data-ambient='paused'] .scroll-cue svg {
+  animation: none;
 }
 
 /* ── Station preview panel ─────────────────────────────────────────── */
@@ -2900,6 +2990,13 @@ textarea {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* Anything that only exists to move should stop, not merely move fast. */
+  .scroll-cue svg,
+  .status-dot::after,
+  .obs-status .pulse {
+    animation: none !important;
   }
 
   .has-reveal [data-reveal] {

@@ -126,6 +126,17 @@ const ordered = [...stations].sort((a, b) => {
       <span data-obs-status-text>{hero.stage.loadingLabel}</span>
     </p>
 
+    <!--
+      A brief in-scene affordance in the empty sky, so the world explains
+      itself rather than relying on a control below the fold of the stage.
+      Decorative: the Explore button and station menu already say this in
+      accessible terms, so screen readers are not told twice.
+    -->
+    <p class="obs-hint" data-obs-hint hidden aria-hidden="true">
+      <span class="obs-hint-dot"></span>
+      {hero.stage.hint}
+    </p>
+
     <!-- Preview panels: one per station plus one per project exhibit. -->
     <div class="obs-panel-host">
       <div class="obs-scrim" data-obs-scrim hidden></div>
@@ -354,6 +365,12 @@ const ordered = [...stations].sort((a, b) => {
       {hero.stage.worldLabel}
     </button>
   </div>
+
+  <!-- The page continues below the first screen; say so, quietly. -->
+  <p class="scroll-cue" aria-hidden="true">
+    <Icon name="chevron-down" size={13} />
+    {hero.stage.scrollCue}
+  </p>
 
   <!-- Simple view: every destination, no WebGL, no JavaScript required. -->
   <section class="obs-simple" data-obs-simple-view hidden aria-labelledby="obs-simple-title">
