@@ -8,9 +8,9 @@ node_modules/
 # local npm cache used when the default cache is unavailable
 .npm-cache/
 
-# verification artefacts (screenshots, headless Chrome profiles)
+# verification artefacts (headless screenshots, browser profiles)
 .screenshots/
-.chrome-profile*/
+.chrome-*/
 
 # environment
 .env
