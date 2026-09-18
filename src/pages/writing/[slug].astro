@@ -42,7 +42,12 @@ const others = (await getCollection('writing'))
 const title = data.title;
 ---
 
-<BaseLayout title={title} description={data.description} type="article">
+<BaseLayout title={title} description={data.description} type="article"
+  destination="library"
+  surface="article"
+  surfaceId={post.id}
+  backHref="/writing/"
+>
   <article>
     <!-- Article header -->
     <header class="article-header">

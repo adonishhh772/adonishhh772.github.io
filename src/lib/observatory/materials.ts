@@ -24,6 +24,8 @@ export class Materials {
   readonly practical: THREE.MeshStandardMaterial;
   readonly lamp: THREE.MeshStandardMaterial;
   readonly marker: THREE.MeshStandardMaterial;
+  readonly portrait: THREE.MeshStandardMaterial;
+  readonly paper: THREE.MeshStandardMaterial;
   readonly hill: THREE.MeshBasicMaterial;
   readonly mist: THREE.MeshBasicMaterial;
 
@@ -90,6 +92,11 @@ export class Materials {
     });
     this.all.push(this.marker);
 
+    /* The real portrait, shown on the studio wall. Starts as a plain panel
+       and gains its map once the photograph has loaded. */
+    this.portrait = standard(theme.stone, 0.85, 0);
+    this.paper = standard(0xffffff, 0.75, 0);
+
     /* Distant hills are painted, not lit — they exist for silhouette. Their
        colour comes entirely from per-instance colours, so the base is white
        and fog is off (see World.buildLandscape). */
@@ -130,11 +137,33 @@ export class Materials {
     this.practical.emissiveIntensity = theme.emissive * 0.8;
     this.lamp.emissive.setHex(theme.practical);
     this.lamp.emissiveIntensity = theme.name === 'light' ? 0.5 : 1.6;
+    /* Paper and the portrait frame sit just above the stone in both themes. */
+    this.paper.color.setHex(theme.stone).lerp(new THREE.Color(0xffffff), 0.5);
+    if (!this.portrait.map) this.portrait.color.setHex(theme.stone);
+
     this.marker.emissive.setHex(theme.practical);
     this.marker.emissiveIntensity = theme.name === 'light' ? 0.8 : 1.2;
 
     /* Stone reads brighter by daylight; the key light does the rest. */
     this.stone.roughness = theme.name === 'light' ? 0.88 : 0.8;
+  }
+
+  /** Attach the portrait photograph to the studio's frame. */
+  loadPortrait(url: string): void {
+    if (!url) return;
+    new THREE.TextureLoader().load(
+      url,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.portrait.map = texture;
+        this.portrait.color.setHex(0xffffff);
+        this.portrait.needsUpdate = true;
+      },
+      undefined,
+      () => {
+        /* Missing image: the frame simply stays a plain panel. */
+      },
+    );
   }
 
   setQuality(quality: QualitySettings): void {

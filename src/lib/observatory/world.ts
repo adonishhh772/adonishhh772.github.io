@@ -1,17 +1,19 @@
 /**
- * The observatory world.
+ * The observatory campus.
  *
- * One compact, art-directed island: a central instrument with a moving
- * orbital mechanism, a work pavilion with three exhibits, a knowledge
- * graph garden, a signal tower, a personal studio and a contact beacon —
- * joined by lit walkways, patrolled by a small guide drone, and hiding
- * three light markers that switch the observatory's lanterns on.
+ * One compact, art-directed island holding every destination of the site: a
+ * central instrument with a moving orbital mechanism, a personal studio with
+ * a working desk, a project workshop, a reading library, an open-source
+ * workbench and a contact station — joined by lit walkways, patrolled by a
+ * small guide drone, and hiding three light markers that switch the
+ * observatory's lanterns on.
  *
  * Everything is procedural. No external models, no texture downloads.
  */
 
 import * as THREE from 'three';
-import type { StationId } from '../../site.config';
+import type { DestinationId } from '../world/destinations';
+import type { WorldIndex } from '../world/state';
 import type { Materials } from './materials';
 import {
   buildDroneGeometry,
@@ -19,7 +21,6 @@ import {
   crystalGeometry,
   curveFrom,
   distantHills,
-  graphLayout,
   instancedMesh,
   lathe,
   latticeMast,
@@ -44,42 +45,52 @@ import type { WorldTheme } from './theme';
 /** Height of the island's flat plateau. */
 const GROUND = 1;
 
-interface StationLayout {
+interface PlaceLayout {
   x: number;
   z: number;
   pad: number;
   padHeight: number;
-  /** Rotation that turns the station's local +Z toward the island centre. */
+  /** Rotation that turns the place's local +Z toward the island centre. */
   yaw: number;
 }
 
-/** Radius of the ring of outer stations. */
+/** Radius of the ring of destinations around the campus landmark. */
 const RING_RADIUS = 8.6;
 
 /**
- * Station placement is an art-direction decision, not an arbitrary one:
- * the default camera looks in from roughly 44� east of north, so the Work
- * pavilion, the Contact beacon and the Signal tower all sit inside that
- * view cone and are readable the moment the world appears.
+ * Placement is an art-direction decision, not an arbitrary one. The overview
+ * camera looks in from roughly 44 degrees east of north, so the studio, the
+ * workshop, the library and the contact station all sit inside that view
+ * cone and read the moment the world appears; the workbench sits behind the
+ * landmark and is reached from the dock.
  */
-function layoutAt(degrees: number, radius: number, pad: number, padHeight: number): StationLayout {
+function layoutAt(degrees: number, radius: number, pad: number, padHeight: number): PlaceLayout {
   const angle = (degrees * Math.PI) / 180;
   const x = Math.sin(angle) * radius;
   const z = Math.cos(angle) * radius;
   return { x, z, pad, padHeight, yaw: radius === 0 ? 0 : Math.atan2(-x, -z) };
 }
 
-const LAYOUT: Record<StationId, StationLayout> = {
-  observatory: layoutAt(0, 0, 4.3, 0.9),
-  work: layoutAt(-20, RING_RADIUS, 3.1, 0.55),
-  contact: layoutAt(40, RING_RADIUS, 2.5, 0.45),
-  writing: layoutAt(100, RING_RADIUS, 2.3, 0.45),
-  knowledge: layoutAt(160, RING_RADIUS, 3, 0.4),
-  studio: layoutAt(250, RING_RADIUS, 2.6, 0.5),
+/** Convert a place-local point into campus space. */
+function localToWorld(layout: PlaceLayout, x: number, y: number, z: number): THREE.Vector3 {
+  return new THREE.Vector3(
+    layout.x + Math.cos(layout.yaw) * x + Math.sin(layout.yaw) * z,
+    y,
+    layout.z - Math.sin(layout.yaw) * x + Math.cos(layout.yaw) * z,
+  );
+}
+
+const LAYOUT: Record<DestinationId, PlaceLayout> = {
+  campus: layoutAt(0, 0, 4.3, 0.9),
+  studio: layoutAt(-45, RING_RADIUS, 3, 0.5),
+  workshop: layoutAt(0, RING_RADIUS, 3.2, 0.55),
+  library: layoutAt(50, RING_RADIUS, 3, 0.45),
+  contact: layoutAt(115, RING_RADIUS, 2.4, 0.45),
+  workbench: layoutAt(195, RING_RADIUS, 3.1, 0.4),
 };
 
-/** Walkway order � the ring, sorted by angle around the island. */
-const RING_ORDER: StationId[] = ['work', 'contact', 'writing', 'knowledge', 'studio'];
+/** Walkway order — the ring, sorted by angle around the island. */
+const RING_ORDER: DestinationId[] = ['studio', 'workshop', 'library', 'contact', 'workbench'];
 
 export interface Shot {
   position: THREE.Vector3;
@@ -87,9 +98,23 @@ export interface Shot {
   fov: number;
 }
 
+/** A pickable object in the world that stands for a piece of content. */
+export interface ObjectMarker {
+  id: string;
+  kind: 'article' | 'project' | 'repo';
+  place: DestinationId;
+  label: string;
+  meta: string;
+  href: string;
+  /** World position for the DOM caption. */
+  anchor: THREE.Vector3;
+  /** Raycast target. */
+  pick: THREE.Mesh;
+}
+
 export interface ExhibitNode {
   id: string;
-  station: StationId;
+  place: DestinationId;
   index: number;
   anchor: THREE.Vector3;
   pick: THREE.Mesh;
@@ -97,7 +122,7 @@ export interface ExhibitNode {
 }
 
 export interface DiscoveryNode {
-  station: StationId;
+  place: DestinationId;
   label: string;
   mesh: THREE.Mesh;
   halo: THREE.Mesh;
@@ -105,12 +130,12 @@ export interface DiscoveryNode {
   position: THREE.Vector3;
 }
 
-export interface StationNode {
-  id: StationId;
+export interface PlaceNode {
+  id: DestinationId;
   group: THREE.Group;
   /** Where the DOM hotspot label attaches. */
   anchor: THREE.Vector3;
-  /** Camera look-at when the station is framed. */
+  /** Camera look-at when the place is framed. */
   target: THREE.Vector3;
   shot: Shot;
   pick: THREE.Mesh;
@@ -136,16 +161,19 @@ export function fitDistance(radius: number, fovDeg: number, aspect: number): num
 
 export class ObservatoryWorld {
   readonly group = new THREE.Group();
-  readonly stations = new Map<StationId, StationNode>();
+  readonly places = new Map<DestinationId, PlaceNode>();
   readonly exhibits = new Map<string, ExhibitNode>();
+  /** Pickable objects for articles, repositories and projects. */
+  readonly objectMarkers: ObjectMarker[] = [];
 
   private readonly materials: Materials;
   private readonly atmosphere: Atmosphere;
   private quality: QualitySettings;
   private theme: WorldTheme;
+  private readonly index: WorldIndex;
 
-  /** Materials whose emissive intensity is animated per station. */
-  private readonly glowMaterials = new Map<StationId, THREE.MeshStandardMaterial>();
+  /** Materials whose emissive intensity is animated per place. */
+  private readonly glowMaterials = new Map<DestinationId, THREE.MeshStandardMaterial>();
 
   /* Animated pieces */
   private armillary = new THREE.Group();
@@ -166,7 +194,7 @@ export class ObservatoryWorld {
   /* Signals along the pathways */
   private signals: { mesh: THREE.Mesh; t: number; speed: number; curve: THREE.CatmullRomCurve3 }[] = [];
   private flight: { mesh: THREE.Mesh; curve: THREE.CatmullRomCurve3; t: number } | null = null;
-  private spurCurves = new Map<StationId, THREE.CatmullRomCurve3>();
+  private spurCurves = new Map<DestinationId, THREE.CatmullRomCurve3>();
   private ringCurve!: THREE.CatmullRomCurve3;
   private droneTarget = new THREE.Vector3();
   private dronePosition = new THREE.Vector3(0, 9, 12);
@@ -183,8 +211,10 @@ export class ObservatoryWorld {
     quality: QualitySettings,
     materials: Materials,
     atmosphere: Atmosphere,
+    index: WorldIndex = { articles: [], projects: [], repos: [] },
   ) {
     this.theme = theme;
+    this.index = index;
     this.quality = quality;
     this.materials = materials;
     this.atmosphere = atmosphere;
@@ -193,12 +223,12 @@ export class ObservatoryWorld {
     this.buildIsland();
     this.buildLandscape();
     this.buildPathways();
-    this.buildObservatory();
-    this.buildWorkPavilion();
-    this.buildKnowledgeGarden();
-    this.buildSignalTower();
+    this.buildCampusLandmark();
     this.buildStudio();
-    this.buildContactBeacon();
+    this.buildWorkshop();
+    this.buildLibrary();
+    this.buildWorkbench();
+    this.buildContactStation();
     this.buildDrone();
     this.buildSignals();
     this.wirePracticalLights();
@@ -213,18 +243,25 @@ export class ObservatoryWorld {
    * contact beacon's lantern.
    */
   private wirePracticalLights(): void {
-    const studio = this.stationLayout('studio');
-    const tower = this.stationLayout('writing');
-    const contact = this.stationLayout('contact');
+    const studio = this.placeLayout('studio');
+    const library = this.placeLayout('library');
+    const contact = this.placeLayout('contact');
+    /* In front of the studio's open face, so the room reads as lit from the
+       angle the camera actually approaches it. */
+    const studioOut = new THREE.Vector3(studio.origin.x, 0, studio.origin.z).normalize();
     this.atmosphere.setPractical(
       0,
-      new THREE.Vector3(studio.origin.x + 0.4, studio.surface + 1, studio.origin.z + 1),
-      6.5,
+      new THREE.Vector3(
+        studio.origin.x + studioOut.x * 1.7,
+        studio.surface + 1.7,
+        studio.origin.z + studioOut.z * 1.7,
+      ),
+      11,
       this.theme.practical,
     );
     this.atmosphere.setPractical(
       1,
-      new THREE.Vector3(tower.origin.x, tower.surface + 8.1, tower.origin.z),
+      new THREE.Vector3(library.origin.x, library.surface + 3.2, library.origin.z),
       4.5,
       this.theme.signal,
     );
@@ -252,7 +289,7 @@ export class ObservatoryWorld {
       cast?: boolean;
       receive?: boolean;
       position?: THREE.Vector3;
-      /** Counts as a real occluder when projecting station labels. */
+      /** Counts as a real occluder when projecting place labels. */
       occluder?: boolean;
     } = {},
   ): THREE.Mesh {
@@ -267,7 +304,7 @@ export class ObservatoryWorld {
     return mesh;
   }
 
-  private accentMaterial(station: StationId, color: number): THREE.MeshStandardMaterial {
+  private accentMaterial(place: DestinationId, color: number): THREE.MeshStandardMaterial {
     const material = this.track(
       new THREE.MeshStandardMaterial({
         color: 0x0a1018,
@@ -277,19 +314,19 @@ export class ObservatoryWorld {
         emissiveIntensity: 0.35,
       }),
     );
-    this.glowMaterials.set(station, material);
+    this.glowMaterials.set(place, material);
     return material;
   }
 
-  private stationLayout(id: StationId): { layout: StationLayout; surface: number; origin: THREE.Vector3 } {
+  private placeLayout(id: DestinationId): { layout: PlaceLayout; surface: number; origin: THREE.Vector3 } {
     const layout = LAYOUT[id];
     const surface = GROUND - 0.05 + layout.padHeight;
     return { layout, surface, origin: new THREE.Vector3(layout.x, surface, layout.z) };
   }
 
-  /** Camera shot that frames a station from outside the island. */
-  private shotFor(id: StationId, accentHeight = 1.4): Shot {
-    const { layout, surface } = this.stationLayout(id);
+  /** Camera shot that frames a place from outside the island. */
+  private shotFor(id: DestinationId, accentHeight = 1.4): Shot {
+    const { layout, surface } = this.placeLayout(id);
     const outward = new THREE.Vector3(layout.x, 0, layout.z);
     if (outward.lengthSq() < 0.001) {
       return {
@@ -299,18 +336,29 @@ export class ObservatoryWorld {
       };
     }
     outward.normalize();
-    const distance = 7.6 + layout.pad * 0.6;
+    /*
+     * Approach from a three-quarter angle rather than radially: looking
+     * straight in from outside would put the campus landmark directly behind
+     * every destination, and the subject would read as part of it.
+     */
+    const swing = Math.PI * 0.21;
+    const view = new THREE.Vector3(
+      outward.x * Math.cos(swing) - outward.z * Math.sin(swing),
+      0,
+      outward.x * Math.sin(swing) + outward.z * Math.cos(swing),
+    );
+    const distance = 8.4 + layout.pad * 0.7;
     const position = new THREE.Vector3(
-      layout.x + outward.x * distance,
-      surface + 4.4,
-      layout.z + outward.z * distance,
+      layout.x + view.x * distance,
+      surface + 3.4,
+      layout.z + view.z * distance,
     );
     const target = new THREE.Vector3(layout.x, surface + accentHeight, layout.z);
     return { position, target, fov: 36 };
   }
 
-  private registerStation(
-    id: StationId,
+  private registerPlace(
+    id: DestinationId,
     build: (context: {
       group: THREE.Group;
       surface: number;
@@ -323,10 +371,10 @@ export class ObservatoryWorld {
       targetY?: number;
       exhibits?: ExhibitNode[];
     },
-  ): StationNode {
-    const { layout, surface, origin } = this.stationLayout(id);
+  ): PlaceNode {
+    const { layout, surface, origin } = this.placeLayout(id);
     const group = new THREE.Group();
-    group.name = `station-${id}`;
+    group.name = `place-${id}`;
     group.position.set(layout.x, 0, layout.z);
     group.rotation.y = layout.yaw;
     this.group.add(group);
@@ -334,7 +382,7 @@ export class ObservatoryWorld {
     const glow = this.accentMaterial(id, this.accentFor(id));
     const result = build({ group, surface, origin, glow });
 
-    /* A generous, invisible hit volume makes station selection forgiving. */
+    /* A generous, invisible hit volume makes place selection forgiving. */
     const pickRadius = result.pickRadius ?? layout.pad + 0.4;
     const pickHeight = result.pickHeight ?? 3.2;
     const pickGeometry = this.track(
@@ -345,7 +393,7 @@ export class ObservatoryWorld {
     pick.position.set(layout.x, surface + pickHeight / 2 - 0.2, layout.z);
     this.group.add(pick);
 
-    const node: StationNode = {
+    const node: PlaceNode = {
       id,
       group,
       anchor: new THREE.Vector3(layout.x, surface + (result.anchorY ?? 2.6), layout.z),
@@ -359,14 +407,20 @@ export class ObservatoryWorld {
     };
 
     for (const exhibit of node.exhibits) this.exhibits.set(exhibit.id, exhibit);
-    this.stations.set(id, node);
+    this.places.set(id, node);
     return node;
   }
 
-  private accentFor(id: StationId): number {
+  /** Distinct accent per workshop installation, cycling the palette. */
+  private exhibitAccent(index: number): number {
+    const palette = [this.theme.signal, this.theme.practical, 0x9db4ff, 0x7fd6a8];
+    return palette[index % palette.length];
+  }
+
+  private accentFor(id: DestinationId): number {
     switch (id) {
-      case 'writing':
       case 'studio':
+      case 'library':
       case 'contact':
         return this.theme.practical;
       default:
@@ -593,9 +647,9 @@ export class ObservatoryWorld {
   /* ── Pathways ──────────────────────────────────────────────────────── */
 
   private buildPathways(): void {
-    const order: StationId[] = RING_ORDER;
+    const order: DestinationId[] = RING_ORDER;
     const ringPoints = order.map((id) => {
-      const { origin } = this.stationLayout(id);
+      const { origin } = this.placeLayout(id);
       return new THREE.Vector3(origin.x * 1.02, origin.y + 0.02, origin.z * 1.02);
     });
     this.ringCurve = curveFrom(ringPoints, true, 0.5);
@@ -649,13 +703,13 @@ export class ObservatoryWorld {
     }
 
     /* The entrance avenue: the observatory terrace out to the beacon. */
-    const { origin: observatory } = this.stationLayout('observatory');
-    const { origin: contact } = this.stationLayout('contact');
+    const { origin: landmark } = this.placeLayout('campus');
+    const { origin: contact } = this.placeLayout('contact');
     const outward = new THREE.Vector3(contact.x, 0, contact.z).normalize();
     const avenue = curveFrom(
       [
-        new THREE.Vector3(outward.x * 3.8, observatory.y + 0.02, outward.z * 3.8),
-        new THREE.Vector3(outward.x * 4.8, observatory.y + 0.04, outward.z * 4.8),
+        new THREE.Vector3(outward.x * 3.8, landmark.y + 0.02, outward.z * 3.8),
+        new THREE.Vector3(outward.x * 4.8, landmark.y + 0.04, outward.z * 4.8),
         new THREE.Vector3(outward.x * 5.8, contact.y + 0.04, outward.z * 5.8),
         new THREE.Vector3(outward.x * 6.6, contact.y + 0.02, outward.z * 6.6),
       ],
@@ -685,11 +739,11 @@ export class ObservatoryWorld {
       }
     }
 
-    /* A dedicated spur per station, used by the travelling signals. */
-    const observatoryEdge = new THREE.Vector3(observatory.x, observatory.y + 0.4, observatory.z);
-    for (const id of Object.keys(LAYOUT) as StationId[]) {
-      const { origin } = this.stationLayout(id);
-      const start = observatoryEdge.clone();
+    /* A dedicated spur per place, used by the travelling signals. */
+    const landmarkEdge = new THREE.Vector3(landmark.x, landmark.y + 0.4, landmark.z);
+    for (const id of Object.keys(LAYOUT) as DestinationId[]) {
+      const { origin } = this.placeLayout(id);
+      const start = landmarkEdge.clone();
       const end = new THREE.Vector3(origin.x, origin.y + 0.35, origin.z);
       const mid = start.clone().lerp(end, 0.5);
       mid.y += 1.6 + start.distanceTo(end) * 0.09;
@@ -699,8 +753,8 @@ export class ObservatoryWorld {
 
   /* ── Station: central observatory ──────────────────────────────────── */
 
-  private buildObservatory(): void {
-    const node = this.registerStation('observatory', ({ group, surface, glow }) => {
+  private buildCampusLandmark(): void {
+    const node = this.registerPlace('campus', ({ group, surface, glow }) => {
       const baseY = GROUND - 0.05;
       this.mesh(terrace(4, 0.9, 0.18), this.materials.stone, group, 'obs-terrace', {
         position: new THREE.Vector3(0, baseY, 0),
@@ -891,498 +945,627 @@ export class ObservatoryWorld {
       return { anchorY: 5.2, pickRadius: 4.3, pickHeight: 9, targetY: 3.6 };
     });
 
-    /* The hidden marker for this station, tucked behind the colonnade. */
+    /* The hidden marker for this place, tucked behind the colonnade. */
     this.attachDiscovery(node, new THREE.Vector3(3.3, GROUND + 1.2, 2.5));
   }
 
   /* ── Station: work pavilion ────────────────────────────────────────── */
 
-  private buildWorkPavilion(): void {
-    const accents = [this.theme.signal, this.theme.practical, 0x9db4ff];
-    const node = this.registerStation('work', ({ group, surface, glow }) => {
-      const exhibits: ExhibitNode[] = [];
-      this.mesh(terrace(3.1, 0.55, 0.14), this.materials.stone, group, 'work-terrace', {
-        position: new THREE.Vector3(0, GROUND - 0.05, 0),
-      });
-      this.mesh(rimRing(2.98, 0.045, 44), this.materials.stoneDark, group, 'work-rim', {
-        position: new THREE.Vector3(0, surface - 0.05, 0),
-      });
-      this.mesh(rimRing(2.7, 0.024, 44), glow, group, 'work-rimlight', {
-        position: new THREE.Vector3(0, surface - 0.01, 0),
-        cast: false,
-        receive: false,
-      });
+  /* ── Destination: personal studio (CV + biography) ─────────────────── */
 
-      /* Three exhibits on an arc, all facing the island centre. */
-      const arcs = [-0.62, 0, 0.62];
-      arcs.forEach((angle, index) => {
-        const radius = 1.72;
-        const x = Math.sin(angle) * radius;
-        const z = Math.cos(angle) * radius + 0.35;
-        const accent = accents[index];
-        const exhibitGlow = this.track(
+  private buildStudio(): void {
+    const node = this.registerPlace(
+      'studio',
+      ({ group, surface, glow }) => {
+        const baseY = GROUND - 0.05;
+        this.mesh(terrace(3, 0.5, 0.12), this.materials.stone, group, 'studio-terrace', {
+          position: new THREE.Vector3(0, baseY, 0),
+        });
+        this.mesh(rimRing(2.9, 0.04, 40), this.materials.stoneDark, group, 'studio-rim', {
+          position: new THREE.Vector3(0, surface - 0.04, 0),
+        });
+        this.mesh(rimRing(2.62, 0.022, 40), glow, group, 'studio-rimlight', {
+          position: new THREE.Vector3(0, surface - 0.005, 0),
+          cast: false,
+          receive: false,
+        });
+
+        /* The room. Its open face is local -Z, which is the side the camera
+           approaches from, so the desk and the portrait read immediately. */
+        this.mesh(roundedBox(3.2, 1.6, 1.9, 0.1), this.materials.stone, group, 'studio-shell', {
+          position: new THREE.Vector3(0, surface + 0.8, 0.55),
+          occluder: true,
+        });
+        this.mesh(roundedBox(3.6, 0.14, 2.3, 0.05), this.materials.metalDark, group, 'studio-roof', {
+          position: new THREE.Vector3(0, surface + 1.68, 0.5),
+        }).rotation.x = -0.09;
+        /* A clerestory box on the roof, so the silhouette is not a plain box. */
+        this.mesh(roundedBox(1.2, 0.4, 0.9, 0.04), this.materials.ceramic, group, 'studio-lantern', {
+          position: new THREE.Vector3(-0.85, surface + 1.95, 0.5),
+        }).rotation.x = -0.09;
+
+        /* Interior: floor, back wall, and a warm ceiling wash. */
+        this.mesh(roundedBox(3.0, 0.06, 1.7, 0.03), this.materials.stoneDark, group, 'studio-floor', {
+          position: new THREE.Vector3(0, surface + 0.05, 0.55),
+          cast: false,
+        });
+        const warmPanel = this.track(
           new THREE.MeshStandardMaterial({
-            color: 0x0a1018,
-            roughness: 0.3,
-            metalness: 0.1,
-            emissive: new THREE.Color(accent),
-            emissiveIntensity: 0.5,
+            color: 0x1a1206,
+            roughness: 0.55,
+            emissive: new THREE.Color(this.theme.practical),
+            emissiveIntensity: 1.4,
           }),
         );
-        this.mesh(terrace(0.56, 0.66, 0.08), this.materials.ceramic, group, `work-plinth-${index}`, {
-          position: new THREE.Vector3(x, surface, z),
+        this.mesh(new THREE.BoxGeometry(2.6, 0.5, 0.04), warmPanel, group, 'studio-backlight', {
+          position: new THREE.Vector3(0, surface + 1.2, 1.44),
+          cast: false,
+          receive: false,
         });
-        const vitrine = this.mesh(
-          roundedBox(0.72, 0.86, 0.72, 0.05),
-          this.materials.glass,
-          group,
-          `work-vitrine-${index}`,
-          { position: new THREE.Vector3(x, surface + 0.66 + 0.43, z), cast: false },
-        );
-        vitrine.renderOrder = 1;
 
-        /* A distinct emissive core per project, so the exhibits differ. */
-        const coreY = surface + 1.12;
-        if (index === 0) {
-          this.mesh(
-            new THREE.IcosahedronGeometry(0.17, 0),
-            exhibitGlow,
-            group,
-            'work-core-kai',
-            { position: new THREE.Vector3(x, coreY, z), cast: false, receive: false },
+        /* The desk: the object the CV belongs to. */
+        this.mesh(roundedBox(2.1, 0.09, 0.8, 0.03), this.materials.ceramic, group, 'studio-desk', {
+          position: new THREE.Vector3(0.1, surface + 0.72, 0.75),
+        });
+        const legGeometry = this.track(new THREE.CylinderGeometry(0.045, 0.045, 0.7, 6));
+        const legs: THREE.Matrix4[] = [];
+        for (const [dx, dz] of [
+          [-0.9, 0.38],
+          [1.1, 0.38],
+          [-0.9, 1.12],
+          [1.1, 1.12],
+        ]) {
+          legs.push(new THREE.Matrix4().makeTranslation(0.1 + dx * 0.5, surface + 0.36, dz));
+        }
+        group.add(instancedMesh(legGeometry, this.materials.metalDark, legs, 'studio-desk-legs'));
+
+        /* Monitor, keyboard, mug — small props that make it a real desk. */
+        this.mesh(roundedBox(0.62, 0.4, 0.05, 0.02), this.materials.metalDark, group, 'studio-screen', {
+          position: new THREE.Vector3(-0.35, surface + 1.02, 0.62),
+        });
+        this.mesh(new THREE.BoxGeometry(0.56, 0.32, 0.02), glow, group, 'studio-screen-glow', {
+          position: new THREE.Vector3(-0.35, surface + 1.02, 0.6),
+          cast: false,
+          receive: false,
+        });
+        this.mesh(roundedBox(0.52, 0.03, 0.18, 0.01), this.materials.ceramic, group, 'studio-keyboard', {
+          position: new THREE.Vector3(-0.3, surface + 0.78, 0.95),
+        });
+        this.mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.12, 10), this.materials.ceramic, group, 'studio-mug', {
+          position: new THREE.Vector3(0.75, surface + 0.83, 0.8),
+        });
+        /* Chair. */
+        this.mesh(roundedBox(0.5, 0.07, 0.5, 0.02), this.materials.metalDark, group, 'studio-chair', {
+          position: new THREE.Vector3(0.1, surface + 0.5, 1.5),
+        });
+        this.mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.5, 6), this.materials.metalDark, group, 'studio-chair-stem', {
+          position: new THREE.Vector3(0.1, surface + 0.25, 1.5),
+        });
+
+        /* The portrait: the real photograph, framed on the back wall. */
+        const portrait = this.mesh(
+          new THREE.PlaneGeometry(0.62, 0.62),
+          this.materials.portrait,
+          group,
+          'studio-portrait',
+          { position: new THREE.Vector3(0.95, surface + 1.28, 1.42), cast: false, receive: false },
+        );
+        portrait.userData.objectId = 'about';
+        this.mesh(roundedBox(0.74, 0.74, 0.05, 0.02), this.materials.metal, group, 'studio-portrait-frame', {
+          position: new THREE.Vector3(0.95, surface + 1.28, 1.45),
+          cast: false,
+        });
+
+        /* The CV itself: a lectern holding a lit document, beside the desk. */
+        this.mesh(roundedBox(0.86, 0.08, 0.6, 0.03), this.materials.ceramic, group, 'studio-lectern', {
+          position: new THREE.Vector3(-1.15, surface + 1.02, -0.15),
+        }).rotation.x = 0.38;
+        this.mesh(new THREE.CylinderGeometry(0.07, 0.09, 1, 8), this.materials.metalDark, group, 'studio-lectern-stem', {
+          position: new THREE.Vector3(-1.15, surface + 0.5, -0.02),
+        });
+        const cvPage = this.mesh(new THREE.PlaneGeometry(0.7, 0.46), this.materials.paper, group, 'studio-cv-page', {
+          position: new THREE.Vector3(-1.15, surface + 1.07, -0.13),
+          cast: false,
+          receive: false,
+        });
+        cvPage.rotation.x = -Math.PI / 2 + 0.38;
+        cvPage.userData.objectId = 'cv';
+
+        /* A floor lamp so the studio glows warm at night. */
+        this.mesh(new THREE.CylinderGeometry(0.035, 0.045, 1.3, 6), this.materials.metalDark, group, 'studio-lamp-post', {
+          position: new THREE.Vector3(1.5, surface + 0.65, 0.1),
+        });
+        const lamp = this.track(
+          new THREE.MeshStandardMaterial({
+            color: 0x1a1206,
+            roughness: 0.4,
+            emissive: new THREE.Color(this.theme.practical),
+            emissiveIntensity: 1.7,
+          }),
+        );
+        this.mesh(new THREE.SphereGeometry(0.14, 12, 8), lamp, group, 'studio-lamp', {
+          position: new THREE.Vector3(1.5, surface + 1.34, 0.1),
+          cast: false,
+          receive: false,
+        });
+
+        return { anchorY: 2.5, pickRadius: 2.7, pickHeight: 3, targetY: 1.5 };
+      },
+    );
+
+    this.attachDiscovery(node, new THREE.Vector3(2.1, GROUND + 0.6, -1.6));
+  }
+
+  /* ── Destination: project workshop ─────────────────────────────────── */
+
+  private buildWorkshop(): void {
+    const node = this.registerPlace(
+      'workshop',
+      ({ group, surface, glow }) => {
+        const exhibits: ExhibitNode[] = [];
+        this.mesh(terrace(3.2, 0.55, 0.14), this.materials.stone, group, 'workshop-terrace', {
+          position: new THREE.Vector3(0, GROUND - 0.05, 0),
+        });
+        this.mesh(rimRing(3.08, 0.045, 44), this.materials.stoneDark, group, 'workshop-rim', {
+          position: new THREE.Vector3(0, surface - 0.05, 0),
+        });
+        this.mesh(rimRing(2.8, 0.024, 44), glow, group, 'workshop-rimlight', {
+          position: new THREE.Vector3(0, surface - 0.01, 0),
+          cast: false,
+          receive: false,
+        });
+
+        /* One installation per real project, arranged on an arc that faces
+           the approaching camera (local -Z). */
+        const projects = this.index.projects;
+        const columns = Math.min(Math.max(projects.length, 1), 4);
+
+        projects.forEach((project, index) => {
+          const row = Math.floor(index / columns);
+          const column = index % columns;
+          const spread = columns === 1 ? 0 : 1;
+          const x = spread
+            ? (column / (columns - 1) - 0.5) * 2 * (1.15 + 0.25 * columns)
+            : 0;
+          const z = -0.65 - row * 1.35;
+          const accent = this.exhibitAccent(index);
+
+          const exhibitGlow = this.track(
+            new THREE.MeshStandardMaterial({
+              color: 0x0a1018,
+              roughness: 0.3,
+              metalness: 0.1,
+              emissive: new THREE.Color(accent),
+              emissiveIntensity: 0.5,
+            }),
           );
-        } else if (index === 1) {
-          /* A miniature node graph — the GraphRAG platform. */
-          const cluster = new THREE.Group();
-          cluster.position.set(x, coreY, z);
-          group.add(cluster);
-          const ring = 0.14;
-          for (let n = 0; n < 4; n++) {
-            const a = (n / 4) * Math.PI * 2;
-            this.mesh(
-              new THREE.SphereGeometry(0.062, 10, 8),
-              exhibitGlow,
-              cluster,
-              `work-core-graph-${n}`,
-              {
-                position: new THREE.Vector3(
-                  Math.cos(a) * ring,
-                  Math.sin(a * 2) * 0.09,
-                  Math.sin(a) * ring,
-                ),
+          this.mesh(terrace(0.6, 0.7, 0.08), this.materials.ceramic, group, `workshop-plinth-${index}`, {
+            position: new THREE.Vector3(x, surface, z),
+          });
+          const vitrine = this.mesh(
+            roundedBox(0.76, 0.9, 0.76, 0.05),
+            this.materials.glass,
+            group,
+            `workshop-vitrine-${index}`,
+            { position: new THREE.Vector3(x, surface + 0.7 + 0.45, z), cast: false },
+          );
+          vitrine.renderOrder = 1;
+          vitrine.userData.objectId = project.id;
+
+          /* Three core shapes cycle, so neighbouring installations differ. */
+          const coreY = surface + 1.18;
+          if (index % 3 === 0) {
+            this.mesh(new THREE.IcosahedronGeometry(0.18, 0), exhibitGlow, group, `workshop-core-a-${index}`, {
+              position: new THREE.Vector3(x, coreY, z),
+              cast: false,
+              receive: false,
+            });
+          } else if (index % 3 === 1) {
+            const cluster = new THREE.Group();
+            cluster.position.set(x, coreY, z);
+            group.add(cluster);
+            const ring = 0.15;
+            for (let n = 0; n < 4; n++) {
+              const a = (n / 4) * Math.PI * 2;
+              this.mesh(new THREE.SphereGeometry(0.062, 10, 8), exhibitGlow, cluster, `workshop-node-${index}-${n}`, {
+                position: new THREE.Vector3(Math.cos(a) * ring, Math.sin(a * 2) * 0.09, Math.sin(a) * ring),
                 cast: false,
                 receive: false,
-              },
-            );
-          }
-          for (let n = 0; n < 4; n++) {
-            const a = (n / 4) * Math.PI * 2;
-            const b = ((n + 1) / 4) * Math.PI * 2;
-            const from = new THREE.Vector3(Math.cos(a) * ring, Math.sin(a * 2) * 0.09, Math.sin(a) * ring);
-            const to = new THREE.Vector3(Math.cos(b) * ring, Math.sin(b * 2) * 0.09, Math.sin(b) * ring);
-            const edge = this.mesh(
-              this.track(unitCylinder(0.012, 5)),
+              });
+            }
+            for (let n = 0; n < 4; n++) {
+              const a = (n / 4) * Math.PI * 2;
+              const b = ((n + 1) / 4) * Math.PI * 2;
+              const edge = this.mesh(
+                this.track(unitCylinder(0.012, 5)),
+                exhibitGlow,
+                cluster,
+                `workshop-edge-${index}-${n}`,
+                { cast: false, receive: false },
+              );
+              spanMatrix(
+                new THREE.Vector3(Math.cos(a) * ring, Math.sin(a * 2) * 0.09, Math.sin(a) * ring),
+                new THREE.Vector3(Math.cos(b) * ring, Math.sin(b * 2) * 0.09, Math.sin(b) * ring),
+                edge.matrix,
+              );
+              edge.matrixAutoUpdate = false;
+            }
+          } else {
+            this.mesh(
+              this.track(new THREE.TorusGeometry(0.17, 0.03, 6, 22)),
               exhibitGlow,
-              cluster,
-              `work-core-edge-${n}`,
-              { cast: false, receive: false },
-            );
-            spanMatrix(from, to, edge.matrix);
-            edge.matrixAutoUpdate = false;
+              group,
+              `workshop-core-c-${index}`,
+              { position: new THREE.Vector3(x, coreY, z), cast: false, receive: false },
+            ).rotation.x = Math.PI / 2.6;
           }
-        } else {
-          /* A tuning ring — the RAN optimisation agent. */
-          const ringCore = this.mesh(
-            this.track(new THREE.TorusGeometry(0.16, 0.028, 6, 22)),
-            exhibitGlow,
+
+          /* A small engraved plate carries the project's name up close. */
+          const plate = this.mesh(
+            roundedBox(0.66, 0.16, 0.03, 0.015),
+            this.materials.paper,
             group,
-            'work-core-hyperran',
-            { position: new THREE.Vector3(x, coreY, z), cast: false, receive: false },
+            `workshop-plate-${index}`,
+            { position: new THREE.Vector3(x, surface + 0.34, z - 0.42), cast: false, receive: false },
           );
-          ringCore.rotation.x = Math.PI / 2.6;
-        }
+          plate.userData.objectId = project.id;
 
-        exhibits.push({
-          id: ['kai', 'education-platform', 'hyperran'][index],
-          station: 'work',
-          index,
-          anchor: new THREE.Vector3(
-            LAYOUT.work.x + Math.cos(LAYOUT.work.yaw) * x + Math.sin(LAYOUT.work.yaw) * z,
-            surface + 1.7,
-            LAYOUT.work.z - Math.sin(LAYOUT.work.yaw) * x + Math.cos(LAYOUT.work.yaw) * z,
-          ),
-          pick: vitrine,
-          glow: exhibitGlow,
+          exhibits.push({
+            id: project.id,
+            place: 'workshop',
+            index,
+            anchor: localToWorld(LAYOUT.workshop, x, surface + 1.75, z),
+            pick: vitrine,
+            glow: exhibitGlow,
+          });
         });
-      });
 
-      /* Curved canopy on slender columns. */
-      const canopyGeometry = (
-        new THREE.CylinderGeometry(3.45, 3.45, 0.12, 40, 1, true, -1.15, 2.3)
-      );
-      canopyGeometry.rotateZ(Math.PI / 2);
-      canopyGeometry.rotateY(-Math.PI / 2);
-      const canopy = this.mesh(canopyGeometry, this.materials.ceramic, group, 'work-canopy', {
-        position: new THREE.Vector3(0, surface + 2.85, 0.35),
-      });
-      canopy.material = this.track(
-        new THREE.MeshStandardMaterial({
-          color: this.theme.stone,
-          roughness: 0.7,
-          metalness: 0.04,
-          side: THREE.DoubleSide,
-        }),
-      );
-      canopy.castShadow = this.quality.shadows;
-      canopy.userData.occluder = true;
-
-      const pillarGeometry = this.track(new THREE.CylinderGeometry(0.075, 0.085, 2.85, 8));
-      const pillars: THREE.Matrix4[] = [];
-      for (const angle of [-0.95, 0, 0.95]) {
-        const radius = 3.15;
-        pillars.push(
-          new THREE.Matrix4().makeTranslation(
-            Math.sin(angle) * radius,
-            surface + 1.42,
-            Math.cos(angle) * radius + 0.35,
-          ),
+        /* Sawtooth canopy on slender masts, so the silhouette is industrial. */
+        const canopy = this.mesh(
+          roundedBox(Math.min(6.4, 2 + columns * 1.5), 0.14, 2.1, 0.05),
+          this.materials.ceramic,
+          group,
+          'workshop-canopy',
+          { position: new THREE.Vector3(0, surface + 2.9, -0.4) },
         );
-      }
-      const pillarMesh = instancedMesh(pillarGeometry, this.materials.metal, pillars, 'work-pillars');
-      pillarMesh.castShadow = this.quality.shadows;
-      group.add(pillarMesh);
+        canopy.userData.occluder = true;
+        this.mesh(roundedBox(2.2, 0.3, 1.6, 0.04), this.materials.metalDark, group, 'workshop-sawtooth', {
+          position: new THREE.Vector3(-1.1, surface + 3.12, -0.5),
+        }).rotation.z = 0.34;
+        this.mesh(roundedBox(2.2, 0.3, 1.6, 0.04), this.materials.metalDark, group, 'workshop-sawtooth-2', {
+          position: new THREE.Vector3(1.1, surface + 3.12, -0.5),
+        }).rotation.z = 0.34;
 
-      /* A low bench, so the pavilion reads as a place to sit. */
-      this.mesh(roundedBox(1.5, 0.1, 0.42, 0.04), this.materials.ceramic, group, 'work-bench', {
-        position: new THREE.Vector3(-1.6, surface + 0.42, -1.5),
-      });
+        const mastGeometry = this.track(new THREE.CylinderGeometry(0.075, 0.09, 2.9, 8));
+        const masts: THREE.Matrix4[] = [];
+        for (const dx of [-2.3, 0, 2.3]) {
+          masts.push(new THREE.Matrix4().makeTranslation(dx, surface + 1.45, -1.35));
+        }
+        const mastMesh = instancedMesh(mastGeometry, this.materials.metal, masts, 'workshop-masts');
+        mastMesh.castShadow = this.quality.shadows;
+        group.add(mastMesh);
 
-      return { anchorY: 3.4, pickRadius: 3.4, pickHeight: 4.2, exhibits };
-    });
+        /* A workbench and a parts trolley keep the yard feeling used. */
+        this.mesh(roundedBox(1.5, 0.1, 0.5, 0.03), this.materials.ceramic, group, 'workshop-bench', {
+          position: new THREE.Vector3(-1.9, surface + 0.5, 1.3),
+        });
+        this.mesh(roundedBox(0.9, 0.7, 0.5, 0.03), this.materials.metalDark, group, 'workshop-trolley', {
+          position: new THREE.Vector3(1.9, surface + 0.35, 1.3),
+        });
 
-    this.attachDiscovery(node, new THREE.Vector3(-2.7, GROUND + 0.75, 2.1));
+        return {
+          anchorY: 3.5,
+          pickRadius: 3.6,
+          pickHeight: 4.4,
+          exhibits,
+        };
+      },
+    );
+
+    this.attachDiscovery(node, new THREE.Vector3(-2.8, GROUND + 0.75, 2.2));
   }
 
-  /* ── Station: knowledge garden ─────────────────────────────────────── */
+  /* ── Destination: Reliable AI library ──────────────────────────────── */
 
-  private buildKnowledgeGarden(): void {
-    const node = this.registerStation('knowledge', ({ group, surface, glow }) => {
-      this.mesh(terrace(3, 0.4, 0.12), this.materials.stone, group, 'garden-terrace', {
-        position: new THREE.Vector3(0, GROUND - 0.05, 0),
-      });
-      this.mesh(rimRing(2.88, 0.04, 40), this.materials.stoneDark, group, 'garden-rim', {
-        position: new THREE.Vector3(0, surface - 0.04, 0),
-      });
+  private buildLibrary(): void {
+    const node = this.registerPlace(
+      'library',
+      ({ group, surface, glow }) => {
+        this.mesh(terrace(3, 0.45, 0.12), this.materials.stone, group, 'library-terrace', {
+          position: new THREE.Vector3(0, GROUND - 0.05, 0),
+        });
+        this.mesh(rimRing(2.88, 0.04, 44), this.materials.stoneDark, group, 'library-rim', {
+          position: new THREE.Vector3(0, surface - 0.04, 0),
+        });
+        this.mesh(rimRing(2.6, 0.022, 44), glow, group, 'library-rimlight', {
+          position: new THREE.Vector3(0, surface - 0.005, 0),
+          cast: false,
+          receive: false,
+        });
 
-      const { nodes, edges } = graphLayout(97, 17, 2.35, 2.3);
-      const nodeGeometry = this.track(new THREE.IcosahedronGeometry(0.085, 0));
-      const nodeMesh = instancedMesh(nodeGeometry, glow, nodes.map(() => new THREE.Matrix4()), 'graph-nodes');
-      const nodeColor = new THREE.Color();
-      const dim = new THREE.Color(0x22303f);
-      const bright = new THREE.Color(this.theme.signal);
-      nodes.forEach((point, index) => {
-        const matrix = new THREE.Matrix4();
-        const isHub = index % 5 === 0;
-        const scale = isHub ? 1.9 : 1;
-        matrix.compose(
-          new THREE.Vector3(point.x, surface + point.y * 0.42 + 0.35, point.z),
-          new THREE.Quaternion(),
-          new THREE.Vector3(scale, scale, scale),
+        /* A long reading hall under a barrel vault: horizontal mass, curved
+           roof — deliberately unlike every other silhouette on the island. */
+        const width = 4.6;
+        this.mesh(roundedBox(width, 1.5, 1.9, 0.08), this.materials.ceramic, group, 'library-hall', {
+          position: new THREE.Vector3(0, surface + 0.75, 0.6),
+          occluder: true,
+        });
+        const vault = this.track(
+          new THREE.CylinderGeometry(0.98, 0.98, width, 22, 1, false, 0, Math.PI),
         );
-        nodeMesh.setMatrixAt(index, matrix);
-        nodeColor.copy(dim).lerp(bright, isHub ? 1 : 0.45);
-        nodeMesh.setColorAt(index, nodeColor);
-      });
-      nodeMesh.instanceMatrix.needsUpdate = true;
-      if (nodeMesh.instanceColor) nodeMesh.instanceColor.needsUpdate = true;
-      nodeMesh.castShadow = false;
-      group.add(nodeMesh);
+        vault.rotateZ(Math.PI / 2);
+        this.mesh(vault, this.materials.ceramic, group, 'library-vault', {
+          position: new THREE.Vector3(0, surface + 1.5, 0.6),
+        });
 
-      const edgeGeometry = this.track(unitCylinder(0.011, 5));
-      const edgeMatrices = edges.map(([a, b]) => {
-        const from = new THREE.Vector3(nodes[a].x, surface + nodes[a].y * 0.42 + 0.35, nodes[a].z);
-        const to = new THREE.Vector3(nodes[b].x, surface + nodes[b].y * 0.42 + 0.35, nodes[b].z);
-        return spanMatrix(from, to, new THREE.Matrix4());
-      });
-      const edgeMesh = instancedMesh(edgeGeometry, this.materials.signal, edgeMatrices, 'graph-edges');
-      edgeMesh.castShadow = false;
-      group.add(edgeMesh);
-
-      /* A pulse that walks a chain of nodes — retrieval, made visible. */
-      const chain = nodes
-        .slice(0, 8)
-        .map((point) => new THREE.Vector3(point.x, surface + point.y * 0.42 + 0.35, point.z));
-      this.graphPath = chain;
-      this.graphPulse = this.mesh(
-        new THREE.SphereGeometry(0.075, 10, 8),
-        this.materials.signal,
-        group,
-        'graph-pulse',
-        { cast: false, receive: false },
-      );
-      this.graphPulse.position.copy(chain[0] ?? new THREE.Vector3(0, surface + 0.6, 0));
-
-      /* Planters and a small reading bench. */
-      const planterGeometry = this.track(new THREE.CylinderGeometry(0.36, 0.3, 0.36, 10));
-      const planters: THREE.Matrix4[] = [];
-      for (let i = 0; i < 5; i++) {
-        const angle = (i / 5) * Math.PI * 2 + 0.6;
-        planters.push(
-          new THREE.Matrix4().makeTranslation(
-            Math.cos(angle) * 2.45,
-            surface + 0.18,
-            Math.sin(angle) * 2.45,
-          ),
-        );
-      }
-      group.add(instancedMesh(planterGeometry, this.materials.ceramic, planters, 'garden-planters'));
-      const plants = coniferGeometry();
-      this.track(plants.lower);
-      const plantMatrices = planters.map((matrix) => {
-        const position = new THREE.Vector3().setFromMatrixPosition(matrix);
-        return new THREE.Matrix4().compose(
-          position.clone().setY(position.y + 0.2),
-          new THREE.Quaternion(),
-          new THREE.Vector3(0.42, 0.5, 0.42),
-        );
-      });
-      group.add(instancedMesh(plants.lower, this.materials.foliage, plantMatrices, 'garden-planting'));
-
-      return { anchorY: 3.1, pickRadius: 3.3, pickHeight: 3.6 };
-    });
-
-    this.attachDiscovery(node, new THREE.Vector3(2.3, GROUND + 0.6, -1.9));
-  }
-
-  /* ── Station: signal tower ─────────────────────────────────────────── */
-
-  private buildSignalTower(): void {
-    this.registerStation('writing', ({ group, surface }) => {
-      this.mesh(terrace(2.3, 0.45, 0.12), this.materials.stone, group, 'tower-terrace', {
-        position: new THREE.Vector3(0, GROUND - 0.05, 0),
-      });
-      this.mesh(rimRing(2.2, 0.04, 36), this.materials.stoneDark, group, 'tower-rim', {
-        position: new THREE.Vector3(0, surface - 0.04, 0),
-      });
-      this.mesh(
-        new THREE.CylinderGeometry(1.05, 1.25, 0.5, 24),
-        this.materials.ceramic,
-        group,
-        'tower-base',
-        { position: new THREE.Vector3(0, surface + 0.25, 0) },
-      );
-
-      const mast = latticeMast({
-        height: 7,
-        baseRadius: 0.78,
-        topRadius: 0.2,
-        levels: 6,
-        detailed: this.quality.detail,
-      });
-      const strutGeometry = this.track(unitCylinder(0.035, 5));
-      const struts = instancedMesh(strutGeometry, this.materials.metal, mast.struts, 'tower-lattice');
-      struts.position.set(0, surface + 0.5, 0);
-      struts.castShadow = this.quality.shadows;
-      group.add(struts);
-
-      /* Parabolic dish with a lit feed. */
-      const dish = this.mesh(
-        new THREE.SphereGeometry(0.78, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2.7),
-        this.track(
-          new THREE.MeshStandardMaterial({
-            color: this.theme.stone,
-            roughness: 0.4,
-            metalness: 0.25,
-            side: THREE.DoubleSide,
-          }),
-        ),
-        group,
-        'tower-dish',
-        { position: new THREE.Vector3(0.62, surface + 4.5, 0.2) },
-      );
-      dish.rotation.set(Math.PI * 0.78, 0, -0.5);
-      const feed = this.mesh(
-        new THREE.SphereGeometry(0.06, 10, 8),
-        this.materials.signal,
-        group,
-        'tower-feed',
-        { position: new THREE.Vector3(0.86, surface + 4.9, 0.42), cast: false, receive: false },
-      );
-      feed.userData.pulse = true;
-
-      /* The beacon: lens, core and a slow sweeping light. */
-      this.mesh(
-        new THREE.CylinderGeometry(0.24, 0.3, 0.34, 12),
-        this.materials.metal,
-        group,
-        'tower-lens',
-        { position: new THREE.Vector3(0, surface + 7.85, 0) },
-      );
-      this.beaconCore = this.mesh(
-        new THREE.SphereGeometry(0.2, 14, 10),
-        this.materials.signal,
-        group,
-        'tower-core',
-        { position: new THREE.Vector3(0, surface + 8.12, 0), cast: false, receive: false },
-      );
-      const beaconRing = this.mesh(
-        new THREE.TorusGeometry(0.44, 0.03, 5, 28),
-        this.materials.signal,
-        group,
-        'tower-ring',
-        { position: new THREE.Vector3(0, surface + 7.7, 0), cast: false, receive: false },
-      );
-      beaconRing.rotation.x = Math.PI / 2;
-      this.mesh(
-        new THREE.CylinderGeometry(0.015, 0.015, 0.9, 6),
-        this.materials.metal,
-        group,
-        'tower-spire',
-        { position: new THREE.Vector3(0, surface + 8.6, 0), cast: false },
-      );
-
-      this.searchlight = new THREE.Group();
-      this.searchlight.position.set(0, surface + 8.05, 0);
-      group.add(this.searchlight);
-      const coneGeometry = this.track(new THREE.ConeGeometry(1.5, 3.4, 18, 1, true));
-      coneGeometry.translate(0, -1.7, 0);
-      const coneMaterial = this.track(
-        new THREE.MeshBasicMaterial({
-          color: this.theme.signal,
-          transparent: true,
-          opacity: 0.08,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-          blending: THREE.AdditiveBlending,
-          fog: true,
-        }),
-      );
-      const cone = new THREE.Mesh(coneGeometry, coneMaterial);
-      cone.rotation.z = 0.62;
-      cone.renderOrder = 3;
-      this.searchlight.add(cone);
-
-      /* Guy wires anchor the mast to the terrace. */
-      if (this.quality.detail) {
-        const wireGeometry = this.track(unitCylinder(0.012, 4));
-        const wires: THREE.Matrix4[] = [];
-        for (let i = 0; i < 3; i++) {
-          const angle = (i / 3) * Math.PI * 2 + 0.4;
-          wires.push(
-            spanMatrix(
-              new THREE.Vector3(0, surface + 6.4, 0),
-              new THREE.Vector3(Math.cos(angle) * 1.9, surface + 0.1, Math.sin(angle) * 1.9),
-              new THREE.Matrix4(),
+        /* A colonnade of mullions across the open face. */
+        const mullions: THREE.Matrix4[] = [];
+        const mullionGeometry = this.track(new THREE.BoxGeometry(0.07, 1.2, 0.09));
+        for (let i = 0; i < 6; i++) {
+          mullions.push(
+            new THREE.Matrix4().makeTranslation(
+              -width / 2 + 0.35 + (i * (width - 0.7)) / 5,
+              surface + 0.72,
+              -0.36,
             ),
           );
         }
-        group.add(instancedMesh(wireGeometry, this.materials.metalDark, wires, 'tower-wires'));
-      }
+        group.add(instancedMesh(mullionGeometry, this.materials.metal, mullions, 'library-mullions'));
 
-      return { anchorY: 9.4, pickRadius: 2.1, pickHeight: 10 };
-    });
+        /* Smoked-glass front and the warm interior behind it. */
+        this.mesh(new THREE.BoxGeometry(width - 0.5, 1.15, 0.03), this.materials.glass, group, 'library-glass', {
+          position: new THREE.Vector3(0, surface + 0.72, -0.35),
+          cast: false,
+        });
+        const interior = this.track(
+          new THREE.MeshStandardMaterial({
+            color: 0x1a1206,
+            roughness: 0.6,
+            emissive: new THREE.Color(this.theme.practical),
+            emissiveIntensity: 1.1,
+          }),
+        );
+        this.mesh(new THREE.BoxGeometry(width - 0.8, 1, 0.04), interior, group, 'library-interior', {
+          position: new THREE.Vector3(0, surface + 0.85, 0.7),
+          cast: false,
+          receive: false,
+        });
+
+        /* Shelf rows visible through the glass. */
+        const shelfGeometry = this.track(new THREE.BoxGeometry(width - 0.9, 0.05, 0.34));
+        for (let i = 0; i < 3; i++) {
+          this.mesh(shelfGeometry, this.materials.stoneDark, group, `library-shelf-${i}`, {
+            position: new THREE.Vector3(0, surface + 0.5 + i * 0.36, 1.1),
+            cast: false,
+          });
+        }
+
+        /* The editorial display: one object per published article, laid out
+           in a grid so the scene follows the content, not a fixed six. */
+        const articles = this.index.articles;
+        const columns = Math.min(Math.max(articles.length, 1), 4);
+        const rows = Math.ceil(articles.length / columns);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        void rows;
+
+        articles.forEach((article, index) => {
+          const column = index % columns;
+          const row = Math.floor(index / columns);
+          const spread = columns === 1 ? 0 : 1;
+          const x = spread ? (column / (columns - 1) - 0.5) * (width - 1.1) : 0;
+          const y = surface + 0.62 + row * 0.44;
+          const z = -0.9 - row * 0.02;
+
+          /* A book: a spine block with a lit edge. */
+          const book = this.mesh(
+            roundedBox(0.16, 0.34, 0.24, 0.02),
+            this.materials.paper,
+            group,
+            `library-book-${index}`,
+            { position: new THREE.Vector3(x, y, z), cast: false, receive: false },
+          );
+          book.rotation.z = index % 2 === 0 ? 0.05 : -0.06;
+          book.userData.objectId = article.id;
+
+          const spine = this.mesh(
+            new THREE.BoxGeometry(0.18, 0.05, 0.02),
+            this.materials.signal,
+            group,
+            `library-spine-${index}`,
+            { position: new THREE.Vector3(x, y + 0.1, z - 0.12), cast: false, receive: false },
+          );
+          spine.userData.objectId = article.id;
+
+          this.objectMarkers.push({
+            id: article.id,
+            kind: 'article',
+            place: 'library',
+            label: article.label,
+            meta: article.meta,
+            href: article.href,
+            anchor: localToWorld(LAYOUT.library, x, y + 0.42, z - 0.1),
+            pick: book,
+          });
+        });
+
+        /* A reading table and two chairs in front of the display. */
+        this.mesh(roundedBox(1.7, 0.08, 0.7, 0.03), this.materials.ceramic, group, 'library-table', {
+          position: new THREE.Vector3(0, surface + 0.62, -1.55),
+        });
+        for (const dx of [-0.55, 0.55]) {
+          this.mesh(roundedBox(0.34, 0.06, 0.34, 0.02), this.materials.metalDark, group, `library-chair-${dx}`, {
+            position: new THREE.Vector3(dx, surface + 0.42, -2.05),
+          });
+        }
+        /* A reading lamp on the table. */
+        const lamp = this.track(
+          new THREE.MeshStandardMaterial({
+            color: 0x1a1206,
+            roughness: 0.4,
+            emissive: new THREE.Color(this.theme.practical),
+            emissiveIntensity: 1.6,
+          }),
+        );
+        this.mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.4, 6), this.materials.metalDark, group, 'library-lamp-stem', {
+          position: new THREE.Vector3(0.6, surface + 0.85, -1.55),
+        });
+        this.mesh(new THREE.SphereGeometry(0.1, 12, 8), lamp, group, 'library-lamp', {
+          position: new THREE.Vector3(0.6, surface + 1.08, -1.55),
+          cast: false,
+          receive: false,
+        });
+
+        /* A sign over the door. */
+        this.mesh(roundedBox(1.1, 0.22, 0.04, 0.02), this.materials.metalDark, group, 'library-sign', {
+          position: new THREE.Vector3(0, surface + 1.62, -0.42),
+        });
+
+        return { anchorY: 3.2, pickRadius: 3.3, pickHeight: 3.6, targetY: 1.3 };
+      },
+    );
+
+    this.attachDiscovery(node, new THREE.Vector3(2.6, GROUND + 0.55, 1.9));
   }
 
-  /* ── Station: personal studio ──────────────────────────────────────── */
+  /* ── Destination: open-source workbench ────────────────────────────── */
 
-  private buildStudio(): void {
-    this.registerStation('studio', ({ group, surface }) => {
-      this.mesh(terrace(2.6, 0.5, 0.12), this.materials.stone, group, 'studio-terrace', {
-        position: new THREE.Vector3(0, GROUND - 0.05, 0),
-      });
-      this.mesh(rimRing(2.5, 0.04, 36), this.materials.stoneDark, group, 'studio-rim', {
-        position: new THREE.Vector3(0, surface - 0.04, 0),
-      });
+  private buildWorkbench(): void {
+    const node = this.registerPlace(
+      'workbench',
+      ({ group, surface, glow }) => {
+        this.mesh(terrace(3.1, 0.4, 0.12), this.materials.stone, group, 'workbench-yard', {
+          position: new THREE.Vector3(0, GROUND - 0.05, 0),
+        });
+        this.mesh(rimRing(2.98, 0.04, 40), this.materials.stoneDark, group, 'workbench-rim', {
+          position: new THREE.Vector3(0, surface - 0.04, 0),
+        });
+        this.mesh(rimRing(2.7, 0.022, 40), glow, group, 'workbench-rimlight', {
+          position: new THREE.Vector3(0, surface - 0.005, 0),
+          cast: false,
+          receive: false,
+        });
 
-      const room = roundedBox(2.7, 1.55, 2.05, 0.1);
-      this.mesh(room, this.materials.ceramic, group, 'studio-room', {
-        position: new THREE.Vector3(0, surface + 0.78, -0.15),
-        occluder: true,
-      });
-      /* Shed roof, tilted toward the island. */
-      const roof = this.mesh(
-        roundedBox(3.05, 0.14, 2.4, 0.05),
-        this.materials.metalDark,
-        group,
-        'studio-roof',
-        { position: new THREE.Vector3(0, surface + 1.63, -0.15) },
-      );
-      roof.rotation.x = -0.1;
-      /* A second, taller roof plane makes the silhouette read as a workshop. */
-      const lantern = this.mesh(
-        roundedBox(1.1, 0.34, 0.9, 0.04),
-        this.materials.ceramic,
-        group,
-        'studio-lantern',
-        { position: new THREE.Vector3(-0.65, surface + 1.87, -0.15) },
-      );
-      lantern.rotation.x = -0.1;
+        /* An open yard under a gantry: skeletal, no solid mass, so it reads
+           as a workshop from across the island. */
+        const gantryHeight = 4.4;
+        const posts = latticeMast({
+          height: gantryHeight,
+          baseRadius: 0.5,
+          topRadius: 0.34,
+          levels: 3,
+          legs: 3,
+          detailed: this.quality.detail,
+        });
+        const strutGeometry = this.track(unitCylinder(0.032, 5));
+        for (const dx of [-2.1, 2.1]) {
+          const post = instancedMesh(strutGeometry, this.materials.metal, posts.struts, `workbench-gantry-${dx}`);
+          post.position.set(dx, surface, -1.5);
+          post.castShadow = this.quality.shadows;
+          group.add(post);
+        }
+        this.mesh(roundedBox(4.6, 0.22, 0.28, 0.05), this.materials.metal, group, 'workbench-beam', {
+          position: new THREE.Vector3(0, surface + gantryHeight, -1.5),
+        });
+        /* A hoist line and hook hanging from the beam. */
+        this.mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.5, 4), this.materials.metalDark, group, 'workbench-hoist', {
+          position: new THREE.Vector3(0.6, surface + gantryHeight - 0.85, -1.5),
+          cast: false,
+        });
+        this.mesh(new THREE.TorusGeometry(0.09, 0.02, 5, 12), this.materials.metal, group, 'workbench-hook', {
+          position: new THREE.Vector3(0.6, surface + gantryHeight - 1.65, -1.5),
+          cast: false,
+        });
 
-      /* The window, with a warm interior behind it. */
-      const windowGlow = this.track(
-        new THREE.MeshStandardMaterial({
-          color: 0x1a1206,
-          roughness: 0.6,
-          emissive: new THREE.Color(this.theme.practical),
-          emissiveIntensity: 1.5,
-        }),
-      );
-      this.mesh(
-        new THREE.BoxGeometry(1.12, 0.78, 0.04),
-        windowGlow,
-        group,
-        'studio-window-glow',
-        { position: new THREE.Vector3(0.35, surface + 0.86, 0.9), cast: false, receive: false },
-      );
-      this.mesh(
-        roundedBox(1.24, 0.9, 0.07, 0.03),
-        this.materials.glass,
-        group,
-        'studio-window',
-        { position: new THREE.Vector3(0.35, surface + 0.86, 0.92), cast: false },
-      );
-      this.mesh(
-        roundedBox(0.52, 0.98, 0.07, 0.03),
-        this.materials.metalDark,
-        group,
-        'studio-door',
-        { position: new THREE.Vector3(-0.72, surface + 0.5, 0.92) },
-      );
-      /* A bench and a lamp by the door. */
-      this.mesh(roundedBox(1.1, 0.09, 0.36, 0.03), this.materials.ceramic, group, 'studio-bench', {
-        position: new THREE.Vector3(1.35, surface + 0.4, 1.35),
-      });
-      const lampMaterial = this.track(
-        new THREE.MeshStandardMaterial({
-          color: 0x1a1206,
-          roughness: 0.4,
-          emissive: new THREE.Color(this.theme.practical),
-          emissiveIntensity: 1.6,
-        }),
-      );
-      this.mesh(
-        new THREE.CylinderGeometry(0.035, 0.045, 1.1, 6),
-        this.materials.metalDark,
-        group,
-        'studio-lamp-post',
-        { position: new THREE.Vector3(-1.55, surface + 0.55, 1.1) },
-      );
-      this.mesh(
-        new THREE.SphereGeometry(0.13, 12, 8),
-        lampMaterial,
-        group,
-        'studio-lamp',
-        { position: new THREE.Vector3(-1.55, surface + 1.18, 1.1), cast: false, receive: false },
-      );
+        /* The bench itself, with a vice and scattered tools. */
+        this.mesh(roundedBox(3.4, 0.12, 0.8, 0.03), this.materials.ceramic, group, 'workbench-bench', {
+          position: new THREE.Vector3(0, surface + 0.86, 0.9),
+        });
+        const benchLegs: THREE.Matrix4[] = [];
+        const legGeometry = this.track(new THREE.BoxGeometry(0.1, 0.84, 0.1));
+        for (const dx of [-1.5, 1.5]) {
+          for (const dz of [0.6, 1.2]) {
+            benchLegs.push(new THREE.Matrix4().makeTranslation(dx, surface + 0.42, dz));
+          }
+        }
+        group.add(instancedMesh(legGeometry, this.materials.metalDark, benchLegs, 'workbench-legs'));
+        this.mesh(roundedBox(0.24, 0.22, 0.3, 0.03), this.materials.metal, group, 'workbench-vice', {
+          position: new THREE.Vector3(-1.35, surface + 1.03, 0.9),
+        });
 
-      return { anchorY: 2.9, pickRadius: 2.4, pickHeight: 3.2 };
-    });
+        /* A pegboard of repository plaques: one per curated repo. */
+        const repos = this.index.repos;
+        const columns = Math.min(Math.max(repos.length, 1), 5);
+        const rows = Math.ceil(repos.length / columns);
+        const boardWidth = Math.min(4.4, 0.6 + columns * 0.78);
+        const boardHeight = 0.5 + rows * 0.5;
+        this.mesh(
+          roundedBox(boardWidth, boardHeight, 0.08, 0.03),
+          this.materials.metalDark,
+          group,
+          'workbench-board',
+          { position: new THREE.Vector3(0, surface + 1.4 + boardHeight / 2, -0.55), occluder: true },
+        );
+
+        repos.forEach((repo, index) => {
+          const column = index % columns;
+          const row = Math.floor(index / columns);
+          const spread = columns === 1 ? 0 : 1;
+          const x = spread
+            ? (column / (columns - 1) - 0.5) * (boardWidth - 0.55)
+            : 0;
+          const y = surface + 1.4 + boardHeight - 0.42 - row * 0.5;
+
+          const plaque = this.mesh(
+            roundedBox(0.5, 0.3, 0.04, 0.02),
+            this.materials.paper,
+            group,
+            `workbench-plaque-${index}`,
+            { position: new THREE.Vector3(x, y, -0.48), cast: false, receive: false },
+          );
+          plaque.userData.objectId = repo.id;
+          this.mesh(new THREE.BoxGeometry(0.34, 0.03, 0.02), glow, group, `workbench-plaque-line-${index}`, {
+            position: new THREE.Vector3(x, y - 0.07, -0.455),
+            cast: false,
+            receive: false,
+          }).userData.objectId = repo.id;
+
+          this.objectMarkers.push({
+            id: repo.id,
+            kind: 'repo',
+            place: 'workbench',
+            label: repo.label,
+            meta: repo.meta,
+            href: repo.href,
+            anchor: localToWorld(LAYOUT.workbench, x, y + 0.44, -0.45),
+            pick: plaque,
+          });
+        });
+
+        /* Storage: crates and a parts rack. */
+        const crateGeometry = this.track(new THREE.BoxGeometry(0.6, 0.5, 0.6));
+        const crates: THREE.Matrix4[] = [];
+        const crateSpots: [number, number, number][] = [
+          [1.9, 0.25, 1.6],
+          [2.3, 0.25, 1.75],
+          [1.9, 0.75, 1.62],
+          [-2.2, 0.25, 1.5],
+        ];
+        for (const [x, y, z] of crateSpots) {
+          crates.push(new THREE.Matrix4().makeTranslation(x, surface + y, z));
+        }
+        const crateMesh = instancedMesh(crateGeometry, this.materials.stoneDark, crates, 'workbench-crates');
+        crateMesh.castShadow = this.quality.shadows;
+        group.add(crateMesh);
+
+        return { anchorY: 4.8, pickRadius: 3.4, pickHeight: 5.4, targetY: 2.2 };
+      },
+    );
+
+    this.attachDiscovery(node, new THREE.Vector3(-2.4, GROUND + 0.6, -1.9));
   }
 
-  /* ── Station: contact beacon ───────────────────────────────────────── */
-
-  private buildContactBeacon(): void {
-    this.registerStation('contact', ({ group, surface, glow }) => {
+  private buildContactStation(): void {
+    this.registerPlace('contact', ({ group, surface, glow }) => {
       this.mesh(terrace(2.5, 0.45, 0.12), this.materials.stone, group, 'beacon-terrace', {
         position: new THREE.Vector3(0, GROUND - 0.05, 0),
       });
@@ -1454,7 +1637,7 @@ export class ObservatoryWorld {
 
   /* ── Discovery markers ─────────────────────────────────────────────── */
 
-  private attachDiscovery(node: StationNode, position: THREE.Vector3): void {
+  private attachDiscovery(node: PlaceNode, position: THREE.Vector3): void {
     const geometry = this.track(crystalGeometry());
     const material = this.track(
       new THREE.MeshStandardMaterial({
@@ -1495,14 +1678,14 @@ export class ObservatoryWorld {
     world.applyMatrix4(node.group.matrixWorld);
 
     node.discovery = {
-      station: node.id,
+      place: node.id,
       label: node.id,
       mesh,
       halo,
       found: false,
       position: world,
     };
-    /* Discovery markers are pickable, in addition to their station proxy. */
+    /* Discovery markers are pickable, in addition to their place proxy. */
     mesh.userData.discoveryOf = node.id;
   }
 
@@ -1609,8 +1792,13 @@ export class ObservatoryWorld {
     }
   }
 
-  /** Send a light pulse from the observatory to a station. */
-  triggerSignal(id: StationId): void {
+  /** Load the studio's portrait photograph from a base-aware URL. */
+  loadPortrait(url: string): void {
+    this.materials.loadPortrait(url);
+  }
+
+  /** Send a light pulse from the observatory to a place. */
+  triggerSignal(id: DestinationId): void {
     const curve = this.spurCurves.get(id);
     if (!curve) return;
     if (!this.flight) {
@@ -1625,7 +1813,7 @@ export class ObservatoryWorld {
     this.flight.t = 0;
     this.flight.mesh.visible = true;
     /* Move the drone toward the new destination too. */
-    const target = this.stations.get(id);
+    const target = this.places.get(id);
     if (target) {
       this.droneTarget.copy(target.anchor).add(new THREE.Vector3(0, 1.9, 0));
     }
@@ -1680,9 +1868,9 @@ export class ObservatoryWorld {
   }
 
   /** Switch on a lantern for each discovery found. */
-  applyDiscoveries(found: StationId[]): void {
+  applyDiscoveries(found: DestinationId[]): void {
     found.forEach((id, index) => {
-      const node = this.stations.get(id);
+      const node = this.places.get(id);
       if (!node?.discovery) return;
       node.discovery.found = true;
       node.discovery.mesh.visible = false;
@@ -1787,7 +1975,7 @@ export class ObservatoryWorld {
     }
 
     /* Station accents ease toward their hover / active state. */
-    for (const node of this.stations.values()) {
+    for (const node of this.places.values()) {
       const target = node.active > 0.5 ? 2.4 : node.hover > 0.5 ? 1.4 : 0.35;
       node.glow.emissiveIntensity = THREE.MathUtils.damp(
         node.glow.emissiveIntensity,
@@ -1798,7 +1986,7 @@ export class ObservatoryWorld {
     }
 
     /* Discovery markers turn slowly so they catch the light. */
-    for (const node of this.stations.values()) {
+    for (const node of this.places.values()) {
       const discovery = node.discovery;
       if (!discovery || discovery.found) continue;
       discovery.mesh.rotation.y = t * 0.6;
@@ -1813,30 +2001,31 @@ export class ObservatoryWorld {
     return new THREE.Vector3(Math.cos(angle) * 6.5, GROUND + 7.4, Math.sin(angle) * 6.5);
   }
 
-  /** Mark a station as the active destination. Hover is owned by the pointer
+  /** Mark a place as the active destination. Hover is owned by the pointer
    *  and hotspot handlers, so the two never fight over the same property. */
-  setStationState(id: StationId | null): void {
-    for (const node of this.stations.values()) {
+  setPlaceState(id: DestinationId | null): void {
+    for (const node of this.places.values()) {
       node.active = node.id === id ? 1 : 0;
     }
   }
 
-  /** All objects the pointer may hit: station volumes plus discovery markers. */
+  /** All objects the pointer may hit: place volumes plus discovery markers. */
   pickTargets(): THREE.Object3D[] {
     const targets: THREE.Object3D[] = [];
-    for (const node of this.stations.values()) {
+    for (const node of this.places.values()) {
       targets.push(node.pick);
       if (node.discovery && !node.discovery.found) targets.push(node.discovery.mesh);
       for (const exhibit of node.exhibits) targets.push(exhibit.pick);
     }
+    for (const marker of this.objectMarkers) targets.push(marker.pick);
     return targets;
   }
 
   /**
-   * Objects that can plausibly hide a station label: the island, the
+   * Objects that can plausibly hide a place label: the island, the
    * observatory's own mass and the studio's roof volume. Deliberately tight
-   * — the generous station hit-volumes are *not* used here, because they
-   * hid labels for stations that were plainly visible.
+   * — the generous place hit-volumes are *not* used here, because they
+   * hid labels for places that were plainly visible.
    */
   occluders(): THREE.Object3D[] {
     if (this.occluderList.length === 0) {

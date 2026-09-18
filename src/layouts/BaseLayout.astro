@@ -1,5 +1,9 @@
 ---
-// Base document shell: meta, fonts, skip link, header, footer.
+// Document shell for the whole site.
+//
+// Every page declares *where* it is in the world and *what* document is open.
+// The shell around it is the same everywhere: a persistent 3D campus, a
+// floating dock, and a reading surface that holds this page's content.
 import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
 // Fraunces carries the display voice: a soft, curious serif that reads as
@@ -12,30 +16,82 @@ import '@fontsource-variable/fraunces';
 import interLatin from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url';
 import frauncesLatin from '@fontsource-variable/fraunces/files/fraunces-latin-wght-normal.woff2?url';
 import '../styles/global.css';
+import { ClientRouter } from 'astro:transitions';
 import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
+import Icon from '../components/Icon.astro';
+import WorldShell from '../components/world/WorldShell.astro';
+import Dock from '../components/world/Dock.astro';
+import { destinationMeta, type DestinationId, type SurfaceKind } from '../lib/world/destinations';
+import { surfaceLabel } from '../lib/world/state';
 import { site, newsletter, rootUrl, absoluteUrl } from '../site.config';
+import { getCollection } from 'astro:content';
+import { githubProjects } from '../data/github-projects';
+import { readTimeInMinutes } from '../lib/format';
 
 interface Props {
   title: string;
   description?: string;
   /** Use for individual articles / case studies (sets og:type). */
   type?: 'website' | 'article';
-  /** Body classes for page-specific tweaks. */
-  bodyClass?: string;
+  /** Which location in the world this page belongs to. */
+  destination: DestinationId;
+  /** Which document is open at that location. */
+  surface: SurfaceKind;
+  /** Slug of the open document, when it has one. */
+  surfaceId?: string;
+  /** Where "Back" should go. */
+  backHref?: string;
 }
 
 const {
   title,
   description = site.metaDescription,
   type = 'website',
-  bodyClass = '',
+  destination,
+  surface,
+  surfaceId = '',
+  backHref = '/',
 } = Astro.props;
 
+/*
+ * The world is built from the real content, not a hard-coded list: every
+ * published article becomes a book in the library, every curated repository
+ * a plaque on the workbench, every project an installation in the workshop.
+ */
+const articles = (await getCollection('writing'))
+  .filter((entry) => !entry.data.draft)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+const projects = await getCollection('projects');
+
+const worldIndex = {
+  articles: articles.map((entry, index) => ({
+    id: entry.id,
+    label: entry.data.title,
+    href: rootUrl(`/writing/${entry.id}/`),
+    meta: `${entry.data.issue ? `Issue ${String(entry.data.issue).padStart(2, '0')} · ` : ''}${
+      readTimeInMinutes(entry.body ?? '')
+    } min`,
+    order: index,
+  })),
+  projects: projects.map((entry) => ({
+    id: entry.id,
+    label: entry.data.shortTitle,
+    href: rootUrl(`/work/${entry.id}/`),
+    meta: entry.data.tag,
+  })),
+  repos: githubProjects.map((repo) => ({
+    id: repo.name,
+    label: repo.name,
+    href: repo.url,
+    meta: repo.language,
+  })),
+};
+
 const documentTitle = `${title} · ${site.name}`;
-// Astro.site carries the build-time origin (see astro.config.mjs), so
-// canonical URLs follow the real deployment (user site or project site).
 const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
+const place = destinationMeta(destination);
+const hasSurface = surface !== 'none';
 ---
 
 <!doctype html>
@@ -43,6 +99,42 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/*
+      Decide the experience before anything paints: a browser with JavaScript
+      and WebGL gets the world, everything else gets the readable pages. The
+      default — no attribute at all — is the simple page, so a visitor without
+      JavaScript never meets an empty canvas.
+    */}
+    <script is:inline>
+      (function () {
+        try {
+          var stored = localStorage.getItem('world:mode');
+          var canvas = document.createElement('canvas');
+          var gl =
+            canvas.getContext('webgl2') ||
+            canvas.getContext('webgl') ||
+            canvas.getContext('experimental-webgl');
+          if (gl) {
+            var lose = gl.getExtension('WEBGL_lose_context');
+            if (lose) lose.loseContext();
+          }
+          document.documentElement.dataset.mode =
+            stored === 'simple' || !gl ? 'simple' : 'world';
+          document.documentElement.dataset.webgl = gl ? 'yes' : 'no';
+        } catch (error) {
+          document.documentElement.dataset.mode = 'simple';
+          document.documentElement.dataset.webgl = 'no';
+        }
+        try {
+          var theme = localStorage.getItem('theme');
+          var prefersLight =
+            window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+          document.documentElement.dataset.theme = theme || (prefersLight ? 'light' : 'dark');
+        } catch (error) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      })();
+    </script>
     <title>{documentTitle}</title>
     <meta name="description" content={description} />
     <meta name="author" content={site.name} />
@@ -65,39 +157,12 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
 
     <meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#f3f0e8" media="(prefers-color-scheme: light)" />
-    <link
-      rel="preload"
-      href={interLatin}
-      as="font"
-      type="font/woff2"
-      crossorigin="anonymous"
-    />
-    <link
-      rel="preload"
-      href={frauncesLatin}
-      as="font"
-      type="font/woff2"
-      crossorigin="anonymous"
-    />
+    <link rel="preload" href={interLatin} as="font" type="font/woff2" crossorigin="anonymous" />
+    <link rel="preload" href={frauncesLatin} as="font" type="font/woff2" crossorigin="anonymous" />
     <link rel="icon" href={rootUrl('/favicon.ico')} sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href={rootUrl('/favicon-32.png')} />
     <link rel="icon" type="image/png" sizes="256x256" href={rootUrl('/favicon-256.png')} />
     <link rel="apple-touch-icon" sizes="180x180" href={rootUrl('/apple-touch-icon.png')} />
-    {/* Apply the saved (or system) theme before first paint to avoid a flash. */}
-    <script is:inline>
-      (function () {
-        try {
-          var stored = localStorage.getItem('theme');
-          var prefersLight =
-            window.matchMedia &&
-            window.matchMedia('(prefers-color-scheme: light)').matches;
-          document.documentElement.dataset.theme =
-            stored || (prefersLight ? 'light' : 'dark');
-        } catch (e) {
-          document.documentElement.dataset.theme = 'dark';
-        }
-      })();
-    </script>
     <link
       rel="alternate"
       type="application/rss+xml"
@@ -106,18 +171,59 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
     />
     <link rel="sitemap" href={rootUrl('/sitemap-index.xml')} />
     <meta name="robots" content="index, follow" />
+    <ClientRouter />
+    <script
+      type="application/json"
+      data-world-index
+      set:html={JSON.stringify(worldIndex).replace(/</g, '\\u003c')}
+    />
   </head>
-  <body class={bodyClass}>
-    <a class="skip-link" href="#main-content">Skip to content</a>
-    <Header />
 
-    <main id="main-content">
-      <slot />
+  <body
+    class="world-body"
+    data-destination={destination}
+    data-surface={surface}
+    data-surface-id={surfaceId}
+    data-panel={place.panel}
+  >
+    <a class="skip-link" href="#surface-content">Skip to content</a>
+
+    <Header />
+    <Dock destination={destination} />
+    <WorldShell />
+
+    <main
+      id="surface-content"
+      class="surface-host"
+      data-surface-host
+      data-surface-panel={surface}
+    >
+      {
+        hasSurface && (
+          <div class="surface-frame">
+            <div class="surface-bar">
+              <a class="surface-back" href={rootUrl(backHref)} data-surface-back>
+                <Icon name="arrow-right" size={14} />
+                Back
+              </a>
+              <p class="surface-where mono">
+                <span>{place.name}</span>
+                <span aria-hidden="true">·</span>
+                <span>{surfaceLabel(surface)}</span>
+              </p>
+            </div>
+            <slot />
+          </div>
+        )
+      }
+      <div class="simple-only">
+        <slot name="fallback" />
+      </div>
     </main>
 
     <Footer />
 
-    {/* Subtle scroll reveal — skipped entirely for reduced-motion users. */}
+    {/* Subtle scroll reveal — only for the readable pages. */}
     <script is:inline>
       (function () {
         var reduce =

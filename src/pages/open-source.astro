@@ -1,0 +1,91 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import MiniProjectCard from '../components/MiniProjectCard.astro';
+import Icon from '../components/Icon.astro';
+import { site, social, rootUrl } from '../site.config';
+import { githubProjects, type GithubProject } from '../data/github-projects';
+
+const categories: GithubProject['category'][] = [
+  'AI & agents',
+  'ML & RL research',
+  'Automation & platform',
+];
+
+const title = 'Open source — public repositories';
+const description = `Public repositories from ${site.name}: AI agents, GraphRAG experiments, reinforcement learning for RAN and automation tooling.`;
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  destination="workbench"
+  surface="repos"
+  backHref="/"
+>
+  <section class="page-head">
+    <div class="wrap">
+      <span class="kicker">Open-source workbench</span>
+      <h1 class="display display--page">Repositories</h1>
+      <p class="lede">
+        {githubProjects.length} curated public repositories — agents, GraphRAG
+        experiments, reinforcement learning for RAN and automation tooling.
+        Each one links straight to GitHub.
+      </p>
+      <div class="page-head-actions">
+        <a class="btn btn--ghost" href={social.github} target="_blank" rel="noopener noreferrer">
+          <Icon name="github" size={15} />
+          Profile on GitHub
+        </a>
+        <a class="btn btn--ghost" href={rootUrl('/work/')}>
+          Case studies
+          <Icon name="arrow-right" size={15} />
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-label="Public repositories">
+    <div class="wrap">
+      {
+        categories.map((category) => (
+          <div class="repo-group">
+            <h2 class="repo-group-title mono">{category}</h2>
+            <div class="repo-grid">
+              {githubProjects
+                .filter((project) => project.category === category)
+                .map((project, i) => (
+                  <MiniProjectCard project={project} delay={i * 50} />
+                ))}
+            </div>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .repo-group + .repo-group {
+    margin-top: 2.2rem;
+  }
+
+  .repo-group-title {
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.9rem;
+  }
+
+  .repo-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  @media (max-width: 620px) {
+    .repo-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

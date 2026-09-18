@@ -1,0 +1,91 @@
+---
+/**
+ * The floating navigation dock.
+ *
+ * Server-rendered on every page, so it is a working menu with no JavaScript
+ * at all, and the client shell only has to mark the current destination.
+ * Every entry is a real link, which is also what makes Back/Forward and deep
+ * links work: the router intercepts them, the URL updates, and the world
+ * stays mounted.
+ */
+import Icon from '../Icon.astro';
+import { DESTINATIONS, destinationMeta, type DestinationId } from '../../lib/world/destinations';
+import { hero, rootUrl } from '../../site.config';
+
+interface Props {
+  destination: DestinationId;
+}
+
+const { destination } = Astro.props;
+const current = destinationMeta(destination);
+
+const marks = {
+  campus: 'compass',
+  studio: 'user',
+  workshop: 'grid',
+  library: 'document',
+  workbench: 'github',
+  contact: 'mail',
+} as const;
+---
+
+<nav class="dock" data-world-dock aria-label="Destinations">
+  <ul class="dock-list">
+    {
+      DESTINATIONS.map((item) => (
+        <li>
+          <a
+            class="dock-link"
+            href={rootUrl(item.href)}
+            data-world-dock-link={item.id}
+            aria-current={item.id === destination ? 'page' : undefined}
+            title={item.name}
+          >
+            <span class="dock-mark" aria-hidden="true">
+              <Icon name={marks[item.id]} size={14} />
+            </span>
+            <span class="dock-label">{item.label}</span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+
+  <div class="dock-tools">
+    <p class="dock-readout" aria-live="polite">
+      <span class="dock-readout-dot" aria-hidden="true"></span>
+      <span data-world-readout>{current.name}</span>
+    </p>
+
+    <div class="dock-actions">
+      <button
+        class="dock-tool"
+        type="button"
+        data-world-pause
+        aria-pressed="false"
+        data-label-pause={hero.stage.pauseLabel}
+        data-label-resume={hero.stage.resumeLabel}
+      >
+        <span data-world-pause-label>{hero.stage.pauseLabel}</span>
+      </button>
+
+      <button class="dock-tool" type="button" data-world-reset>
+        {hero.stage.resetLabel}
+      </button>
+
+      <label class="dock-tool dock-quality">
+        <span>Quality</span>
+        <select data-world-quality>
+          <option value="auto">Auto</option>
+          <option value="high">Full</option>
+          <option value="medium">Balanced</option>
+          <option value="low">Lite</option>
+        </select>
+      </label>
+
+      <button class="dock-tool" type="button" data-world-simple>
+        {hero.stage.simpleLabel}
+      </button>
+    </div>
+  </div>
+</nav>

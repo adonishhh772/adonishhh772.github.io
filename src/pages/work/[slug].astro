@@ -33,7 +33,12 @@ const diagramCaptions: Record<string, string> = {
 const title = `${data.title} — case study`;
 ---
 
-<BaseLayout title={title} description={data.summary} type="article">
+<BaseLayout title={title} description={data.summary} type="article"
+  destination="workshop"
+  surface="project"
+  surfaceId={project.id}
+  backHref="/work/"
+>
   <article>
     <header class="article-header">
       <div class="wrap">
