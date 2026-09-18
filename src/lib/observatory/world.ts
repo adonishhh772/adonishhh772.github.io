@@ -252,23 +252,28 @@ export class ObservatoryWorld {
     this.atmosphere.setPractical(
       0,
       new THREE.Vector3(
-        studio.origin.x + studioOut.x * 1.7,
-        studio.surface + 1.7,
-        studio.origin.z + studioOut.z * 1.7,
+        studio.origin.x + studioOut.x * 2.4,
+        studio.surface + 1.05,
+        studio.origin.z + studioOut.z * 2.4,
       ),
-      11,
+      16,
       this.theme.practical,
     );
+    const libraryOut = new THREE.Vector3(library.origin.x, 0, library.origin.z).normalize();
     this.atmosphere.setPractical(
       1,
-      new THREE.Vector3(library.origin.x, library.surface + 3.2, library.origin.z),
-      4.5,
-      this.theme.signal,
+      new THREE.Vector3(
+        library.origin.x + libraryOut.x * 2.3,
+        library.surface + 1.2,
+        library.origin.z + libraryOut.z * 2.3,
+      ),
+      13,
+      this.theme.practical,
     );
     this.atmosphere.setPractical(
       2,
       new THREE.Vector3(contact.origin.x, contact.surface + 2.3, contact.origin.z),
-      5,
+      7,
       this.theme.practical,
     );
   }
@@ -638,6 +643,7 @@ export class ObservatoryWorld {
       layer.renderOrder = 2;
       layer.userData.drift = 0.008 + random() * 0.014;
       layer.userData.bob = random() * Math.PI * 2;
+      layer.userData.baseY = layer.position.y;
       this.mistLayers.push(layer);
       this.mistGroup.add(layer);
     }
@@ -1042,6 +1048,22 @@ export class ObservatoryWorld {
           position: new THREE.Vector3(0.1, surface + 0.25, 1.5),
         });
 
+        /* A lit band across the open face, so the studio reads as a building
+           rather than a silhouette from across the island. */
+        const facade = this.track(
+          new THREE.MeshStandardMaterial({
+            color: 0x1a1206,
+            roughness: 0.6,
+            emissive: new THREE.Color(this.theme.practical),
+            emissiveIntensity: 1.15,
+          }),
+        );
+        this.mesh(new THREE.BoxGeometry(2.4, 0.12, 0.04), facade, group, 'studio-eaves-light', {
+          position: new THREE.Vector3(0, surface + 1.48, -0.38),
+          cast: false,
+          receive: false,
+        });
+
         /* The portrait: the real photograph, framed on the back wall. */
         const portrait = this.mesh(
           new THREE.PlaneGeometry(0.62, 0.62),
@@ -1411,6 +1433,21 @@ export class ObservatoryWorld {
         });
         this.mesh(new THREE.SphereGeometry(0.1, 12, 8), lamp, group, 'library-lamp', {
           position: new THREE.Vector3(0.6, surface + 1.08, -1.55),
+          cast: false,
+          receive: false,
+        });
+
+        /* A lit lintel under the vault, matching the studio's eaves light. */
+        const lintel = this.track(
+          new THREE.MeshStandardMaterial({
+            color: 0x1a1206,
+            roughness: 0.6,
+            emissive: new THREE.Color(this.theme.practical),
+            emissiveIntensity: 1.1,
+          }),
+        );
+        this.mesh(new THREE.BoxGeometry(2.6, 0.1, 0.04), lintel, group, 'library-lintel-light', {
+          position: new THREE.Vector3(0, surface + 1.44, -0.39),
           cast: false,
           receive: false,
         });
@@ -1931,7 +1968,11 @@ export class ObservatoryWorld {
     for (const layer of this.mistLayers) {
       if (!layer.visible) continue;
       layer.rotation.y += (layer.userData.drift as number) * step * 6;
-      layer.position.y += Math.sin(t * 0.25 + (layer.userData.bob as number)) * 0.004;
+      /* Absolute, not an increment: an accumulating bob kept the mist moving
+         even when the scene was meant to be frozen. */
+      layer.position.y =
+        (layer.userData.baseY as number) +
+        Math.sin(t * 0.25 + (layer.userData.bob as number)) * 0.14;
     }
 
     /* Signals travelling the pathways. */

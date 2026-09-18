@@ -52,9 +52,25 @@ export function readState(root: ParentNode = document): WorldState {
   };
 }
 
-/** True when a document is open, so the shell should dim ambient motion. */
+/**
+ * Surfaces that are documents to read. The campus welcome card and the 404
+ * notice are landing views, so the world keeps breathing behind them.
+ */
+const DOCUMENTS: ReadonlySet<SurfaceKind> = new Set<SurfaceKind>([
+  'cv',
+  'about',
+  'projects',
+  'project',
+  'articles',
+  'article',
+  'repos',
+  'contact',
+  'thanks',
+]);
+
+/** True when a document is open, so the shell settles the scene. */
 export function isReading(state: WorldState): boolean {
-  return state.surface !== 'none';
+  return DOCUMENTS.has(state.surface);
 }
 
 export function readModePreference(): WorldMode | null {

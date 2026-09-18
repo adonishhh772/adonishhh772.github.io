@@ -76,5 +76,21 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
     document.addEventListener('astro:page-load', () => bootstrapShell());
   };
 
-  void boot();
+  /**
+   * Start once the first paint is done and the browser is idle. The world is
+   * ~600KB of three.js; fetching and parsing it during the first paint pushed
+   * the largest text paint past 2.5s, and the poster already covers the wait.
+   */
+  const schedule = () => {
+    const idle = (
+      window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      }
+    ).requestIdleCallback;
+    if (typeof idle === 'function') idle(() => void boot(), { timeout: 1200 });
+    else window.setTimeout(() => void boot(), 200);
+  };
+
+  if (document.readyState === 'complete') schedule();
+  else window.addEventListener('load', schedule, { once: true });
 </script>

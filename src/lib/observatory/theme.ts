@@ -87,8 +87,8 @@ const NUMERICS: Record<
   dark: {
     exposure: 1.05,
     fogDensity: 0.0115,
-    hemi: 0.62,
-    keyIntensity: 2.4,
+    hemi: 0.8,
+    keyIntensity: 2.9,
     practicalIntensity: 1.5,
     emissive: 1.25,
     environmentIntensity: 0.5,

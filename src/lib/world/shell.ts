@@ -287,7 +287,11 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (select) select.value = persist ? next : 'auto';
   }
 
+  /** A stored preference is the visitor's decision, so the monitor stands down. */
+  const manualQuality = storedPreference !== null;
+
   const monitor = new PerformanceMonitor((action) => {
+    if (manualQuality) return;
     if (action === 'down') {
       const lower = nextDown(tier);
       if (lower !== tier) {
@@ -647,7 +651,7 @@ export function mountShell(root: WorldHost): ShellHandle {
       if (state.destination !== 'campus') world.triggerSignal(state.destination);
       lastDestination = state.destination;
     }
-    root.dataset.reading = reading ? 'true' : 'false';
+    root.dataset.worldReading = reading ? 'true' : 'false';
 
     for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-world-dock-link]')) {
       const target = link.dataset.worldDockLink;
