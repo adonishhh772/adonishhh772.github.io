@@ -133,12 +133,15 @@ const isCurrent = (href: string) => {
         <a class="btn btn--ghost" href={Astro.url.pathname + Astro.url.search} data-world-reload>
           Reload the page
         </a>
-        <a class="btn btn--ghost" href={rootUrl('/cv/')} data-world-alert-link>
-          Open the CV in the world
-        </a>
+        <button class="btn btn--ghost" type="button" data-world-dismiss>
+          Read the documents without the 3D scene
+        </button>
       </div>
       <p class="world-alert-foot">
         Nothing has been lost: this page, its URL and its content are intact.
+        Everything the site contains — the CV, every article and case study,
+        the repositories and the contact options — is ordinary readable HTML
+        inside the world's own panels.
       </p>
     </div>
   </div>
@@ -164,6 +167,15 @@ const isCurrent = (href: string) => {
     function show(message) {
       var world = worldRoot();
       if (world && world.getAttribute('data-world-state') === 'ready') return;
+      /* Already answered once: the visitor chose to read without the scene.
+         The key is written by the dismiss handler below; chrome.ts reads it
+         through the same name. */
+      try {
+        if (window.sessionStorage.getItem('world:no-scene') === '1') return;
+      } catch (error) {
+        /* storage unavailable — the in-page state still stands */
+      }
+      if (world && world.getAttribute('data-world-state') === 'degraded') return;
       if (world) world.setAttribute('data-world-state', 'error');
       if (reason && message) reason.textContent = ' ' + message;
       if (alertBox) alertBox.hidden = false;
@@ -189,6 +201,12 @@ const isCurrent = (href: string) => {
     if (retry) {
       retry.addEventListener('click', function () {
         if (retrying) return;
+        /* Asking to try again is asking for the world back. */
+        try {
+          window.sessionStorage.removeItem('world:no-scene');
+        } catch (error) {
+          /* storage unavailable */
+        }
         retrying = true;
         retry.disabled = true;
         retry.textContent = 'Trying again…';
@@ -217,11 +235,32 @@ const isCurrent = (href: string) => {
       var world = worldRoot();
       if (!world) return;
       var state = world.getAttribute('data-world-state');
-      if (state === 'ready' || state === 'error' || state === 'recovering') return;
+      if (state === 'ready' || state === 'error' || state === 'recovering' || state === 'degraded') {
+        return;
+      }
       show(
         'The interactive world did not finish starting. This is usually a slow or interrupted download of the 3D module.'
       );
     }, 9000);
+
+    /* Reading without the scene is an explicit choice, made here and never
+       made for the visitor: the world is not silently replaced by a
+       conventional portfolio. */
+    var dismiss = document.querySelector('[data-world-dismiss]');
+    if (dismiss) {
+      dismiss.addEventListener('click', function () {
+        var world = worldRoot();
+        if (world) world.setAttribute('data-world-state', 'degraded');
+        try {
+          window.sessionStorage.setItem('world:no-scene', '1');
+        } catch (error) {
+          /* storage unavailable — the choice lasts for this page only */
+        }
+        hide();
+        var close = document.querySelector('[data-surface-close]');
+        if (close) close.focus();
+      });
+    }
   })();
 </script>
 

@@ -17,6 +17,46 @@ export const MODE_ATTRIBUTE = 'data-mode';
 export const THEME_ATTRIBUTE = 'data-theme';
 export const AMBIENT_ATTRIBUTE = 'data-ambient';
 
+/**
+ * Set when the visitor explicitly asks to read the documents without the 3D
+ * scene. It is a decision they made, so it is remembered for the session and
+ * the failure screen stops asking.
+ */
+const SCENE_KEY = 'world:no-scene';
+
+function session(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function sceneDeclined(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return session()?.getItem(SCENE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function declineScene(): void {
+  try {
+    session()?.setItem(SCENE_KEY, '1');
+  } catch {
+    /* storage unavailable — the choice lasts for this page only */
+  }
+}
+
+export function allowScene(): void {
+  try {
+    session()?.removeItem(SCENE_KEY);
+  } catch {
+    /* nothing to do */
+  }
+}
+
 /** Attributes that describe the visitor's environment, not the page. */
 const CARRIED: string[] = [
   MODE_ATTRIBUTE,
@@ -62,12 +102,17 @@ function prefersLight(): boolean {
 /**
  * Put the two capability/theme decisions back on <html> if the swap dropped
  * them. Existing values always win: they are the live state.
+ *
+ * The mode is `world` whenever script is running at all. A browser without
+ * WebGL is a failure the visitor is told about, not a silent downgrade to a
+ * different site.
  */
 export function restoreDocumentState(): void {
   if (typeof document === 'undefined') return;
   const html = document.documentElement;
   if (!html.dataset.mode) {
-    html.dataset.mode = probeWebgl() ? 'world' : 'simple';
+    html.dataset.mode = 'world';
+    html.dataset.webgl = probeWebgl() ? 'yes' : 'no';
   }
   if (!html.dataset.theme) {
     /* An explicit choice first, then the system preference — the same order

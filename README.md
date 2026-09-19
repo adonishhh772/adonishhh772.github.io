@@ -159,22 +159,25 @@ appears.
 ### When the world cannot run
 
 There is no mode to switch into and no silent fallback to a conventional
-portfolio. If the world cannot start, it says so.
+portfolio. Script being available is what selects the world; if the world
+cannot start, it says so.
 
-- A **pre-paint probe** decides `data-mode`: `world` when JavaScript and WebGL
-  are both available. With no JavaScript at all the attribute is simply
-  absent, and the default CSS renders the same semantic documents as ordinary
-  readable pages — which is also what search engines and browserless visitors
-  get.
-- **three.js is a dynamic import gated on that decision**, so a visitor whose
-  browser cannot render the world never downloads the 3D bundle.
+- With **no JavaScript at all** the mode attribute is simply absent, and the
+  default CSS renders the same semantic documents as ordinary readable pages —
+  which is also what search engines and browserless visitors get.
+- **three.js is a dynamic import**, so a visitor whose browser cannot render
+  the world never downloads the 3D bundle.
 - **A failure is reported honestly.** A browser with no WebGL, a renderer that
   throws, a module that fails to download and a watchdog for a startup that
-  never finishes all raise the same branded screen: what happened, **Try
-  again**, **Reload the page**, and the world's own routes (which open inside
-  the world once it recovers).
-- **Retry rebuilds exactly one renderer**, disposing the failed attempt and
-  its canvas first. Nothing is retried automatically for an unsupported
+  never finishes all raise the same branded screen over the poster: what
+  happened, **Try again**, **Reload the page**, and an explicit **Read the
+  documents without the 3D scene**.
+- **Reading without the scene is the visitor's choice, never a silent swap.**
+  Choosing it keeps the same URLs, the same shell and the same semantic
+  documents, remembers the decision for the session, and stops the screen
+  asking. Trying again asks for the world back.
+- **Retry rebuilds exactly one renderer**, disposing the failed attempt and its
+  canvas first. Nothing is retried automatically for an unsupported
   capability.
 - **Losing the WebGL context** is announced and then recovered in place:
   three.js re-initialises its GL state on the restored context, so the same

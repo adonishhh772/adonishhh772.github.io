@@ -11,9 +11,10 @@
  * keep working when the renderer is the thing that failed.
  */
 
-import { preserveDocumentState, restoreDocumentState } from './document-state';
+import { preserveDocumentState, restoreDocumentState, sceneDeclined } from './document-state';
 import {
   currentTheme,
+  hideWorldAlert,
   isAmbientPaused,
   setAmbientPaused,
   subscribeAmbient,
@@ -21,7 +22,6 @@ import {
   toggleTheme,
   watchSystemTheme,
 } from './theme-state';
-
 const BOOT_KEY = '__abdWorldChrome';
 
 interface BoundWindow extends Window {
@@ -156,6 +156,15 @@ export function bootstrapChrome(): void {
   restoreDocumentState();
   syncThemeControls();
   syncAmbientControls();
+
+  /* If the visitor already chose to read without the 3D scene, that choice
+     stands for the rest of the session: the controls still work, the failure
+     screen stops asking. */
+  if (sceneDeclined()) {
+    const root = document.querySelector<HTMLElement>('[data-world]');
+    if (root && root.dataset.worldState !== 'ready') root.dataset.worldState = 'degraded';
+    hideWorldAlert();
+  }
 
   if (booted()) return;
 

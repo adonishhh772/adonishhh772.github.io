@@ -44,7 +44,7 @@ import {
   type WorldIndex,
   type WorldState,
 } from '../world/state';
-import { restoreDocumentState } from '../world/document-state';
+import { allowScene, restoreDocumentState, sceneDeclined } from '../world/document-state';
 import {
   currentTheme,
   hideWorldAlert,
@@ -1606,14 +1606,27 @@ export function bootstrapShell(): void {
   if (!retryBound) {
     retryBound = true;
     document.addEventListener(RETRY_EVENT, () => {
-      /* Retry is an explicit act: dispose the failed attempt, including its
-         canvas, and build a fresh one. */
+      /* Retry is an explicit act and a request for the world back: dispose
+         the failed attempt, including its canvas, and build a fresh one. */
+      allowScene();
       rebuild();
     });
   }
 
   const root = document.querySelector<WorldHost>('[data-world]');
   if (!root) return;
+
+  /* Script is running, so the world is the presentation — including its
+     failure screen. Only a browser with no script at all falls back to the
+     ordinary pages. */
+  document.documentElement.dataset.mode = 'world';
+
+  /* The visitor answered the failure screen already: keep their choice. */
+  if (sceneDeclined() && root.dataset.worldState !== 'ready') {
+    root.dataset.worldState = 'degraded';
+    hideWorldAlert();
+    return;
+  }
 
   const existing = root[MOUNT_KEY];
   if (existing && !existing.lost) {
@@ -1633,9 +1646,6 @@ export function bootstrapShell(): void {
     return;
   }
 
-  /* The probe in the head decided this; if it disagreed with reality, the
-     world is what is actually available, so correct it. */
-  document.documentElement.dataset.mode = 'world';
   root.dataset.worldState = 'loading';
   try {
     const handle = mountShell(root);

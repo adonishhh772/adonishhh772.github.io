@@ -101,16 +101,20 @@ const hasSurface = surface !== 'none';
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     {/*
-      Decide the experience before anything paints: a browser with JavaScript
-      and WebGL gets the world, everything else gets the readable pages. The
-      default — no attribute at all — is the simple page, so a visitor without
-      JavaScript never meets an empty canvas.
+      Decide the experience before anything paints.
+
+      JavaScript being available is what selects the world: a browser without
+      it gets the semantic documents as ordinary readable pages (which is also
+      what crawlers see), and a browser *with* JavaScript but no working WebGL
+      gets the world's own failure screen — never a silent swap to a
+      conventional portfolio.
     */}
     <script is:inline>
       (function () {
+        var gl = null;
         try {
           var canvas = document.createElement('canvas');
-          var gl =
+          gl =
             canvas.getContext('webgl2') ||
             canvas.getContext('webgl') ||
             canvas.getContext('experimental-webgl');
@@ -118,15 +122,10 @@ const hasSurface = surface !== 'none';
             var lose = gl.getExtension('WEBGL_lose_context');
             if (lose) lose.loseContext();
           }
-          /*
-           * No manual override: the world runs whenever the browser can render
-           * it, and the readable pages are the failure path. Ignoring the old
-           * preference also means nobody is stranded in a mode they have no
-           * control left to leave.
-           */
-          document.documentElement.dataset.mode = gl ? 'world' : 'simple';
+          document.documentElement.dataset.mode = 'world';
           document.documentElement.dataset.webgl = gl ? 'yes' : 'no';
         } catch (error) {
+          /* No scripting environment we can trust: the readable pages stand. */
           document.documentElement.dataset.mode = 'simple';
           document.documentElement.dataset.webgl = 'no';
         }

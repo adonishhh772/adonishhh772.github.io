@@ -910,7 +910,77 @@ const main = async () => {
       return `"${reason.slice(0, 62)}…", then recovered`;
     });
 
-    /* ── 16. No JavaScript errors ─────────────────────────────────── */
+    /* ── 16. No WebGL at all ──────────────────────────────────────── */
+    await check('A browser without WebGL is told, not given a different site', async () => {
+      const { identifier } = await page.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: `(() => {
+          const original = HTMLCanvasElement.prototype.getContext;
+          HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+            if (String(type).toLowerCase().includes('webgl')) return null;
+            return original.call(this, type, ...rest);
+          };
+        })();`,
+      });
+      try {
+        await page.navigate(`${BASE}/`);
+        await page.waitFor(`!document.querySelector('[data-world-alert]').hidden`, {
+          timeout: 20000,
+          label: 'the no-WebGL screen',
+        });
+        const info = await page.evaluate(`(() => {
+          const world = document.querySelector('[data-world]');
+          const poster = document.querySelector('.world-poster');
+          return {
+            mode: document.documentElement.dataset.mode,
+            webgl: document.documentElement.dataset.webgl,
+            state: world.dataset.worldState,
+            posterVisible: Number(getComputedStyle(poster).opacity) > 0.5,
+            reason: document.querySelector('[data-world-alert-reason]').textContent.trim(),
+            headings: [...document.querySelectorAll('[data-world-alert] h2')].map((n) =>
+              n.textContent.trim(),
+            ),
+          };
+        })()`);
+        await page.screenshot(join(OUT, '30-no-webgl.png'));
+        if (info.mode !== 'world') throw new Error(`mode is ${info.mode}`);
+        if (!info.posterVisible) throw new Error('no branded screen behind the message');
+        if (!info.reason) throw new Error('no explanation given');
+
+        /* The visitor may explicitly choose to read the documents. */
+        await page.clickSelector('[data-world-dismiss]');
+        await sleep(600);
+        const degraded = await page.evaluate(`(() => ({
+          state: document.querySelector('[data-world]').dataset.worldState,
+          alertHidden: document.querySelector('[data-world-alert]').hidden,
+        }))()`);
+        if (!degraded.alertHidden) throw new Error('the screen could not be dismissed');
+        if (degraded.state !== 'degraded') throw new Error(`state is ${degraded.state}`);
+
+        await page.navigate(`${BASE}/cv/`);
+        await page.waitFor(`document.querySelector('[data-world]')?.dataset.worldState === 'degraded'`, {
+          timeout: 10000,
+        });
+        const readable = await page.evaluate(`(() => {
+          const panel = document.querySelector('[data-surface-panel]:not([hidden])');
+          return {
+            alertHidden: document.querySelector('[data-world-alert]').hidden,
+            title: panel?.querySelector('h1')?.textContent?.trim(),
+            text: panel?.textContent?.trim().length ?? 0,
+          };
+        })()`);
+        if (!readable.alertHidden) throw new Error('the failure screen came back on navigation');
+        if (readable.text < 500) throw new Error('the CV is not readable without the scene');
+        return `${info.headings[0] ?? 'failure'} — "${info.reason.slice(0, 46)}…", CV still readable (${readable.text} chars)`;
+      } finally {
+        await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+        /* The decline was this test's own choice; forget it. */
+        await page.evaluate(`sessionStorage.removeItem('world:no-scene')`);
+        await page.navigate(`${BASE}/`);
+        await ready(page);
+      }
+    });
+
+    /* ── 17. No JavaScript errors ─────────────────────────────────── */
     await check('No uncaught exceptions during the run', async () => {
       if (consoleErrors.length) throw new Error(consoleErrors.slice(0, 3).join(' | '));
       return 'clean console';
