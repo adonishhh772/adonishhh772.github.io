@@ -1253,13 +1253,36 @@ html[data-mode='world'] body {
   background: var(--bg-raised-2);
 }
 
+/*
+  The circle in a caption. It is a flex box on purpose: an inline SVG inside a
+  fixed-size span sits on the text baseline, which puts the icon low and to the
+  left instead of in the middle of the circle.
+*/
 .world-hotspot-mark {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 26px;
   height: 26px;
+  line-height: 0;
   border-radius: 50%;
   border: 1px solid var(--accent-line);
   background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.world-hotspot-mark svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.world-hotspot--object .world-hotspot-mark {
+  color: var(--signal);
+}
+
+.world-hotspot--celestial .world-hotspot-mark {
+  color: var(--signal);
 }
 
 .world-hotspot--object .world-hotspot-mark {

@@ -440,22 +440,23 @@ export interface ConiferGeometry {
  */
 export function coniferGeometry(): ConiferGeometry {
   const specs: { radius: number; height: number; y: number; yaw: number }[] = [
-    { radius: 0.54, height: 0.96, y: 0.72, yaw: 0 },
-    { radius: 0.45, height: 0.9, y: 1.12, yaw: Math.PI / 5 },
-    { radius: 0.34, height: 0.84, y: 1.52, yaw: (Math.PI * 2) / 5 },
-    { radius: 0.21, height: 0.78, y: 1.92, yaw: (Math.PI * 3) / 5 },
+    { radius: 0.62, height: 1.0, y: 0.78, yaw: 0 },
+    { radius: 0.53, height: 0.94, y: 1.24, yaw: Math.PI / 5 },
+    { radius: 0.42, height: 0.9, y: 1.7, yaw: (Math.PI * 2) / 5 },
+    { radius: 0.29, height: 0.86, y: 2.16, yaw: (Math.PI * 3) / 5 },
+    { radius: 0.15, height: 0.8, y: 2.6, yaw: (Math.PI * 4) / 5 },
   ];
   const tiers = specs.map((spec) => {
     /* Nine radial segments with a slight squash: faceted enough to catch the
        key light, round enough not to look cut out. */
     const cone = new THREE.ConeGeometry(spec.radius, spec.height, 9, 1, false);
-    cone.scale(1, 1, 0.92);
+    cone.scale(1, 1, 0.9);
     cone.rotateY(spec.yaw);
     cone.translate(0, spec.y, 0);
     return cone;
   });
-  const trunk = new THREE.CylinderGeometry(0.055, 0.095, 0.86, 6);
-  trunk.translate(0, 0.4, 0);
+  const trunk = new THREE.CylinderGeometry(0.06, 0.12, 0.9, 6);
+  trunk.translate(0, 0.42, 0);
   return { trunk, tiers };
 }
 
@@ -469,22 +470,24 @@ export interface BroadleafGeometry {
  * rather than as planting; a rounded crown beside them makes it a wood.
  */
 export function broadleafGeometry(): BroadleafGeometry {
-  const trunk = new THREE.CylinderGeometry(0.06, 0.1, 1.05, 6);
-  trunk.translate(0, 0.5, 0);
-  const canopy = new THREE.IcosahedronGeometry(0.62, 1);
-  canopy.scale(1.06, 0.92, 1.02);
-  canopy.translate(0, 1.42, 0);
+  const trunk = new THREE.CylinderGeometry(0.07, 0.12, 1.3, 6);
+  trunk.translate(0, 0.62, 0);
+  const canopy = new THREE.IcosahedronGeometry(0.78, 1);
+  canopy.scale(1.08, 0.94, 1.02);
+  canopy.translate(0, 1.72, 0);
   return { trunk, canopy };
 }
 
 /*
- * A chiselled boulder.
+ * A boulder.
  *
  * Displacement is keyed on the vertex position rather than the vertex index,
  * so faces that share a corner move together and the shell stays closed. The
- * result is a faceted lump with one flat-ish face — a rock, not a crystal.
+ * amplitude is small and the proportions stay close to cubic: a rock that has
+ * been worn, not a shard — which is what the earlier high-amplitude version
+ * produced once it was squashed and laid on the ground.
  */
-export function boulderGeometry(seed: number, squash = 0.78): THREE.BufferGeometry {
+export function boulderGeometry(seed: number, squash = 0.72): THREE.BufferGeometry {
   const geometry = new THREE.IcosahedronGeometry(1, 1);
   const position = geometry.attributes.position as THREE.BufferAttribute;
   const vector = new THREE.Vector3();
@@ -496,8 +499,8 @@ export function boulderGeometry(seed: number, squash = 0.78): THREE.BufferGeomet
     for (let c = 0; c < key.length; c++) {
       hash = (Math.imul(hash ^ key.charCodeAt(c), 16777619) >>> 0) % 100003;
     }
-    const scale = 0.66 + (hash % 1000) / 1000 * 0.55;
-    const lift = 1 + (vector.y > 0 ? 0.08 : 0);
+    const scale = 0.84 + ((hash % 1000) / 1000) * 0.28;
+    const lift = 1 + (vector.y > 0 ? 0.05 : 0);
     position.setXYZ(i, vector.x * scale, vector.y * scale * squash * lift, vector.z * scale);
   }
   geometry.computeVertexNormals();

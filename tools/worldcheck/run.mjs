@@ -319,18 +319,30 @@ const main = async () => {
     await page.screenshot(join(OUT, '06-cv-closed.png'));
 
     /* ── 5. The physical light switch ─────────────────────────────── */
-    await check('The sun exists as a physical object in the scene', async () => {
+    await check('The sun is a body in the sky, at the top centre of the view', async () => {
       const debug = await page.evaluate(`window.__worldDebug()`);
-      if (!debug.sunScreen) throw new Error('the world has no sun');
-      if (!debug.sunScreen.onScreen) throw new Error('the sun is behind the camera');
-      return `lever projected at ${Math.round(debug.sunScreen.x)},${Math.round(debug.sunScreen.y)}`;
+      if (!debug.celestial) throw new Error('the world has no sun');
+      if (!debug.celestial.onScreen) throw new Error('the sun is not on screen');
+      const stage = await page.evaluate(`(() => {
+        const w = document.querySelector('[data-world]').clientWidth;
+        const h = document.querySelector('[data-world]').clientHeight;
+        return { w, h };
+      })()`);
+      const centreX = stage.w / 2;
+      if (Math.abs(debug.celestial.x - centreX) > stage.w * 0.06) {
+        throw new Error(`the sun is not horizontally centred (${Math.round(debug.celestial.x)} of ${centreX})`);
+      }
+      if (debug.celestial.y > stage.h * 0.4) {
+        throw new Error(`the sun is not in the upper part of the frame (y ${Math.round(debug.celestial.y)})`);
+      }
+      return `centred at ${Math.round(debug.celestial.x)},${Math.round(debug.celestial.y)} of ${stage.w}×${stage.h}`;
     });
 
-    await check('Tapping the sun in the scene changes the light', async () => {
+    await check('Tapping the sun in the sky changes the light, and it sets as the moon rises', async () => {
       /* A direct tap on the post itself, resolved by the scene rather than by
          a caption: this is the physical control, not the interface one. */
       const before = await page.evaluate(`document.documentElement.dataset.theme`);
-      const point = await page.evaluate(`window.__worldDebug().sunPick`);
+      const point = await page.evaluate(`window.__worldDebug().celestial`);
       const blocked = await page.evaluate(`(() => {
         const node = document.elementFromPoint(${point.x}, ${point.y});
         return node ? (node.className || node.tagName) : null;
@@ -586,14 +598,23 @@ const main = async () => {
 
     /* ── 11. Reduced motion and ambient pause ─────────────────────── */
     await check('Ambient motion can be paused and is persisted', async () => {
-      await page.clickSelector('[data-world-chrome] [data-world-ambient]');
+      /* It lives in the map menu now, and the menu scrolls, so a visitor
+         reaches it the same way this does. */
+      await page.clickSelector('[data-world-chrome] [data-world-map]');
+      await sleep(400);
+      await page.evaluate(
+        `document.querySelector('[data-world-map-menu] [data-world-ambient]').scrollIntoView({ block: 'nearest' })`,
+      );
+      await sleep(250);
+      await page.clickSelector('[data-world-map-menu] [data-world-ambient]');
       await sleep(400);
       const ambient = await page.evaluate(`document.documentElement.dataset.ambient`);
       const stored = await page.evaluate(`localStorage.getItem('world:ambient')`);
       if (ambient !== 'paused') throw new Error(`ambient is ${ambient}`);
       if (stored !== 'paused') throw new Error('pause was not persisted');
-      await page.clickSelector('[data-world-chrome] [data-world-ambient]');
+      await page.clickSelector('[data-world-map-menu] [data-world-ambient]');
       await sleep(300);
+      await page.key('Escape', 'Escape', 27);
       return 'pause toggles and persists';
     });
 

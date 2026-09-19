@@ -100,7 +100,12 @@ export interface Shot {
   fov: number;
 }
 
-/** A pickable object in the world that stands for a piece of content. */
+/**
+ * Content objects that are not articles, projects or repositories: the
+ * subscribe handbill beside the library and the message hatch at the contact
+ * station. Both are ordinary documents of the site, reached as objects in the
+ * world.
+ */
 export interface ObjectMarker {
   id: string;
   kind: 'article' | 'project' | 'repo' | 'cv' | 'about' | 'newsletter' | 'contact';
@@ -154,24 +159,7 @@ export interface WorldStats {
   drawCalls: number;
 }
 
-/**
- * The sun control.
- *
- * Not a switch on a post: the thing standing on the plinth *is* the sun, and
- * choosing day or night turns it into the moon — warm core with rays at one
- * end, pale cratered body at the other — while the light in the scene changes
- * with it. The transformation is driven from the same blended `dayness` the
- * rest of the world uses, so it is exactly as smooth as the light change.
- */
-export interface SunControlNode {
-  /** Where the DOM caption attaches. */
-  anchor: THREE.Vector3;
-  /** Raycast target for a direct tap on the sun itself. */
-  pick: THREE.Mesh;
-  group: THREE.Group;
-  /** The orb, so the shell can report where it is on screen. */
-  orb: THREE.Group;
-}
+
 
 /** Distance at which a sphere of `radius` fits the current viewport. */
 export function fitDistance(radius: number, fovDeg: number, aspect: number): number {
@@ -186,8 +174,6 @@ export class ObservatoryWorld {
   readonly exhibits = new Map<string, ExhibitNode>();
   /** Pickable objects for articles, repositories and projects. */
   readonly objectMarkers: ObjectMarker[] = [];
-  /** The in-world day/night control: an actual sun that becomes the moon. */
-  sunControl!: SunControlNode;
 
   private readonly materials: Materials;
   private readonly atmosphere: Atmosphere;
@@ -209,14 +195,6 @@ export class ObservatoryWorld {
   private beaconCore!: THREE.Mesh;
   private beaconLantern!: THREE.Mesh;
   private islandLanterns: THREE.Mesh[] = [];
-  private sunOrb: THREE.Group | null = null;
-  private sunRays: THREE.Group | null = null;
-  private sunRayMaterial: THREE.MeshStandardMaterial | null = null;
-  private sunCoreMaterial: THREE.MeshStandardMaterial | null = null;
-  private sunCraterMaterial: THREE.MeshStandardMaterial | null = null;
-  private sunSpin = 0;
-  private lastDayness = 1;
-  private sunGlowMaterial: THREE.SpriteMaterial | null = null;
   private billMaterial: THREE.MeshStandardMaterial | null = null;
   private mistGroup = new THREE.Group();
   private mistLayers: THREE.Mesh[] = [];
@@ -262,7 +240,6 @@ export class ObservatoryWorld {
     this.buildWorkbench();
     this.buildContactStation();
     this.buildSubscribePost();
-    this.buildSunControl();
     this.buildDrone();
     this.buildSignals();
     this.wirePracticalLights();
@@ -539,30 +516,41 @@ export class ObservatoryWorld {
     }
 
     /*
-     * Outcrops on the plateau itself. A few half-buried boulders near the rim
-     * give the ground some geology; the island used to be a smooth disc
-     * wherever the buildings stopped.
+     * Outcrops on the plateau itself. Stone occurs in clusters, so these come
+     * in small groups rather than an even scatter — a lone boulder every few
+     * metres reads as debris. Each is sunk by most of its own height, so it
+     * belongs to the ground rather than sitting on it.
      */
     {
       const random = mulberry32(77);
-      const geometry = this.track(boulderGeometry(53, 0.62));
+      const geometry = this.track(boulderGeometry(53, 0.66));
       const matrices: THREE.Matrix4[] = [];
       const matrix = new THREE.Matrix4();
-      for (let i = 0; i < 26; i++) {
-        const angle = random() * Math.PI * 2;
-        const radius = 5.6 + random() * 5.4;
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
-        if (this.nearStation(x, z, 2.6)) continue;
-        const scale = 0.24 + random() * 0.5;
-        matrix.compose(
-          new THREE.Vector3(x, GROUND - 0.05 - scale * 0.45, z),
-          new THREE.Quaternion().setFromEuler(
-            new THREE.Euler(random() * 0.4 - 0.2, random() * Math.PI * 2, random() * 0.4 - 0.2),
-          ),
-          new THREE.Vector3(scale * 1.25, scale * 0.7, scale),
-        );
-        matrices.push(matrix.clone());
+      const clusters = 7;
+      for (let cluster = 0; cluster < clusters; cluster++) {
+        const angle = (cluster / clusters) * Math.PI * 2 + random() * 0.8;
+        const radius = 7.6 + random() * 3.2;
+        const anchorX = Math.cos(angle) * radius;
+        const anchorZ = Math.sin(angle) * radius;
+        const stones = 1 + Math.floor(random() * 3);
+        for (let stone = 0; stone < stones; stone++) {
+          const x = anchorX + (random() - 0.5) * 1.9;
+          const z = anchorZ + (random() - 0.5) * 1.9;
+          if (this.nearStation(x, z, 2.4)) continue;
+          const scale = 0.42 + random() * 0.72;
+          matrix.compose(
+            new THREE.Vector3(x, GROUND - 0.08 - scale * 0.62, z),
+            new THREE.Quaternion().setFromEuler(
+              new THREE.Euler(
+                (random() - 0.5) * 0.3,
+                random() * Math.PI * 2,
+                (random() - 0.5) * 0.3,
+              ),
+            ),
+            new THREE.Vector3(scale * 1.15, scale * 0.68, scale),
+          );
+          matrices.push(matrix.clone());
+        }
       }
       const outcrops = instancedMesh(geometry, this.materials.rock, matrices, 'outcrops');
       outcrops.castShadow = this.quality.shadows;
@@ -592,8 +580,8 @@ export class ObservatoryWorld {
     const lean = new THREE.Quaternion();
     const yawOnly = new THREE.Quaternion();
     for (let ring = 0; ring < rings; ring++) {
-      const radius = 12.6 - ring * 1.7;
-      const count = 20 - ring * 3;
+      const radius = 12.4 - ring * 1.6;
+      const count = 16 - ring * 3;
       for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2 + random() * 0.3 + ring * 0.9;
         const jitter = 0.84 + random() * 0.42;
@@ -601,7 +589,12 @@ export class ObservatoryWorld {
         const z = Math.sin(angle) * radius * jitter;
         /* Keep the built terraces clear of planting. */
         if (this.nearStation(x, z, 4.2)) continue;
-        const scale = 0.46 + random() * 0.62;
+        /*
+         * Trees are sized against the architecture, not against the ground:
+         * at island scale anything smaller than a third of a building reads
+         * as a shrub, which is what the earlier treeline looked like.
+         */
+        const scale = 0.78 + random() * 0.72;
         yawOnly.setFromAxisAngle(new THREE.Vector3(0, 1, 0), random() * Math.PI * 2);
         /* A slight lean, so the treeline is not a row of plumb lines. */
         lean.setFromAxisAngle(
@@ -2147,55 +2140,6 @@ export class ObservatoryWorld {
       (this.flight.mesh.material as THREE.MeshStandardMaterial).emissive.setHex(theme.signal);
     }
 
-    /*
-     * The sun becomes the moon, exactly in step with the light.
-     *
-     * Because the theme arrives already blended during a transition, every
-     * value below is a continuous function of `dayness` — there is no second
-     * animation to keep in sync, and an interrupted change simply follows the
-     * light from wherever it had got to.
-     */
-    const day = THREE.MathUtils.clamp(theme.dayness, 0, 1);
-    const night = 1 - day;
-    if (this.sunRays) {
-      this.sunRays.scale.setScalar(0.25 + day * 0.85);
-      const rayScaleY = 1 - night * 0.55;
-      this.sunRays.scale.y = (0.25 + day * 0.85) * rayScaleY;
-    }
-    if (this.sunRayMaterial) {
-      this.sunRayMaterial.emissive.setHex(theme.practical);
-      this.sunRayMaterial.emissiveIntensity = 0.4 + day * 1.1;
-      this.sunRayMaterial.opacity = 0.15 + day * 0.85;
-    }
-    if (this.sunCoreMaterial) {
-      /* Gold at noon, cool stone-pale at midnight. */
-      this.sunCoreMaterial.emissive
-        .setHex(theme.practical)
-        .lerp(new THREE.Color(theme.skyHorizon), night * 0.82);
-      this.sunCoreMaterial.emissiveIntensity = 0.5 + day * 1.5;
-      this.sunCoreMaterial.color
-        .setHex(0x2a1c06)
-        .lerp(new THREE.Color(0x1b2436), night);
-    }
-    if (this.sunCraterMaterial) {
-      this.sunCraterMaterial.opacity = night * 0.5;
-    }
-    if (this.sunGlowMaterial) {
-      /* Gold and warm by day, a tight cool nimbus at night. */
-      this.sunGlowMaterial.color
-        .setHex(theme.practical)
-        .lerp(new THREE.Color(theme.skyHorizon), night * 0.7);
-      this.sunGlowMaterial.opacity = 0.12 + day * 0.24;
-    }
-    if (this.sunOrb) {
-      /* It turns as it changes: the rotation is the integral of the change,
-         so a flip spins and then stops rather than spinning forever. */
-      this.sunSpin += Math.abs(day - this.lastDayness) * 7;
-      this.sunOrb.rotation.z = THREE.MathUtils.lerp(-0.16, 0.16, day);
-      if (this.sunRays) this.sunRays.rotation.z = this.sunSpin;
-      this.sunOrb.rotation.y = this.sunSpin * 0.35;
-    }
-    this.lastDayness = day;
   }
 
   setQuality(quality: QualitySettings): void {
@@ -2222,175 +2166,6 @@ export class ObservatoryWorld {
         (lantern.material as THREE.MeshStandardMaterial).emissiveIntensity = 2.2;
       }
     });
-  }
-
-  /* ── The sun, which becomes the moon ───────────────────────────────── */
-
-  /**
-   * A sun standing on a plinth on the plateau between the observatory and the
-   * workshop, on the side the overview camera looks in from.
-   *
-   * Every part of it is driven by `dayness`: the rays fold away and the core
-   * cools from gold to pale as the light goes down, the craters come up, and
-   * the whole orb turns as it changes. Nothing here keeps its own day/night
-   * state, so the sky, the scene and this object can never disagree.
-   */
-  private buildSunControl(): void {
-    const angle = (25 * Math.PI) / 180;
-    const radius = 5.05;
-    const x = Math.sin(angle) * radius;
-    const z = Math.cos(angle) * radius;
-    const orbY = GROUND + 2.55;
-
-    const group = new THREE.Group();
-    group.name = 'sun-control';
-    group.position.set(x, GROUND, z);
-    /* Face the plinth's inscription toward the island centre. */
-    group.rotation.y = Math.atan2(-x, -z);
-    this.group.add(group);
-
-    this.mesh(terrace(0.72, 0.24, 0.06), this.materials.stone, group, 'sun-base', {
-      position: new THREE.Vector3(0, 0.12, 0),
-    });
-    const column = this.mesh(
-      new THREE.CylinderGeometry(0.075, 0.11, 1.9, 10),
-      this.materials.metal,
-      group,
-      'sun-column',
-      { position: new THREE.Vector3(0, 1.15, 0) },
-    );
-    column.castShadow = this.quality.shadows;
-    /* A cradle the orb appears to sit in. */
-    this.mesh(
-      new THREE.TorusGeometry(0.42, 0.04, 6, 22, Math.PI * 1.2),
-      this.materials.ceramic,
-      group,
-      'sun-cradle',
-      { position: new THREE.Vector3(0, 2.1, 0), cast: false },
-    ).rotation.x = Math.PI / 2;
-
-    /* The orb ------------------------------------------------------- */
-    const orb = new THREE.Group();
-    orb.name = 'sun-orb';
-    orb.position.set(0, orbY - GROUND, 0);
-    group.add(orb);
-    this.sunOrb = orb;
-
-    /*
-     * A camera-facing glow, so the orb reads as a light source rather than a
-     * painted ball. Sprites always face the camera, which is what a sun needs
-     * from every angle the visitor can orbit to. It is kept close to the orb:
-     * a big additive wash over the island flattens the whole scene.
-     */
-    this.sunGlowMaterial = new THREE.SpriteMaterial({
-      map: radialFalloffTexture(96),
-      color: new THREE.Color(this.theme.practical),
-      transparent: true,
-      opacity: 0.28,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      fog: false,
-    });
-    const glow = new THREE.Sprite(this.sunGlowMaterial);
-    glow.name = 'sun-glow';
-    glow.scale.setScalar(1.35);
-    orb.add(glow);
-
-    this.sunCoreMaterial = this.track(
-      new THREE.MeshStandardMaterial({
-        color: 0x2a1c06,
-        roughness: 0.28,
-        metalness: 0.05,
-        emissive: new THREE.Color(this.theme.practical),
-        emissiveIntensity: 1.6,
-      }),
-    );
-    const core = this.mesh(
-      new THREE.SphereGeometry(0.55, 28, 20),
-      this.sunCoreMaterial,
-      orb,
-      'sun-core',
-      { cast: false, receive: false },
-    );
-    core.userData.spin = false;
-
-    /*
-     * Spikes, distributed over the sphere rather than in one flat ring: a sun
-     * has to look like a sun from wherever the camera happens to be standing.
-     */
-    this.sunRayMaterial = this.track(
-      new THREE.MeshStandardMaterial({
-        color: 0x2a1c06,
-        roughness: 0.4,
-        metalness: 0.1,
-        emissive: new THREE.Color(this.theme.practical),
-        emissiveIntensity: 1.2,
-        transparent: true,
-        opacity: 1,
-      }),
-    );
-    const rays = new THREE.Group();
-    rays.name = 'sun-rays';
-    orb.add(rays);
-    this.sunRays = rays;
-    const spikeGeometry = this.track(new THREE.ConeGeometry(0.085, 0.58, 5, 1));
-    const gold = Math.PI * (3 - Math.sqrt(5));
-    const spikes = 22;
-    const outward = new THREE.Vector3();
-    for (let i = 0; i < spikes; i++) {
-      const y = 1 - (i / (spikes - 1)) * 2;
-      const ringRadius = Math.sqrt(Math.max(0, 1 - y * y));
-      const theta = gold * i;
-      outward.set(Math.cos(theta) * ringRadius, y, Math.sin(theta) * ringRadius).normalize();
-      const spike = new THREE.Mesh(spikeGeometry, this.sunRayMaterial);
-      spike.position.copy(outward).multiplyScalar(0.7);
-      spike.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), outward);
-      spike.castShadow = false;
-      spike.receiveShadow = false;
-      rays.add(spike);
-    }
-
-    /* Craters: shallow dark dishes that only read once it is a moon. */
-    this.sunCraterMaterial = this.track(
-      new THREE.MeshStandardMaterial({
-        color: 0x1b2436,
-        roughness: 0.85,
-        metalness: 0,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-      }),
-    );
-    const craters: [number, number, number][] = [
-      [-0.46, 0.38, 0.16],
-      [0.26, 0.48, 0.11],
-      [0.48, -0.2, 0.14],
-      [-0.2, -0.44, 0.1],
-      [0.04, 0.04, 0.08],
-    ];
-    for (const [cx, cy, r] of craters) {
-      const dish = new THREE.Mesh(new THREE.CircleGeometry(r, 16), this.sunCraterMaterial);
-      const cz = Math.sqrt(Math.max(0, 0.5 * 0.5 - cx * cx - cy * cy)) + 0.005;
-      dish.position.set(cx, cy, cz);
-      dish.lookAt(cx * 3, cy * 3, cz * 3);
-      orb.add(dish);
-    }
-
-    /* A generous hit volume, so a tap on the sun always lands. */
-    const pickGeometry = this.track(new THREE.CylinderGeometry(0.85, 0.85, 3.1, 8));
-    const pick = new THREE.Mesh(pickGeometry, this.pickMaterial);
-    pick.name = 'pick-sun-control';
-    pick.position.set(x, GROUND + 1.5, z);
-    this.group.add(pick);
-
-    this.sunControl = {
-      /* Clear of the spikes and the glow, so the caption pill never sits on
-         top of the thing it names. */
-      anchor: new THREE.Vector3(x, orbY + 1.9, z),
-      pick,
-      group,
-      orb,
-    };
   }
 
   /* ── Animation ─────────────────────────────────────────────────────── */
@@ -2527,7 +2302,6 @@ export class ObservatoryWorld {
   /** All objects the pointer may hit: place volumes plus discovery markers. */
   pickTargets(): THREE.Object3D[] {
     const targets: THREE.Object3D[] = [];
-    if (this.sunControl) targets.push(this.sunControl.pick);
     for (const node of this.places.values()) {
       targets.push(node.pick);
       if (node.discovery && !node.discovery.found) targets.push(node.discovery.mesh);

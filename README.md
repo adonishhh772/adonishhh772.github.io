@@ -79,7 +79,7 @@ everything else follows from what you select.
   object itself answers - a destination travels, the sun turns into the moon.
 - **The chrome is always there.** A compact bar holds the location readout,
   the **Map** (a labelled list of every place and document, as real links),
-  **Home**, the **sun/moon switch** and **pause motion**. It takes the
+  **Home** and the **sun/moon switch**. It takes the
   edge opposite the reading surface on a desktop and the top strip on a phone,
   so it stays reachable from the CV, an article, a case study or the contact
   card. No destination can be lost behind a building or a panel.
@@ -96,17 +96,18 @@ The light is one authoritative state, held as `data-theme` on `<html>` and
 remembered in `localStorage` once the visitor makes an explicit choice. Until
 then the system preference is honoured.
 
-- **Both controls, one state.** An actual sun stands on the campus plateau:
-  choosing night turns it into the moon — the rays fold away, the core cools
-  and the craters come up — and the sky's own body, the starfield, the lamps
-  and the compact sun/moon switch in the chrome all follow the same value. The
-  keyboard works the same caption, which is a labelled toggle button.
+- **Both controls, one state.** A real sun hangs in the sky at the top centre
+  of the view. Choosing night runs it down its arc while the moon rises from
+  the other end and the starfield comes up with it; the sun's rays, the moon's
+  craters and the compact sun/moon switch in the chrome all follow the same
+  value. The keyboard works the same caption, which is a labelled toggle
+  button. The bodies are a sky layer rather than scenery, so they are never
+  lost behind a building.
 - **The sky changes, not a filter.** Sky gradient, fog colour and density,
   hemisphere and key lights, practical lamps, lamp and window emissives, the
   environment probe, exposure and the shadow tuning all take part in one
-  coordinated ~700ms blend, and the sky body is repainted from a rayed sun to
-  a cratered moon as it goes. Stars come out for the night. There is no dark
-  overlay over the canvas.
+  coordinated ~700ms blend, and the sun and moon travel their arc as it goes.
+  Stars come out for the night. There is no dark overlay over the canvas.
 - **The page changes with it.** Reading panels, forms, captions and the chrome
   cross-fade over the same period. Under `prefers-reduced-motion` the state
   applies immediately.
@@ -204,7 +205,7 @@ preference. A rolling 90-frame median then downgrades on sustained slowness and
 may upgrade once if the device comfortably holds 60 fps. The preference is
 stored in `localStorage` (`observatory:quality`). Rendering pauses when the tab
 is hidden or the stage leaves the viewport, ambient animation settles while a
-document is open, and the chrome's **pause motion** control (or
+document is open, and the map menu's **ambient movement** control (or
 `prefers-reduced-motion`) does the same on demand.
 
 ## Design system
@@ -314,11 +315,12 @@ new article to the Buttondown list using the `BUTTONDOWN_API_KEY` secret.
 - Opening a document moves focus onto its heading; closing returns focus to
   the caption it was opened from, or to the map control.
 - `prefers-reduced-motion` removes camera travel and ambient animation and
-  applies the day/night change instantly; the chrome's **pause motion**
+  applies the day/night change instantly; the map menu's **ambient movement**
   control does the same on demand.
 - Text contrast meets WCAG AA in both themes (ratios above).
 - Touch targets are at least 44x44 CSS pixels, safe areas are respected, and
-  the reading sheet keeps its close, Home/Map and sun/moon switch reachable.
+  the reading sheet keeps its close, Home/Map and sun/moon switch reachable;
+  ambient-motion pause is reachable inside the map menu.
 - Every destination is reachable with no JavaScript, with no WebGL, and from
   the map menu alone.
 

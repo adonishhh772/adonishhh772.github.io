@@ -29,6 +29,17 @@ export const SKY_LIGHT_DIRECTION = new THREE.Vector3(-0.46, 0.34, -0.82).normali
 
 const SKY_RADIUS = 420;
 
+/** How far away the sky bodies hang. Distance only sets their scale. */
+const CELESTIAL_DISTANCE = 220;
+/** A body's size, as a fraction of the frame's half-height. */
+const CELESTIAL_ANGULAR_SIZE = 0.1;
+/** Where a body sits at the top of its arc, in half-heights above centre. */
+const CELESTIAL_HIGH = 0.47;
+/** Where it has gone by the time it is the other one's turn. */
+const CELESTIAL_SET = 0.04;
+/** The dayness range over which a body fades in or out at the arc's foot. */
+const CELESTIAL_FADE = 0.24;
+
 /**
  * The sky is one canvas, repainted in place. Rebuilding a texture per frame
  * would make a 700ms day/night blend allocate and upload dozens of textures;
@@ -53,89 +64,185 @@ function paintSky(canvas: HTMLCanvasElement, theme: WorldTheme): void {
 }
 
 /**
- * The sky body.
+ * A celestial body's face, painted once.
  *
- * One canvas carries both faces of the same object: at one end a warm disc
- * with rays, at the other a pale cratered moon. Blending between them by
- * `dayness` means the change happens on the sun itself as the light turns,
- * rather than a sprite vanishing and a different one appearing.
+ * The sun is a bright core inside a soft corona with tapered rays; the moon is
+ * a pale disc with a shaded limb and craters. Both are drawn on transparent
+ * canvases so the sprite's own shape is the body, not a square.
  */
-function paintCelestial(canvas: HTMLCanvasElement, dayness: number): void {
-  const size = canvas.width;
+function celestialTexture(kind: 'sun' | 'moon'): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
   const centre = size / 2;
-  const sun = Math.max(0, Math.min(1, dayness));
-  const moon = 1 - sun;
-  const disc = size * 0.3;
+  if (ctx) {
+    ctx.clearRect(0, 0, size, size);
+    if (kind === 'sun') {
+      /* Corona. */
+      const corona = ctx.createRadialGradient(centre, centre, size * 0.16, centre, centre, size * 0.5);
+      corona.addColorStop(0, 'rgba(255,224,140,0.9)');
+      corona.addColorStop(0.35, 'rgba(249,178,72,0.42)');
+      corona.addColorStop(1, 'rgba(244,150,40,0)');
+      ctx.fillStyle = corona;
+      ctx.fillRect(0, 0, size, size);
 
-  ctx.clearRect(0, 0, size, size);
+      /* Rays, tapered and uneven so it reads as a drawn sun. */
+      ctx.save();
+      ctx.translate(centre, centre);
+      ctx.fillStyle = 'rgba(245,158,11,0.92)';
+      const rays = 16;
+      for (let i = 0; i < rays; i++) {
+        const length = i % 2 === 0 ? size * 0.46 : size * 0.34;
+        const half = size * 0.028;
+        ctx.save();
+        ctx.rotate((i / rays) * Math.PI * 2);
+        ctx.beginPath();
+        ctx.moveTo(size * 0.2, -half);
+        ctx.lineTo(length, 0);
+        ctx.lineTo(size * 0.2, half);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
 
-  if (moon > 0.01) {
-    ctx.globalAlpha = moon;
-    const body = ctx.createRadialGradient(
-      centre - disc * 0.35,
-      centre - disc * 0.35,
-      disc * 0.1,
-      centre,
-      centre,
-      disc,
-    );
-    body.addColorStop(0, 'rgba(246,248,255,1)');
-    body.addColorStop(0.72, 'rgba(214,222,240,1)');
-    body.addColorStop(1, 'rgba(176,190,214,1)');
-    ctx.fillStyle = body;
-    ctx.beginPath();
-    ctx.arc(centre, centre, disc, 0, Math.PI * 2);
-    ctx.fill();
-
-    /* Craters, fixed positions: the moon is the same moon every night. */
-    const craters: [number, number, number][] = [
-      [-0.32, -0.22, 0.16],
-      [0.18, -0.36, 0.1],
-      [0.34, 0.1, 0.14],
-      [-0.12, 0.3, 0.12],
-      [-0.44, 0.16, 0.07],
-    ];
-    ctx.globalAlpha = moon * 0.34;
-    ctx.fillStyle = 'rgb(122,138,168)';
-    for (const [cx, cy, r] of craters) {
+      /*
+       * The disc. Deliberately saturated: by day the sky is nearly white, so a
+       * pale sun is invisible against it. Saturated amber reads on both skies.
+       */
+      const disc = ctx.createRadialGradient(
+        centre - size * 0.05,
+        centre - size * 0.05,
+        size * 0.02,
+        centre,
+        centre,
+        size * 0.2,
+      );
+      disc.addColorStop(0, 'rgba(255,249,224,1)');
+      disc.addColorStop(0.5, 'rgba(253,205,92,1)');
+      disc.addColorStop(1, 'rgba(234,138,16,1)');
+      ctx.fillStyle = disc;
       ctx.beginPath();
-      ctx.arc(centre + cx * disc, centre + cy * disc, r * disc, 0, Math.PI * 2);
+      ctx.arc(centre, centre, size * 0.2, 0, Math.PI * 2);
       ctx.fill();
+      /* A defined edge, so the body has a silhouette rather than a smudge. */
+      ctx.strokeStyle = 'rgba(214,116,10,0.75)';
+      ctx.lineWidth = size * 0.012;
+      ctx.beginPath();
+      ctx.arc(centre, centre, size * 0.2, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      /* A soft nimbus, so the moon is not a hard pasted circle. */
+      const nimbus = ctx.createRadialGradient(centre, centre, size * 0.18, centre, centre, size * 0.44);
+      nimbus.addColorStop(0, 'rgba(214,226,248,0.34)');
+      nimbus.addColorStop(1, 'rgba(196,210,244,0)');
+      ctx.fillStyle = nimbus;
+      ctx.fillRect(0, 0, size, size);
+
+      /* Body, shaded toward the lower right as if lit from the upper left. */
+      const body = ctx.createRadialGradient(
+        centre - size * 0.075,
+        centre - size * 0.075,
+        size * 0.02,
+        centre,
+        centre,
+        size * 0.2,
+      );
+      body.addColorStop(0, 'rgba(246,249,255,1)');
+      body.addColorStop(0.6, 'rgba(206,217,238,1)');
+      body.addColorStop(1, 'rgba(148,163,192,1)');
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.arc(centre, centre, size * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      /* A defined limb, so the moon reads as a sphere rather than a glow. */
+      ctx.strokeStyle = 'rgba(126,142,172,0.6)';
+      ctx.lineWidth = size * 0.012;
+      ctx.beginPath();
+      ctx.arc(centre, centre, size * 0.2, 0, Math.PI * 2);
+      ctx.stroke();
+
+      /* Maria and craters. */
+      ctx.fillStyle = 'rgba(140,157,190,0.55)';
+      const maria: [number, number, number][] = [
+        [-0.06, -0.07, 0.062],
+        [0.05, 0.04, 0.045],
+        [-0.02, 0.09, 0.03],
+      ];
+      for (const [mx, my, mr] of maria) {
+        ctx.beginPath();
+        ctx.arc(centre + mx * size, centre + my * size, mr * size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      const craters: [number, number, number][] = [
+        [-0.1, 0.045, 0.016],
+        [0.07, -0.1, 0.013],
+        [0.1, 0.06, 0.01],
+      ];
+      for (const [cx, cy, cr] of craters) {
+        ctx.beginPath();
+        ctx.arc(centre + cx * size, centre + cy * size, cr * size, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
 
-  if (sun > 0.01) {
-    ctx.globalAlpha = sun;
-    /* Rays first, so the disc sits on top of them. */
-    ctx.save();
-    ctx.translate(centre, centre);
-    ctx.rotate(0.2);
-    ctx.fillStyle = 'rgba(255,214,140,0.85)';
-    for (let i = 0; i < 12; i++) {
-      ctx.rotate((Math.PI * 2) / 12);
-      const length = i % 2 === 0 ? disc * 0.62 : disc * 0.36;
-      ctx.beginPath();
-      ctx.moveTo(disc * 0.92, -disc * 0.075);
-      ctx.lineTo(disc * 0.92 + length, 0);
-      ctx.lineTo(disc * 0.92, disc * 0.075);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
+/**
+ * One sky body: the drawn face plus a wider glow behind it, both sprites so
+ * they always face the visitor.
+ *
+ * Depth testing is off on purpose. A sun that is drawn *behind* the island is
+ * a sun nobody can find or press: the overview camera looks down at the
+ * campus, so the geometric horizon sits above the top of the frame and a
+ * physically placed sky body would be buried inside the island. The bodies
+ * are therefore a sky layer that is always in front of the scene, and the arc
+ * plus the fade is what makes them set and rise.
+ */
+function celestialBody(
+  face: THREE.Texture,
+  glowOpacity: number,
+  glowTexture: THREE.Texture,
+): { group: THREE.Group; disc: THREE.SpriteMaterial; glow: THREE.SpriteMaterial } {
+  const group = new THREE.Group();
+  group.renderOrder = 12;
 
-    const glow = ctx.createRadialGradient(centre, centre, 0, centre, centre, disc);
-    glow.addColorStop(0, 'rgba(255,255,246,1)');
-    glow.addColorStop(0.55, 'rgba(255,224,158,1)');
-    glow.addColorStop(1, 'rgba(255,183,86,0.92)');
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(centre, centre, disc, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const glowMaterial = new THREE.SpriteMaterial({
+    map: glowTexture,
+    color: 0xffffff,
+    transparent: true,
+    opacity: glowOpacity,
+    depthWrite: false,
+    depthTest: false,
+    fog: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const glow = new THREE.Sprite(glowMaterial);
+  glow.name = 'glow';
+  glow.scale.setScalar(3.2);
+  glow.renderOrder = 12;
+  group.add(glow);
 
-  ctx.globalAlpha = 1;
+  const faceMaterial = new THREE.SpriteMaterial({
+    map: face,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    fog: false,
+  });
+  const disc = new THREE.Sprite(faceMaterial);
+  disc.name = 'disc';
+  disc.scale.setScalar(1.9);
+  disc.renderOrder = 13;
+  group.add(disc);
+
+  return { group, disc: faceMaterial, glow: glowMaterial };
 }
 
 /**
@@ -200,18 +307,21 @@ export class Atmosphere {
   private readonly skyMaterial: THREE.MeshBasicMaterial;
   private readonly skyCanvas: HTMLCanvasElement;
   private readonly skyTexture: THREE.CanvasTexture;
-  private readonly sunGroup: THREE.Group;
-  private readonly sunDisc: THREE.Mesh;
-  private readonly sunHalo: THREE.Mesh;
-  private readonly sunDiscMaterial: THREE.MeshBasicMaterial;
-  private readonly sunHaloMaterial: THREE.MeshBasicMaterial;
-  private readonly celestialCanvas: HTMLCanvasElement;
-  private readonly celestialTexture: THREE.CanvasTexture;
+  /** The two sky bodies, on one arc: as the sun sets the moon rises. */
+  private readonly sunBody: THREE.Group;
+  private readonly moonBody: THREE.Group;
+  private readonly sunMaterials: { disc: THREE.SpriteMaterial; glow: THREE.SpriteMaterial };
+  private readonly moonMaterials: { disc: THREE.SpriteMaterial; glow: THREE.SpriteMaterial };
+  private readonly sunTexture: THREE.CanvasTexture;
+  private readonly moonTexture: THREE.CanvasTexture;
   private readonly stars: THREE.Points;
   private readonly hazeTexture: THREE.Texture;
-  /** Last dayness the celestial canvas was painted for. */
-  private paintedDayness = -1;
+  /** 0 at night, 1 in daylight — what positions the bodies. */
+  private dayness = 1;
   private starOpacity = 0;
+  private readonly scratchForward = new THREE.Vector3();
+  private readonly scratchUp = new THREE.Vector3();
+  private readonly captionOffset = new THREE.Vector3();
   private quality: QualitySettings;
 
   constructor(
@@ -245,40 +355,27 @@ export class Atmosphere {
     this.skyMesh.renderOrder = -10;
     this.group.add(this.skyMesh);
 
-    /* Sun / moon disc + halo ----------------------------------------- */
+    /*
+     * The sun and the moon.
+     *
+     * Two real bodies in the sky rather than a trinket on a plinth: a warm
+     * rayed sun and a pale cratered moon, each on its own sprite so it always
+     * faces the visitor. They share one arc — as the sun goes down the moon
+     * comes up — and both are drawn behind the island, so a body that has set
+     * genuinely disappears below the horizon instead of fading out.
+     */
     this.hazeTexture = radialFalloffTexture(96);
-    this.celestialCanvas = document.createElement('canvas');
-    this.celestialCanvas.width = this.celestialCanvas.height = 128;
-    paintCelestial(this.celestialCanvas, theme.dayness);
-    this.paintedDayness = theme.dayness;
-    this.celestialTexture = new THREE.CanvasTexture(this.celestialCanvas);
-    this.celestialTexture.colorSpace = THREE.SRGBColorSpace;
-    this.sunDiscMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      map: this.celestialTexture,
-      transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
-      fog: false,
-    });
-    this.sunHaloMaterial = new THREE.MeshBasicMaterial({
-      color: theme.key,
-      map: this.hazeTexture,
-      transparent: true,
-      opacity: 0.3,
-      depthWrite: false,
-      fog: false,
-      blending: THREE.AdditiveBlending,
-    });
-    this.sunDisc = new THREE.Mesh(new THREE.CircleGeometry(9, 36), this.sunDiscMaterial);
-    this.sunHalo = new THREE.Mesh(new THREE.PlaneGeometry(70, 70), this.sunHaloMaterial);
-    this.sunGroup = new THREE.Group();
-    this.sunGroup.name = 'sun';
-    this.sunGroup.add(this.sunHalo, this.sunDisc);
-    this.sunGroup.position.copy(SKY_LIGHT_DIRECTION).multiplyScalar(SKY_RADIUS * 0.86);
-    this.sunGroup.lookAt(0, 0, 0);
-    this.sunGroup.renderOrder = -9;
-    this.group.add(this.sunGroup);
+    this.sunTexture = celestialTexture('sun');
+    this.moonTexture = celestialTexture('moon');
+    const sun = celestialBody(this.sunTexture, 0.34, this.hazeTexture);
+    const moon = celestialBody(this.moonTexture, 0.1, this.hazeTexture);
+    this.sunBody = sun.group;
+    this.moonBody = moon.group;
+    this.sunMaterials = { disc: sun.disc, glow: sun.glow };
+    this.moonMaterials = { disc: moon.disc, glow: moon.glow };
+    this.sunBody.name = 'sun';
+    this.moonBody.name = 'moon';
+    this.group.add(this.sunBody, this.moonBody);
 
     /* Stars, dark until the sun goes down. */
     this.stars = starField(SKY_RADIUS * 0.94, 560);
@@ -340,22 +437,16 @@ export class Atmosphere {
    */
   setTheme(theme: WorldTheme, options: { environment?: boolean } = {}): void {
     const day = THREE.MathUtils.clamp(theme.dayness, 0, 1);
+    this.dayness = day;
     paintSky(this.skyCanvas, theme);
     this.skyTexture.needsUpdate = true;
 
-    this.sunDiscMaterial.color.setHex(0xffffff);
-    this.sunHaloMaterial.color.setHex(theme.key);
-    /* The body itself is drawn by the canvas, so the blend of sun and moon is
-       a repaint rather than a cross-fade between two objects. */
-    if (Math.abs(theme.dayness - this.paintedDayness) > 0.02) {
-      paintCelestial(this.celestialCanvas, theme.dayness);
-      this.celestialTexture.needsUpdate = true;
-      this.paintedDayness = theme.dayness;
-    }
-    this.sunDiscMaterial.opacity = 0.7 + day * 0.25;
-    this.sunHaloMaterial.opacity = 0.2 + day * 0.22;
-    this.sunDisc.scale.setScalar(1 - day * 0.22);
-    this.sunHalo.scale.setScalar(1 + day * 0.5);
+    /* The bodies are placed and faded every frame in `follow`; the theme only
+       decides their colour. */
+    const sunGlow = this.sunMaterials.glow;
+    const moonGlow = this.moonMaterials.glow;
+    sunGlow.color.setHex(theme.practical);
+    moonGlow.color.setHex(theme.skyHorizon);
 
     /* Stars: on at night, gone by day. */
     this.starOpacity = (1 - day) * (this.quality.detail ? 1 : 0.78);
@@ -415,34 +506,103 @@ export class Atmosphere {
       this.key.shadow.map.dispose();
       this.key.shadow.map = null;
     }
-    this.sunHalo.visible = quality.detail;
+    /* The sun's corona is a detail: gone on the lowest tier. */
+    const sunGlow = this.sunBody.getObjectByName('glow');
+    if (sunGlow) sunGlow.visible = quality.detail;
   }
 
   /**
-   * Keep the sky, the sky body and the stars centred on the camera so the
-   * horizon never clips. The stars are given a slow, shallow twinkle — but
-   * only while ambient motion is allowed, so the night sky holds still while
-   * somebody is reading.
+   * Keep the sky, the sky bodies and the stars centred on the camera, and run
+   * the sun and moon along their shared arc.
+   *
+   * Each body is positioned in the camera's own frame — a fraction of the
+   * frame's half-height above centre — so "top centre" means exactly that,
+   * whatever the visitor has done to the camera. `dayness` moves the sun from
+   * high in the frame down toward the horizon while the moon comes up from it,
+   * and each fades at the foot of its arc, so the change reads as one setting
+   * while the other rises.
    */
   follow(camera: THREE.Camera): void {
     this.skyMesh.position.copy(camera.position);
-    this.sunGroup.position.copy(SKY_LIGHT_DIRECTION).multiplyScalar(SKY_RADIUS * 0.86).add(camera.position);
     this.stars.position.copy(camera.position);
+
+    const perspective = camera as THREE.PerspectiveCamera;
+    const halfHeight = Math.tan(THREE.MathUtils.degToRad(perspective.fov ?? 40) / 2);
+    const forward = camera.getWorldDirection(this.scratchForward);
+    const up = this.scratchUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+    const distance = CELESTIAL_DISTANCE;
+    const scale = Math.max(0.05, CELESTIAL_ANGULAR_SIZE * distance * halfHeight);
+
+    const place = (body: THREE.Group, fraction: number) => {
+      body.position
+        .copy(camera.position)
+        .addScaledVector(forward, distance)
+        .addScaledVector(up, fraction * halfHeight * distance);
+      body.scale.setScalar(scale);
+    };
+
+    const day = this.dayness;
+    place(this.sunBody, THREE.MathUtils.lerp(CELESTIAL_SET, CELESTIAL_HIGH, day));
+    place(this.moonBody, THREE.MathUtils.lerp(CELESTIAL_HIGH, CELESTIAL_SET, day));
+
+    /* Remembered so the caption can hang below the body rather than across its
+       face, which is what a pill centred on the sun would do. */
+    this.captionOffset.copy(up).multiplyScalar(-0.17 * halfHeight * distance);
+
+    /* Fade at the foot of the arc, so nothing is left sliding across the
+       island when it has effectively set. */
+    const sunFade = THREE.MathUtils.clamp((day - 0.08) / CELESTIAL_FADE, 0, 1);
+    const moonFade = THREE.MathUtils.clamp((0.92 - day) / CELESTIAL_FADE, 0, 1);
+    this.sunMaterials.disc.opacity = sunFade;
+    this.sunMaterials.glow.opacity = 0.34 * sunFade * day;
+    this.moonMaterials.disc.opacity = moonFade;
+    this.moonMaterials.glow.opacity = 0.24 * moonFade * (1 - day);
+    this.sunBody.visible = sunFade > 0.01;
+    this.moonBody.visible = moonFade > 0.01;
+
     if (this.starOpacity > 0.01 && this.quality.ambient) {
       const twinkle = 0.9 + Math.sin(performance.now() * 0.0011) * 0.1;
       (this.stars.material as THREE.PointsMaterial).opacity = this.starOpacity * twinkle;
     }
   }
 
+  /**
+   * Where the body that is currently up can be tapped, in world space. Used by
+   * the world shell for the sun's caption and for a direct tap on it.
+   */
+  activeCelestialPosition(): THREE.Vector3 | null {
+    const body = this.dayness >= 0.5 ? this.sunBody : this.moonBody;
+    if (!body.visible) return null;    return body.position.clone();
+  }
+
+  /** Where the caption for the body that is up should hang. */
+  activeCelestialCaptionPosition(): THREE.Vector3 | null {
+    const body = this.activeCelestialPosition();
+    return body ? body.add(this.captionOffset) : null;
+  }
+
+  /** The on-screen half-size of the active body, for a forgiving tap target. */
+  activeCelestialRadius(camera: THREE.Camera): number {    const body = this.dayness >= 0.5 ? this.sunBody : this.moonBody;
+    const perspective = camera as THREE.PerspectiveCamera;
+    const distance = Math.max(camera.position.distanceTo(body.position), 1);
+    /* The disc sprite is 1.9 units wide before the body's own scale. */
+    const worldRadius = 0.95 * body.scale.x;
+    const halfHeight = Math.tan(THREE.MathUtils.degToRad(perspective.fov ?? 40) / 2) * distance;
+    return worldRadius / Math.max(halfHeight, 0.001) * 0.5;
+  }
+
   dispose(): void {
     this.skyMesh.geometry.dispose();
     this.skyTexture.dispose();
     this.skyMaterial.dispose();
-    this.sunDisc.geometry.dispose();
-    this.sunHalo.geometry.dispose();
-    this.sunDiscMaterial.dispose();
-    this.sunHaloMaterial.dispose();
-    this.celestialTexture.dispose();
+    this.sunTexture.dispose();
+    this.moonTexture.dispose();
+    for (const body of [this.sunBody, this.moonBody]) {
+      body.traverse((child) => {
+        const sprite = child as THREE.Sprite;
+        if (sprite.isSprite) sprite.material.dispose();
+      });
+    }
     this.stars.geometry.dispose();
     (this.stars.material as THREE.PointsMaterial).map?.dispose();
     (this.stars.material as THREE.PointsMaterial).dispose();

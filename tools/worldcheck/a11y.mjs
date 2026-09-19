@@ -156,17 +156,48 @@ try {
     return `panel scrolled ${scroll}px, camera untouched`;
   });
 
-  await check('Keyboard focus is visible', async () => {
+  await check('Keyboard focus is visible on a control in the bar', async () => {
+    /* Via the keyboard, so `:focus-visible` matches the way it does for a
+       visitor tabbing rather than a script calling focus(). */
+    await page.evaluate(`document.querySelector('[data-world-chrome] [data-world-map]').focus()`);
+    await page.key('Tab', 'Tab', 9);
+    await page.key('Tab', 'Tab', 9, { shift: true });
     const outline = await page.evaluate(`(() => {
-      const button = document.querySelector('[data-world-chrome] [data-world-ambient]');
-      button.focus();
-      const style = getComputedStyle(button);
-      return { width: style.outlineWidth, style: style.outlineStyle };
+      const node = document.activeElement;
+      const style = getComputedStyle(node);
+      return {
+        tag: node.tagName,
+        width: style.outlineWidth,
+        style: style.outlineStyle,
+        label: node.getAttribute('aria-label') || (node.textContent || '').trim().slice(0, 24),
+      };
     })()`);
     if (outline.style === 'none' || outline.width === '0px') {
-      throw new Error(`focus ring is ${outline.style} ${outline.width}`);
+      throw new Error(`focus ring is ${outline.style} ${outline.width} on ${outline.tag}`);
     }
-    return `${outline.style} ${outline.width}`;
+    return `${outline.style} ${outline.width} on "${outline.label}"`;
+  });
+
+  await check('The pause control is reachable inside the map menu', async () => {
+    await page.clickSelector('[data-world-chrome] [data-world-map]');
+    await sleep(400);
+    const reachable = await page.evaluate(`(() => {
+      const button = document.querySelector('[data-world-map-menu] [data-world-ambient]');
+      if (!button) return { found: false };
+      button.scrollIntoView({ block: 'nearest' });
+      button.focus();
+      return {
+        found: true,
+        focused: document.activeElement === button,
+        label: button.getAttribute('aria-label'),
+        pressed: button.getAttribute('aria-pressed'),
+      };
+    })()`);
+    await page.key('Escape', 'Escape', 27);
+    if (!reachable.found) throw new Error('no pause control in the map menu');
+    if (!reachable.focused) throw new Error('the pause control cannot take focus');
+    if (!reachable.label) throw new Error('the pause control has no label');
+    return `"${reachable.label}", pressed=${reachable.pressed}`;
   });
 
   await check('The printed CV is a whole document, not the visible slice', async () => {
