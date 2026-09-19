@@ -60,20 +60,34 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
 
 <script>
   /**
-   * Boot the shell.
+   * Boot the world.
    *
-   * The import is dynamic and gated on the mode the pre-paint probe decided,
-   * so a visitor reading in simple mode never downloads three.js at all. Once
-   * loaded, the module stays resident and later client-side navigations only
-   * re-apply state — the renderer is never rebuilt.
+   * The import is dynamic and gated on the capability the pre-paint probe
+   * decided, so a visitor whose browser cannot render the world never
+   * downloads three.js. Once loaded, the module stays resident and later
+   * client-side navigations only re-apply state — the renderer is never
+   * rebuilt.
+   *
+   * Every failure path ends in the branded alert with a Retry, raised through
+   * the plain-DOM bridge the chrome installs, so even a module that fails to
+   * download can be reported honestly instead of leaving a blank canvas.
    */
+  let shellLoaded = false;
+
   const boot = async () => {
-    /* Only an explicit "simple" keeps the world away: if the attribute is
-       briefly missing mid-navigation, loading it is the safe choice. */
     if (document.documentElement.dataset.mode === 'simple') return;
-    const { bootstrapShell } = await import('../../lib/world/shell');
-    bootstrapShell();
-    document.addEventListener('astro:page-load', () => bootstrapShell());
+    try {
+      const { bootstrapShell } = await import('../../lib/world/shell');
+      shellLoaded = true;
+      bootstrapShell();
+      document.addEventListener('astro:page-load', () => bootstrapShell());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const alert = window.__worldAlert;
+      if (typeof alert === 'function') {
+        alert(`The 3D module could not be loaded (${message}).`);
+      }
+    }
   };
 
   /**
@@ -82,15 +96,22 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
    * the largest text paint past 2.5s, and the poster already covers the wait.
    */
   const schedule = () => {
-    const idle = (
-      window as Window & {
-        requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-      }
-    ).requestIdleCallback;
+    const idle = window.requestIdleCallback?.bind(window);
     if (typeof idle === 'function') idle(() => void boot(), { timeout: 1200 });
     else window.setTimeout(() => void boot(), 200);
   };
 
   if (document.readyState === 'complete') schedule();
   else window.addEventListener('load', schedule, { once: true });
+
+  /* Retry re-enters boot only when the module itself never arrived; once it
+     has, the shell owns the rebuild so the canvas is replaced properly. */
+  document.addEventListener('world:retry', () => {
+    if (shellLoaded) return;
+    void boot();
+  });
+</script>
+
+<script is:inline>
+  window.__worldAlert = window.__worldAlert || function () {};
 </script>

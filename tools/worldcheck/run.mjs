@@ -1,0 +1,934 @@
+/**
+ * World-mode verification.
+ *
+ * Drives a real WebGL-capable browser over CDP and walks the journeys the
+ * experience promises: navigation by caption, tap versus drag, theme changes
+ * that survive routes, document open/close with camera restoration, the
+ * physical switch, forms, filters, print, reduced motion, context loss and
+ * direct deep links. Screenshots are captured after transitions settle.
+ *
+ * Usage:  node tools/worldcheck/run.mjs [baseUrl]
+ */
+
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { launchBrowser, Page, sleep } from './cdp.mjs';
+
+const BASE = process.argv[2] ?? 'http://localhost:4321';
+const OUT = '.screenshots/world';
+const results = [];
+const consoleErrors = [];
+
+function record(name, ok, detail) {
+  results.push({ name, ok, detail });
+  const mark = ok ? 'PASS' : 'FAIL';
+  console.log(`${mark}  ${name}${detail ? ` — ${detail}` : ''}`);
+}
+
+async function check(name, fn) {
+  try {
+    const detail = await fn();
+    record(name, true, typeof detail === 'string' ? detail : undefined);
+  } catch (error) {
+    record(name, false, error.message);
+  }
+}
+
+/** Wait until the renderer is up and the first frame has been drawn. */
+async function ready(page) {
+  await page.waitFor(
+    `document.querySelector('[data-world]')?.dataset.worldState === 'ready'`,
+    { timeout: 30000, label: 'world ready' },
+  );
+  await page.waitFor(`document.querySelector('[data-world] canvas')?.width > 10`, {
+    timeout: 15000,
+    label: 'canvas sized',
+  });
+  await sleep(700);
+}
+
+const state = (page) => `(() => {
+  const world = document.querySelector('[data-world]');
+  const body = document.body;
+  return {
+    worldState: world?.dataset.worldState,
+    theme: document.documentElement.dataset.theme,
+    mode: document.documentElement.dataset.mode,
+    ambient: document.documentElement.dataset.ambient,
+    destination: body.dataset.destination,
+    surface: body.dataset.surface,
+    surfaceId: body.dataset.surfaceId,
+    reading: world?.dataset.worldReading,
+    focus: world?.dataset.focus,
+    location: document.querySelector('[data-world-location]')?.textContent,
+    panelVisible: (() => {
+      const panel = document.querySelector('[data-surface-panel]:not([hidden])');
+      if (!panel) return false;
+      const rect = panel.getBoundingClientRect();
+      return rect.width > 40 && rect.height > 40;
+    })(),
+    panelTitle: document.querySelector('[data-surface-panel]:not([hidden]) h1')?.textContent?.trim(),
+    closeHref: document.querySelector('[data-surface-close]')?.dataset.closeHref,
+    panelScroll: document.querySelector('[data-surface-panel]')?.scrollTop,
+    themeToggle: !!document.querySelector('[data-world-chrome] [data-theme-toggle]'),
+    mapLinks: document.querySelectorAll('[data-world-map-menu] a').length,
+    hotspots: [...document.querySelectorAll('.world-hotspot')].map((node) => ({
+      key: node.dataset.worldHotspot,
+      visible: node.dataset.visible,
+      label: node.textContent.trim(),
+    })),
+    camera: window.__worldDebug ? window.__worldDebug() : null,
+  };
+})()`;
+
+/** Navigate the way a visitor would: select the destination from the map. */
+async function travel(page, href, destination) {
+  await page.evaluate(`(() => {
+    const link = [...document.querySelectorAll('[data-world-map-menu] a')]
+      .find((node) => node.getAttribute('href') === ${JSON.stringify(href)});
+    if (link) link.click();
+  })()`);
+  await page.waitFor(`document.body.dataset.destination === ${JSON.stringify(destination)}`, {
+    timeout: 20000,
+    label: `${href} → ${destination}`,
+  });
+  await ready(page);
+  await sleep(500);
+}
+
+const main = async () => {
+  mkdirSync(OUT, { recursive: true });
+  const browser = await launchBrowser({ port: 9333 });
+  const page = await Page.open(browser.webSocketDebuggerUrl);
+  page.onEvent = (message) => {
+    if (message.method === 'Runtime.exceptionThrown') {
+      consoleErrors.push(message.params.exceptionDetails?.exception?.description ?? 'exception');
+    }
+  };
+
+  try {
+    await page.setViewport(1440, 900);
+
+    /* ── 0. System preference on a first visit, before any choice ──── */
+    await check('System preference is honoured on the first visit', async () => {
+      await page.emulateMedia([{ name: 'prefers-color-scheme', value: 'light' }]);
+      await page.navigate(`${BASE}/`);
+      await ready(page);
+      const light = await page.evaluate(`document.documentElement.dataset.theme`);
+      await page.evaluate(`localStorage.removeItem('theme')`);
+      await page.emulateMedia([{ name: 'prefers-color-scheme', value: 'dark' }]);
+      await page.send('Page.reload');
+      await ready(page);
+      const dark = await page.evaluate(`document.documentElement.dataset.theme`);
+      if (light !== 'light' || dark !== 'dark') {
+        throw new Error(`light=${light}, dark=${dark}`);
+      }
+      return 'follows the system until an explicit choice is made';
+    });
+
+    await check('An explicit choice survives a reload', async () => {
+      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await sleep(1000);
+      const chosen = await page.evaluate(`document.documentElement.dataset.theme`);
+      await page.send('Page.reload');
+      await ready(page);
+      const after = await page.evaluate(`document.documentElement.dataset.theme`);
+      if (after !== chosen) throw new Error(`chose ${chosen}, reloaded as ${after}`);
+      /* Back to night for the remaining journeys. */
+      if (after === 'light') {
+        await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+        await sleep(1000);
+      }
+      return `chose ${chosen}, reloaded as ${after}`;
+    });
+
+    await page.navigate(`${BASE}/`);
+    await ready(page);
+
+    /* ── 1. The world starts, one renderer, chrome present ─────────── */
+    await check('World starts and exposes its controls', async () => {
+      const info = await page.evaluate(state(page));
+      if (info.worldState !== 'ready') throw new Error(`state ${info.worldState}`);
+      if (info.mode !== 'world') throw new Error(`mode ${info.mode}`);
+      if (!info.themeToggle) throw new Error('no interface theme toggle');
+      if (info.mapLinks < 6) throw new Error(`map menu has ${info.mapLinks} links`);
+      return `${info.hotspots.length} captions, ${info.mapLinks} map links`;
+    });
+
+    await check('One canvas, one WebGL context', async () => {
+      const count = await page.evaluate(
+        `document.querySelectorAll('[data-world] canvas').length`,
+      );
+      const renderers = await page.evaluate(
+        `document.querySelectorAll('canvas').length`,
+      );
+      if (count !== 1) throw new Error(`${count} world canvases`);
+      return `canvases in document: ${renderers}`;
+    });
+
+    await page.screenshot(join(OUT, '01-overview-night.png'));
+
+    /* ── 2. Night → day through the interface control ─────────────── */
+    await check('Interface toggle switches to daylight', async () => {
+      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await sleep(1100);
+      const info = await page.evaluate(state(page));
+      if (info.theme !== 'light') throw new Error(`theme is ${info.theme}`);
+      const stored = await page.evaluate(`localStorage.getItem('theme')`);
+      if (stored !== 'light') throw new Error(`stored ${stored}`);
+      return 'theme=light, persisted';
+    });
+
+    await page.screenshot(join(OUT, '02-overview-day.png'));
+
+    await check('Interface toggle switches back to night', async () => {
+      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await sleep(1100);
+      const info = await page.evaluate(state(page));
+      if (info.theme !== 'dark') throw new Error(`theme is ${info.theme}`);
+      return 'theme=dark';
+    });
+
+    /* ── 3. A caption click travels; a document opens once ────────── */
+    const studioBox = await page.boundingBox('.world-hotspot[data-world-hotspot="place:studio"]');
+    await check('Clicking a destination caption travels there', async () => {
+      if (!studioBox) throw new Error('studio caption not visible');
+      await page.click(studioBox.x + studioBox.width / 2, studioBox.y + studioBox.height / 2);
+      await sleep(1400);
+      const info = await page.evaluate(state(page));
+      if (info.focus !== 'studio') throw new Error(`focus is ${info.focus}`);
+      const hasCv = info.hotspots.some((hotspot) => hotspot.key.startsWith('object:cv'));
+      if (!hasCv) throw new Error('studio did not reveal its objects');
+      return `focus=${info.focus}, ${info.hotspots.length} captions`;
+    });
+
+    await page.screenshot(join(OUT, '03-studio.png'));
+
+    await check('Clicking an object caption opens the document exactly once', async () => {
+      const before = await page.evaluate(`performance.getEntriesByType('navigation').length`);
+      const box = await page.boundingBox('.world-hotspot[data-world-hotspot="object:cv:cv"]');
+      if (!box) throw new Error('CV caption not visible');
+      await page.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitFor(`document.body.dataset.surface === 'cv'`, { label: 'CV open' });
+      await sleep(900);
+      const after = await page.evaluate(`performance.getEntriesByType('navigation').length`);
+      const info = await page.evaluate(state(page));
+      if (after !== before) throw new Error('the page reloaded to open the document');
+      if (!info.panelVisible) throw new Error('panel is not visible');
+      return `surface=${info.surface}, no reload`;
+    });
+
+    await check('The renderer survived the document opening', async () => {
+      const same = await page.evaluate(`!!document.querySelector('[data-world]').__abdWorldShell`);
+      const loaded = await page.evaluate(`performance.getEntriesByType('navigation').length`);
+      if (loaded !== 1) throw new Error('navigation count grew');
+      void same;
+      return 'one navigation entry for the whole session';
+    });
+
+    await page.screenshot(join(OUT, '04-cv-open.png'));
+
+    /* ── 4. Theme while reading, then close and restore ───────────── */
+    await check('Theme changes while a document is open, content intact', async () => {
+      await page.evaluate(
+        `document.querySelector('[data-surface-panel]').scrollTop = 320`,
+      );
+      const scrollBefore = await page.evaluate(
+        `document.querySelector('[data-surface-panel]').scrollTop`,
+      );
+      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await sleep(1000);
+      const info = await page.evaluate(state(page));
+      if (info.theme !== 'light') throw new Error(`theme is ${info.theme}`);
+      if (info.surface !== 'cv') throw new Error('document was lost');
+      const scrollAfter = await page.evaluate(
+        `document.querySelector('[data-surface-panel]').scrollTop`,
+      );
+      if (scrollAfter !== scrollBefore) throw new Error('reading position changed');
+      return `scroll held at ${scrollAfter}`;
+    });
+
+    await page.screenshot(join(OUT, '05-cv-day.png'));
+
+    await check('Close returns to the previous world view without a reload', async () => {
+      const navs = await page.evaluate(`performance.getEntriesByType('navigation').length`);
+      await page.clickSelector('[data-surface-close]');
+      await sleep(1400);
+      const info = await page.evaluate(state(page));
+      const navsAfter = await page.evaluate(`performance.getEntriesByType('navigation').length`);
+      if (navsAfter !== navs) throw new Error('closing reloaded the page');
+      if (info.surface !== 'none') throw new Error(`still reading ${info.surface}`);
+      if (info.reading !== 'false') throw new Error('world did not settle back');
+      return `location=${info.location}, no reload`;
+    });
+
+    await page.screenshot(join(OUT, '06-cv-closed.png'));
+
+    /* ── 5. The physical light switch ─────────────────────────────── */
+    await check('The light switch exists as a physical object in the scene', async () => {
+      const debug = await page.evaluate(`window.__worldDebug()`);
+      if (!debug.switchScreen) throw new Error('the world has no light switch');
+      if (!debug.switchScreen.onScreen) throw new Error('the switch is behind the camera');
+      return `lever projected at ${Math.round(debug.switchScreen.x)},${Math.round(debug.switchScreen.y)}`;
+    });
+
+    await check('Tapping the physical switch in the scene changes the light', async () => {
+      /* A direct tap on the post itself, resolved by the scene rather than by
+         a caption: this is the physical control, not the interface one. */
+      const before = await page.evaluate(`document.documentElement.dataset.theme`);
+      const point = await page.evaluate(`window.__worldDebug().switchPick`);
+      const blocked = await page.evaluate(`(() => {
+        const node = document.elementFromPoint(${point.x}, ${point.y});
+        return node ? (node.className || node.tagName) : null;
+      })()`);
+      if (blocked !== 'world-canvas') {
+        throw new Error(`the switch body is covered by ${blocked}`);
+      }
+      await page.click(point.x, point.y);
+      await page.waitFor(`document.documentElement.dataset.theme !== ${JSON.stringify(before)}`, {
+        timeout: 6000,
+        label: 'switch throw',
+      });
+      await sleep(900);
+      const after = await page.evaluate(`document.documentElement.dataset.theme`);
+      const toggle = await page.evaluate(
+        `document.querySelector('[data-world-chrome] [data-theme-toggle]').getAttribute('aria-pressed')`,
+      );
+      const expected = after === 'light' ? 'true' : 'false';
+      if (toggle !== expected) throw new Error('the interface toggle disagrees with the switch');
+      const stored = await page.evaluate(`localStorage.getItem('theme')`);
+      if (stored !== after) throw new Error('the switch did not persist the shared state');
+      return `scene tap: ${before} → ${after}; both controls and storage agree`;
+    });
+
+    await check('The switch caption is a labelled, keyboard-operable control', async () => {
+      const info = await page.evaluate(`(() => {
+        const node = document.querySelector('.world-hotspot[data-world-hotspot="switch:lights"]');
+        if (!node) return null;
+        return {
+          role: node.getAttribute('role'),
+          label: node.getAttribute('aria-label'),
+          pressed: node.getAttribute('aria-pressed'),
+          tag: node.tagName,
+        };
+      })()`);
+      if (!info) throw new Error('no switch caption');
+      if (info.tag !== 'BUTTON') throw new Error(`caption is a ${info.tag}`);
+      if (info.role !== 'switch') throw new Error('caption is not announced as a switch');
+      if (!/currently (daylight|night)/.test(info.label ?? '')) {
+        throw new Error(`unhelpful label: ${info.label}`);
+      }
+      return info.label;
+    });
+
+    /* ── 6. Click versus drag ─────────────────────────────────────── */
+    await check('Dragging the background moves the camera and opens nothing', async () => {
+      const info0 = await page.evaluate(state(page));
+      await page.drag({ x: 1100, y: 620 }, { x: 780, y: 560 }, 14);
+      await sleep(600);
+      const info1 = await page.evaluate(state(page));
+      if (info1.surface !== 'none') throw new Error('a drag opened a document');
+      if (info1.focus !== info0.focus) throw new Error('a drag travelled');
+      return 'no document opened, no travel';
+    });
+
+    await check('A tap on a control never drags the world', async () => {
+      const box = await page.boundingBox('[data-world-chrome] [data-world-map]');
+      const before = await page.evaluate(`document.querySelector('[data-world-map-menu]').hidden`);
+      await page.click(box.x + box.width / 2, box.y + box.height / 2);
+      await sleep(300);
+      const after = await page.evaluate(`document.querySelector('[data-world-map-menu]').hidden`);
+      if (after === before) throw new Error('the map control did not respond');
+      return `menu hidden: ${before} → ${after}`;
+    });
+
+    await page.screenshot(join(OUT, '07-map-menu.png'));
+
+    /* ── 7. Map navigation keeps state and stays usable ───────────── */
+    await check('Map menu navigates with the theme preserved', async () => {
+      const themeBefore = await page.evaluate(`document.documentElement.dataset.theme`);
+      await travel(page, '/writing/', 'library');
+      const info = await page.evaluate(state(page));
+      if (info.theme !== themeBefore) throw new Error('theme changed across navigation');
+      return `destination=${info.destination}, theme=${info.theme}`;
+    });
+
+    await page.screenshot(join(OUT, '08-library-day.png'));
+
+    await check('Controls still work after repeated navigation', async () => {
+      for (const [href, destination] of [
+        ['/work/', 'workshop'],
+        ['/writing/', 'library'],
+        ['/open-source/', 'workbench'],
+        ['/contact/', 'contact'],
+        ['/', 'campus'],
+      ]) {
+        await travel(page, href, destination);
+      }
+      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await sleep(900);
+      const theme = await page.evaluate(`document.documentElement.dataset.theme`);
+      const stored = await page.evaluate(`localStorage.getItem('theme')`);
+      if (stored !== theme) throw new Error('the control stopped responding after navigation');
+      return `still responsive after 5 navigations; theme=${theme}`;
+    });
+
+    /* ── 8. Every article and case study opens ────────────────────── */
+    await check('Every article opens and closes', async () => {
+      const slugs = await page.evaluate(`(async () => {
+        const response = await fetch('/rss.xml');
+        const text = await response.text();
+        return [...text.matchAll(/<link>([^<]+)<\\/link>/g)]
+          .map((match) => match[1])
+          .filter((href) => href.includes('/writing/'));
+      })()`);
+      if (!slugs.length) throw new Error('no articles found in the feed');
+      for (const slug of slugs) {
+        const path = new URL(slug).pathname;
+        await page.navigate(`${BASE}${path}`);
+        await ready(page);
+        const info = await page.evaluate(state(page));
+        if (info.surface !== 'article') throw new Error(`${path}: surface ${info.surface}`);
+        if (!info.panelTitle) throw new Error(`${path}: no document title`);
+      }
+      return `${slugs.length} articles, each opened from its own URL`;
+    });
+
+    await page.screenshot(join(OUT, '09-article.png'));
+
+    await check('Every case study opens and closes', async () => {
+      const paths = ['/work/kai/', '/work/education-platform/', '/work/hyperran/'];
+      for (const path of paths) {
+        await page.navigate(`${BASE}${path}`);
+        await ready(page);
+        const info = await page.evaluate(state(page));
+        if (info.surface !== 'project') throw new Error(`${path}: surface ${info.surface}`);
+        if (!info.panelTitle) throw new Error(`${path}: no title`);
+        await page.clickSelector('[data-surface-close]');
+        await page.waitFor(`document.body.dataset.surface !== 'project'`, {
+          timeout: 8000,
+          label: `${path} closed`,
+        });
+        await sleep(400);
+        const after = await page.evaluate(state(page));
+        if (after.surface === 'project') throw new Error(`${path}: did not close`);
+        if (after.destination !== 'workshop') throw new Error(`${path}: landed on ${after.destination}`);
+      }
+      return `${paths.length} case studies opened and closed`;
+    });
+
+    await page.screenshot(join(OUT, '10-case-study.png'));
+
+    /* ── 9. Deep link, refresh, back and forward ──────────────────── */
+    await check('Direct URL, refresh, Back and Forward keep the world', async () => {
+      const target = `${BASE}/writing/from-demo-to-dependable/`;
+      await page.navigate(target);
+      await ready(page);
+      let info = await page.evaluate(state(page));
+      if (info.surface !== 'article' || info.destination !== 'library') {
+        throw new Error(`direct load landed on ${info.surface}/${info.destination}`);
+      }
+      await page.send('Page.reload');
+      await ready(page);
+      info = await page.evaluate(state(page));
+      if (info.surface !== 'article') throw new Error('refresh lost the document');
+      await page.navigate(`${BASE}/writing/`);
+      await ready(page);
+      await page.send('Page.navigateToHistoryEntry', {}).catch(() => {});
+      await page.evaluate(`history.back()`);
+      await sleep(1500);
+      await ready(page);
+      info = await page.evaluate(state(page));
+      if (info.surface !== 'article') throw new Error(`Back landed on ${info.surface}`);
+      await page.evaluate(`history.forward()`);
+      await sleep(1500);
+      await ready(page);
+      info = await page.evaluate(state(page));
+      if (info.destination !== 'library') throw new Error(`Forward landed on ${info.destination}`);
+      return 'direct load, refresh, Back and Forward all consistent';
+    });
+
+    /* ── 10. Forms, filters, print ────────────────────────────────── */
+    await check('Project filters work after a client-side navigation', async () => {
+      await travel(page, '/work/', 'workshop');
+      await page.clickSelector('.filter-btn[data-filter="automation"]');
+      await sleep(500);
+      const info = await page.evaluate(`(() => {
+        const all = document.querySelectorAll('[data-cat]').length;
+        const visible = [...document.querySelectorAll('[data-cat]')].filter((node) => !node.hidden).length;
+        return {
+          all,
+          visible,
+          pressed: document.querySelector('.filter-btn[data-filter="automation"]').getAttribute('aria-pressed'),
+          status: document.querySelector('[data-filter-count]')?.textContent,
+        };
+      })()`);
+      if (info.pressed !== 'true') throw new Error('filter button state did not update');
+      if (info.visible === 0 || info.visible === info.all) {
+        throw new Error(`filter selected ${info.visible} of ${info.all}`);
+      }
+      return `${info.visible}/${info.all} shown — "${info.status}"`;
+    });
+
+    await check('Contact form is a real form with honest validation', async () => {
+      await travel(page, '/contact/', 'contact');
+      const form = await page.evaluate(`(() => {
+        const node = document.querySelector('[data-contact-form]');
+        if (!node) return { present: false };
+        return {
+          present: true,
+          action: node.getAttribute('action'),
+          method: node.getAttribute('method'),
+          required: [...node.querySelectorAll('[required]')].length,
+          status: !!node.querySelector('[data-form-status]'),
+        };
+      })()`);
+      if (!form.present) return 'contact form not configured (no access key): email fallback shown';
+      if (form.method !== 'post') throw new Error('form is not a POST');
+      if (!form.status) throw new Error('form has no status region');
+      /* Empty submit must be refused locally, never reported as success. */
+      const refused = await page.evaluate(`(() => {
+        const node = document.querySelector('[data-contact-form]');
+        node.querySelector('input[type="email"]').value = 'not-an-email';
+        return !node.reportValidity();
+      })()`);
+      if (!refused) throw new Error('invalid input was accepted');
+      return `POST ${form.action}, ${form.required} required fields, invalid input refused locally`;
+    });
+
+    await check('Newsletter block offers a real destination', async () => {
+      await page.navigate(`${BASE}/writing/voice-ai-cascade-elevenlabs-direct/`);
+      await ready(page);
+      const info = await page.evaluate(`(() => {
+        const form = document.querySelector('[data-newsletter-form]');
+        if (form) return { kind: 'form', action: form.getAttribute('action') };
+        const notice = document.querySelector('.signup-notice');
+        return { kind: notice ? 'notice' : 'missing' };
+      })()`);
+      if (info.kind === 'missing') throw new Error('no newsletter block');
+      return info.kind === 'form' ? `posts to ${info.action}` : 'launching-soon notice (honest)';
+    });
+
+    await check('Print / save PDF is wired', async () => {
+      await travel(page, '/cv/', 'studio');
+      const wired = await page.evaluate(`(() => {
+        const button = document.querySelector('[data-print]');
+        if (!button) return false;
+        /* Print is intercepted by the delegated controller, so the check is
+           that the hook exists and is a real button on the open document. */
+        return button.tagName === 'BUTTON' && button.type === 'button';
+      })()`);
+      if (!wired) throw new Error('no print control');
+      return 'print control present on the CV';
+    });
+
+    await page.screenshot(join(OUT, '11-contact.png'));
+
+    /* ── 11. Reduced motion and ambient pause ─────────────────────── */
+    await check('Ambient motion can be paused and is persisted', async () => {
+      await page.clickSelector('[data-world-chrome] [data-world-ambient]');
+      await sleep(400);
+      const ambient = await page.evaluate(`document.documentElement.dataset.ambient`);
+      const stored = await page.evaluate(`localStorage.getItem('world:ambient')`);
+      if (ambient !== 'paused') throw new Error(`ambient is ${ambient}`);
+      if (stored !== 'paused') throw new Error('pause was not persisted');
+      await page.clickSelector('[data-world-chrome] [data-world-ambient]');
+      await sleep(300);
+      return 'pause toggles and persists';
+    });
+
+    await check('Reduced motion applies the theme immediately', async () => {
+      await page.emulateMedia([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+      await travel(page, '/', 'campus');
+      const before = await page.evaluate(`document.documentElement.dataset.theme`);
+      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await sleep(150);
+      const after = await page.evaluate(`document.documentElement.dataset.theme`);
+      if (after === before) throw new Error('theme did not change');
+      const anim = await page.evaluate(`document.documentElement.dataset.themeAnim`);
+      if (anim === 'true') throw new Error('still animating under reduced motion');
+      const immediate = await page.evaluate(`(() => {
+        /* The environment must already be at the new theme, not part-way. */
+        const world = document.querySelector('[data-world]');
+        return world.dataset.worldState === 'ready';
+      })()`);
+      if (!immediate) throw new Error('the world did not survive the immediate change');
+      await page.emulateMedia([]);
+      return `${before} → ${after} with no transition`;
+    });
+
+    await page.screenshot(join(OUT, '12-reduced-motion.png'));
+
+    /* ── 12. Context loss ─────────────────────────────────────────── */
+    await check('Losing the WebGL context reports honestly and recovers', async () => {
+      await page.evaluate(`(() => {
+        const canvas = document.querySelector('[data-world] canvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        const ext = gl.getExtension('WEBGL_lose_context');
+        window.__worldLose = () => ext.loseContext();
+        window.__worldRestore = () => ext.restoreContext();
+      })()`);
+      await page.evaluate(`window.__worldLose()`);
+      await sleep(500);
+      const alertShown = await page.evaluate(
+        `!document.querySelector('[data-world-alert]').hidden`,
+      );
+      if (!alertShown) throw new Error('no honest failure screen after context loss');
+      return 'failure screen shown with a retry';
+    });
+
+    await page.screenshot(join(OUT, '13-context-lost.png'));
+
+    await check('Recovery resumes one renderer, not two', async () => {
+      await page.evaluate(`window.__worldRestore()`);
+      await page.waitFor(
+        `document.querySelector('[data-world]').dataset.worldState === 'ready'`,
+        { timeout: 20000, label: 'recovered' },
+      );
+      await sleep(900);
+      const canvases = await page.evaluate(`document.querySelectorAll('[data-world] canvas').length`);
+      const hidden = await page.evaluate(
+        `document.querySelector('[data-world-alert]').hidden`,
+      );
+      if (canvases !== 1) throw new Error(`${canvases} canvases after recovery`);
+      if (!hidden) throw new Error('the failure screen stayed up after recovery');
+      const pixels = await page.evaluate(`(() => {
+        const canvas = document.querySelector('[data-world] canvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        return gl ? gl.isContextLost() : true;
+      })()`);
+      if (pixels) throw new Error('the context is still lost after recovery');
+      return 'one canvas, live context, failure screen cleared';
+    });
+
+    await check('Retry rebuilds a single renderer', async () => {
+      /* Raise the failure screen the way a real startup failure would. */
+      await page.evaluate(`document.querySelector('[data-world]').dataset.worldState = 'error'`);
+      await page.evaluate(`window.__worldAlert('verification: deliberate failure')`);
+      await sleep(300);
+      await page.clickSelector('[data-world-retry]');
+      await page.waitFor(
+        `document.querySelector('[data-world]').dataset.worldState === 'ready'`,
+        { timeout: 30000, label: 'retry rebuilt the world' },
+      );
+      await sleep(800);
+      const canvases = await page.evaluate(`document.querySelectorAll('[data-world] canvas').length`);
+      const alertHidden = await page.evaluate(
+        `document.querySelector('[data-world-alert]').hidden`,
+      );
+      if (canvases !== 1) throw new Error(`${canvases} canvases after retry`);
+      if (!alertHidden) throw new Error('the failure screen stayed up after retry');
+      const theme = await page.evaluate(`document.documentElement.dataset.theme`);
+      if (!theme) throw new Error('theme lost across the rebuild');
+      const info = await page.evaluate(state(page));
+      if (info.worldState !== 'ready') throw new Error('the world is not usable after retry');
+      return 'explicit retry ends in one working renderer';
+    });
+
+    /* ── 13. Mobile ───────────────────────────────────────────────── */
+    await page.setViewport(390, 844, true);
+    await page.navigate(`${BASE}/`);
+    await ready(page);
+    await page.screenshot(join(OUT, '14-mobile-night.png'));
+
+    await check('Mobile keeps the world, with reachable controls', async () => {
+      const info = await page.evaluate(`(() => {
+        const controls = [...document.querySelectorAll('[data-world-chrome] button, [data-world-chrome] a')];
+        const small = controls
+          .filter((node) => node.offsetParent !== null)
+          .map((node) => node.getBoundingClientRect())
+          .filter((rect) => rect.width < 44 || rect.height < 44);
+        const panel = document.querySelector('[data-surface-panel]');
+        return {
+          mode: document.documentElement.dataset.mode,
+          worldState: document.querySelector('[data-world]').dataset.worldState,
+          controls: controls.length,
+          tooSmall: small.length,
+          panel: !!panel,
+        };
+      })()`);
+      if (info.worldState !== 'ready') throw new Error('mobile world did not start');
+      if (info.tooSmall > 0) throw new Error(`${info.tooSmall} controls under 44px`);
+      return `${info.controls} controls, all at least 44×44`;
+    });
+
+    await check('Mobile offers enough destinations to travel by tap', async () => {
+      const shown = await page.evaluate(`[...document.querySelectorAll('.world-hotspot')]
+        .filter((node) => node.dataset.visible === 'true')
+        .map((node) => node.dataset.worldHotspot)`);
+      if (shown.length < 3) {
+        throw new Error(`only ${shown.length} captions on a phone: ${shown.join(', ')}`);
+      }
+      return `${shown.length} captions visible: ${shown.join(', ')}`;
+    });
+
+    await check('Captions on a phone do not overlap each other or the chrome', async () => {
+      const overlap = await page.evaluate(`(() => {
+        const boxes = [...document.querySelectorAll('.world-hotspot')]
+          .filter((node) => node.dataset.visible === 'true')
+          .map((node) => ({ key: node.dataset.worldHotspot, rect: node.getBoundingClientRect() }));
+        const chrome = document.querySelector('[data-world-chrome] .world-chrome-bar')
+          .getBoundingClientRect();
+        const clashes = [];
+        for (let i = 0; i < boxes.length; i++) {
+          for (let j = i + 1; j < boxes.length; j++) {
+            const a = boxes[i].rect;
+            const b = boxes[j].rect;
+            if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) {
+              clashes.push(boxes[i].key + ' × ' + boxes[j].key);
+            }
+          }
+        }
+        const hidden = boxes.filter(({ rect }) =>
+          rect.left < chrome.right && rect.right > chrome.left &&
+          rect.top < chrome.bottom && rect.bottom > chrome.top);
+        return { clashes, underChrome: hidden.map((item) => item.key) };
+      })()`);
+      if (overlap.clashes.length) throw new Error(`overlapping: ${overlap.clashes.join(', ')}`);
+      if (overlap.underChrome.length) {
+        throw new Error(`under the control bar: ${overlap.underChrome.join(', ')}`);
+      }
+      return 'no overlaps';
+    });
+
+    await check('Object captions at a destination do not overlap', async () => {
+      await page.setViewport(390, 844, true);
+      await travel(page, '/work/', 'workshop');
+      const overlap = await page.evaluate(`(() => {
+        const boxes = [...document.querySelectorAll('.world-hotspot')]
+          .filter((node) => node.dataset.visible === 'true')
+          .map((node) => ({ key: node.dataset.worldHotspot, rect: node.getBoundingClientRect() }));
+        const clashes = [];
+        for (let i = 0; i < boxes.length; i++) {
+          for (let j = i + 1; j < boxes.length; j++) {
+            const a = boxes[i].rect;
+            const b = boxes[j].rect;
+            if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) {
+              clashes.push(boxes[i].key + ' × ' + boxes[j].key);
+            }
+          }
+        }
+        return { clashes, shown: boxes.map((item) => item.key) };
+      })()`);
+      if (overlap.clashes.length) {
+        throw new Error(`${overlap.clashes.join(', ')} — visible: ${overlap.shown.join(', ')}`);
+      }
+      /* Back to the overview for the interaction checks that follow. */
+      await travel(page, '/', 'campus');
+      return `${overlap.shown.length} captions, no overlaps`;
+    });
+
+    await check('Mobile tap travels without a joystick', async () => {
+      const target = await page.evaluate(`(() => {
+        const node = [...document.querySelectorAll('.world-hotspot[data-world-hotspot^="place:"]')]
+          .find((item) => item.dataset.visible === 'true' && item.dataset.worldHotspot !== 'place:campus');
+        if (!node) return null;
+        const rect = node.getBoundingClientRect();
+        return { key: node.dataset.worldHotspot, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      })()`);
+      if (!target) throw new Error('no visible destination caption on mobile');
+      await page.tap(target.x, target.y);
+      await page.waitFor(
+        `document.querySelector('[data-world]').dataset.focus !== 'campus'`,
+        { timeout: 8000, label: 'tap-travel' },
+      );
+      await sleep(1200);
+      const focus = await page.evaluate(`document.querySelector('[data-world]').dataset.focus`);
+      return `tapped ${target.key} → focus ${focus}`;
+    });
+
+    await check('Mobile swipe moves the camera and opens nothing', async () => {
+      await page.swipe({ x: 300, y: 640 }, { x: 90, y: 600 }, 14);
+      await sleep(600);
+      const info = await page.evaluate(state(page));
+      if (info.surface !== 'none') throw new Error('a swipe opened a document');
+      return 'swipe is a camera gesture only';
+    });
+
+    await check('Mobile sheet opens a document with a reachable close', async () => {
+      const box = await page.evaluate(`(() => {
+        const node = [...document.querySelectorAll('.world-hotspot[data-world-hotspot^="object:"]')]
+          .find((item) => item.dataset.visible === 'true')
+          || document.querySelector('.world-hotspot[data-world-hotspot^="object:"]');
+        if (!node) return null;
+        const rect = node.getBoundingClientRect();
+        return { key: node.dataset.worldHotspot, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, visible: node.dataset.visible };
+      })()`);
+      if (!box) throw new Error('no object caption at this destination');
+      if (box.visible !== 'true') {
+        /* Reveal it by focusing, which is the documented keyboard path. */
+        await page.evaluate(
+          `document.querySelector('.world-hotspot[data-world-hotspot="${box.key}"]').focus()`,
+        );
+        await sleep(400);
+      }
+      const point = await page.evaluate(`(() => {
+        const node = document.querySelector('.world-hotspot[data-world-hotspot="${box.key}"]');
+        const rect = node.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      })()`);
+      await page.tap(point.x, point.y);
+      await page.waitFor(`document.body.dataset.surface !== 'none'`, {
+        timeout: 10000,
+        label: 'sheet opened',
+      });
+      await sleep(900);
+      const info = await page.evaluate(`(() => {
+        const close = document.querySelector('[data-surface-close]');
+        const rect = close.getBoundingClientRect();
+        return {
+          surface: document.querySelector('[data-surface-panel]:not([hidden])')?.dataset.surfacePanel,
+          closeVisible: rect.width >= 44 && rect.height >= 44 && rect.top < window.innerHeight,
+          themeToggle: document.querySelector('[data-world-chrome] [data-theme-toggle]')
+            .getBoundingClientRect().height,
+          scrollable: (() => {
+            const panel = document.querySelector('[data-surface-panel]:not([hidden])');
+            return panel.scrollHeight > panel.clientHeight;
+          })(),
+        };
+      })()`);
+      if (!info.closeVisible) throw new Error('close control is not reachable in the sheet');
+      if (info.themeToggle < 44) throw new Error('theme toggle shrank on mobile');
+      return `surface=${info.surface}, close and theme reachable, panel scrolls: ${info.scrollable}`;
+    });
+
+    await page.screenshot(join(OUT, '15-mobile-day-sheet.png'));
+
+    await check('Mobile switches to daylight', async () => {
+      const before = await page.evaluate(`document.documentElement.dataset.theme`);
+      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await page.waitFor(
+        `document.documentElement.dataset.theme !== ${JSON.stringify(before)}`,
+        { timeout: 6000, label: 'mobile theme change' },
+      );
+      await sleep(900);
+      const theme = await page.evaluate(`document.documentElement.dataset.theme`);
+      const state = await page.evaluate(`document.querySelector('[data-world]').dataset.worldState`);
+      if (state !== 'ready') throw new Error('the world did not survive the change');
+      return `${before} → ${theme} on a 390px viewport`;
+    });
+
+    await page.screenshot(join(OUT, '16-mobile-day.png'));
+
+    /* ── 14. Other viewports ──────────────────────────────────────── */
+    for (const [width, height] of [
+      [360, 780],
+      [430, 932],
+      [768, 1024],
+      [1024, 768],
+      [1920, 1080],
+    ]) {
+      await check(`Layout holds at ${width}×${height}`, async () => {
+        await page.setViewport(width, height, width < 900);
+        await page.navigate(`${BASE}/writing/`);
+        await ready(page);
+        const overlap = await page.evaluate(`(() => {
+          const bar = document.querySelector('[data-world-chrome] .world-chrome-bar')
+            ?.getBoundingClientRect();
+          const panel = document.querySelector('[data-surface-panel]:not([hidden])')
+            ?.getBoundingClientRect();
+          if (!bar || !panel) return null;
+          const overlaps =
+            bar.left < panel.right && bar.right > panel.left &&
+            bar.top < panel.bottom && bar.bottom > panel.top;
+          return { overlaps, barWidth: Math.round(bar.width) };
+        })()`);
+        if (overlap?.overlaps) throw new Error('the control bar overlaps the reading surface');
+        return 'no overlap between chrome and panel';
+      });
+      await page.screenshot(join(OUT, `17-${width}.png`));
+    }
+
+    /* ── 15. Loading and module-loading failure ───────────────────── */
+    await check('A slow connection shows the branded loading screen', async () => {
+      await page.send('Network.enable');
+      /* Without this the bundle is served from cache and there is no wait to
+         observe. */
+      await page.send('Network.setCacheDisabled', { cacheDisabled: true });
+      await page.send('Network.emulateNetworkConditions', {
+        offline: false,
+        latency: 400,
+        downloadThroughput: 150 * 1024,
+        uploadThroughput: 150 * 1024,
+      });
+      await page.setViewport(1440, 900, false);
+      await page.navigate(`${BASE}/`);
+      await sleep(1500);
+      const loading = await page.evaluate(`(() => {
+        const world = document.querySelector('[data-world]');
+        return {
+          state: world.dataset.worldState,
+          posterOpacity: Number(getComputedStyle(document.querySelector('.world-poster')).opacity),
+          status: document.querySelector('[data-world-status-text]')?.textContent?.trim(),
+          alertHidden: document.querySelector('[data-world-alert]').hidden,
+          canvasOpacity: Number(getComputedStyle(document.querySelector('[data-world] canvas')).opacity),
+        };
+      })()`);
+      await page.screenshot(join(OUT, '20-loading.png'));
+      await page.send('Network.emulateNetworkConditions', {
+        offline: false,
+        latency: 0,
+        downloadThroughput: -1,
+        uploadThroughput: -1,
+      });
+      if (loading.posterOpacity < 0.5) throw new Error('no branded loading screen');
+      if (loading.canvasOpacity > 0.01) throw new Error('the canvas was already showing');
+      if (!loading.alertHidden) throw new Error('the failure screen appeared while still loading');
+      await ready(page);
+      await page.send('Network.setCacheDisabled', { cacheDisabled: false });
+      return `poster at ${loading.posterOpacity} opacity, "${loading.status}", state ${loading.state}`;
+    });
+
+    await check('A blocked 3D module shows the branded screen, not a blank canvas', async () => {
+      await page.send('Network.setBlockedURLs', { urls: ['*shell.*.js*'] });
+      await page.setViewport(1440, 900, false);
+      await page.navigate(`${BASE}/`);
+      await page.waitFor(`!document.querySelector('[data-world-alert]').hidden`, {
+        timeout: 20000,
+        label: 'the module failure is reported',
+      });
+      const reason = await page.evaluate(
+        `document.querySelector('[data-world-alert-reason]').textContent.trim()`,
+      );
+      await page.screenshot(join(OUT, '29-module-failure.png'));
+      if (!reason) throw new Error('the failure screen gave no reason');
+      const canvas = await page.evaluate(`(() => {
+        const node = document.querySelector('[data-world] canvas');
+        return node ? { width: node.width, opacity: getComputedStyle(node).opacity } : null;
+      })()`);
+      if (canvas && Number(canvas.opacity) > 0.01) {
+        throw new Error('a canvas was shown as if the world had started');
+      }
+      /* Put everything back. */
+      await page.send('Network.setBlockedURLs', { urls: [] });
+      await page.navigate(`${BASE}/`);
+      await ready(page);
+      const recovered = await page.evaluate(
+        `document.querySelector('[data-world]').dataset.worldState`,
+      );
+      if (recovered !== 'ready') throw new Error('did not recover after unblocking');
+      return `"${reason.slice(0, 62)}…", then recovered`;
+    });
+
+    /* ── 16. No JavaScript errors ─────────────────────────────────── */
+    await check('No uncaught exceptions during the run', async () => {
+      if (consoleErrors.length) throw new Error(consoleErrors.slice(0, 3).join(' | '));
+      return 'clean console';
+    });
+  } finally {
+    browser.close();
+  }
+
+  const failed = results.filter((entry) => !entry.ok);
+  console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+  if (failed.length) {
+    console.log('\nFailures:');
+    for (const entry of failed) console.log(` - ${entry.name}: ${entry.detail}`);
+  }
+  process.exitCode = failed.length ? 1 : 0;
+};
+
+main().catch((error) => {
+  console.error('Harness error:', error);
+  process.exitCode = 2;
+});

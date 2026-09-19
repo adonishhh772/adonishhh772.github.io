@@ -120,6 +120,7 @@ export class Materials {
   }
 
   setTheme(theme: WorldTheme): void {
+    const day = THREE.MathUtils.clamp(theme.dayness, 0, 1);
     this.stone.color.setHex(theme.stone);
     this.stoneDark.color.setHex(theme.stoneDeep);
     this.ceramic.color.setHex(theme.ceramic);
@@ -129,23 +130,24 @@ export class Materials {
     this.metal.color.setHex(theme.metal);
     this.hill.color.setHex(0xffffff);
     this.mist.color.setHex(theme.mist);
-    this.mist.opacity = theme.name === 'light' ? 0.26 : 0.18;
+    this.mist.opacity = 0.18 + day * 0.08;
 
     this.signal.emissive.setHex(theme.signal);
     this.signal.emissiveIntensity = theme.emissive;
     this.practical.emissive.setHex(theme.practical);
     this.practical.emissiveIntensity = theme.emissive * 0.8;
+    /* Lamps and lit windows are visibly switched off by day. */
     this.lamp.emissive.setHex(theme.practical);
-    this.lamp.emissiveIntensity = theme.name === 'light' ? 0.5 : 1.6;
+    this.lamp.emissiveIntensity = 1.6 - day * 1.15;
     /* Paper and the portrait frame sit just above the stone in both themes. */
     this.paper.color.setHex(theme.stone).lerp(new THREE.Color(0xffffff), 0.5);
     if (!this.portrait.map) this.portrait.color.setHex(theme.stone);
 
     this.marker.emissive.setHex(theme.practical);
-    this.marker.emissiveIntensity = theme.name === 'light' ? 0.8 : 1.2;
+    this.marker.emissiveIntensity = 1.2 - day * 0.45;
 
     /* Stone reads brighter by daylight; the key light does the rest. */
-    this.stone.roughness = theme.name === 'light' ? 0.88 : 0.8;
+    this.stone.roughness = 0.8 + day * 0.08;
   }
 
   /** Attach the portrait photograph to the studio's frame. */

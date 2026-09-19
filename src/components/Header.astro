@@ -58,17 +58,21 @@ const isCurrent = (rawHref: string) => {
 </header>
 
 <script is:inline>
+  /*
+   * The header grows a signal line once the page has moved. The listener is
+   * bound once per session and reads the header from the document each time,
+   * so it keeps working after the router replaces the header element.
+   */
   (function () {
-    /* The header grows a signal line once the page has moved. */
-    var header = document.querySelector('.site-header');
-    if (header) {
-      var update = function () {
-        header.toggleAttribute('data-scrolled', window.scrollY > 12);
-      };
-      update();
-      window.addEventListener('scroll', update, { passive: true });
-    }
-
+    if (window.__abdHeaderScroll) return;
+    window.__abdHeaderScroll = true;
+    var update = function () {
+      var header = document.querySelector('.site-header');
+      if (header) header.toggleAttribute('data-scrolled', window.scrollY > 12);
+    };
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    document.addEventListener('astro:page-load', update);
   })();
 </script>
 

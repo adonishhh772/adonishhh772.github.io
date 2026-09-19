@@ -9,7 +9,10 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "astro": "astro"
+    "astro": "astro",
+    "verify:world": "node tools/worldcheck/run.mjs",
+    "verify:a11y": "node tools/worldcheck/a11y.mjs",
+    "verify:content": "node tools/worldcheck/content.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -29,31 +29,27 @@ export const SKY_LIGHT_DIRECTION = new THREE.Vector3(-0.46, 0.34, -0.82).normali
 
 const SKY_RADIUS = 420;
 
-function gradientSkyTexture(theme: WorldTheme): THREE.CanvasTexture {
-  const width = 8;
-  const height = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+/**
+ * The sky is one canvas, repainted in place. Rebuilding a texture per frame
+ * would make a 700ms day/night blend allocate and upload dozens of textures;
+ * repainting keeps the transition cheap enough to run continuously.
+ */
+function paintSky(canvas: HTMLCanvasElement, theme: WorldTheme): void {
+  const height = canvas.height;
   const ctx = canvas.getContext('2d');
-  if (ctx) {
-    const hex = (value: number) => `#${value.toString(16).padStart(6, '0')}`;
-    const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    /* Stops are tuned to the default camera: it looks slightly downward, so
-       the horizon glow belongs just past the mid-point to appear behind the
-       island's silhouette rather than above the frame. */
-    gradient.addColorStop(0, hex(theme.skyTop));
-    gradient.addColorStop(0.3, hex(theme.skyTop));
-    gradient.addColorStop(0.48, hex(theme.skyHorizon));
-    gradient.addColorStop(0.62, hex(theme.fog));
-    gradient.addColorStop(1, hex(theme.fog));
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
+  if (!ctx) return;
+  const hex = (value: number) => `#${value.toString(16).padStart(6, '0')}`;
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  /* Stops are tuned to the default camera: it looks slightly downward, so
+     the horizon glow belongs just past the mid-point to appear behind the
+     island's silhouette rather than above the frame. */
+  gradient.addColorStop(0, hex(theme.skyTop));
+  gradient.addColorStop(0.3, hex(theme.skyTop));
+  gradient.addColorStop(0.48, hex(theme.skyHorizon));
+  gradient.addColorStop(0.62, hex(theme.fog));
+  gradient.addColorStop(1, hex(theme.fog));
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, height);
 }
 
 export class Atmosphere {
@@ -66,6 +62,8 @@ export class Atmosphere {
 
   private readonly skyMesh: THREE.Mesh;
   private readonly skyMaterial: THREE.MeshBasicMaterial;
+  private readonly skyCanvas: HTMLCanvasElement;
+  private readonly skyTexture: THREE.CanvasTexture;
   private readonly sunGroup: THREE.Group;
   private readonly sunDisc: THREE.Mesh;
   private readonly sunHalo: THREE.Mesh;
@@ -83,8 +81,14 @@ export class Atmosphere {
     this.group.name = 'atmosphere';
 
     /* Sky dome ------------------------------------------------------- */
+    this.skyCanvas = document.createElement('canvas');
+    this.skyCanvas.width = 8;
+    this.skyCanvas.height = 256;
+    paintSky(this.skyCanvas, theme);
+    this.skyTexture = new THREE.CanvasTexture(this.skyCanvas);
+    this.skyTexture.colorSpace = THREE.SRGBColorSpace;
     this.skyMaterial = new THREE.MeshBasicMaterial({
-      map: gradientSkyTexture(theme),
+      map: this.skyTexture,
       side: THREE.BackSide,
       depthWrite: false,
       fog: false,
@@ -175,17 +179,24 @@ export class Atmosphere {
     light.userData.baseIntensity = intensity;
   }
 
-  setTheme(theme: WorldTheme): void {
-    const skyMap = this.skyMaterial.map;
-    this.skyMaterial.map = gradientSkyTexture(theme);
-    skyMap?.dispose();
+  /**
+   * Recolour the atmosphere for a theme.
+   *
+   * `environment` regenerates the image-based probe. A day/night blend calls
+   * this every frame and passes `environment: false` for most of them, so the
+   * probe is refreshed a handful of times rather than sixty.
+   */
+  setTheme(theme: WorldTheme, options: { environment?: boolean } = {}): void {
+    const day = THREE.MathUtils.clamp(theme.dayness, 0, 1);
+    paintSky(this.skyCanvas, theme);
+    this.skyTexture.needsUpdate = true;
 
     this.sunDiscMaterial.color.setHex(theme.key);
     this.sunHaloMaterial.color.setHex(theme.key);
-    this.sunDiscMaterial.opacity = theme.name === 'light' ? 0.7 : 0.42;
-    this.sunHaloMaterial.opacity = theme.name === 'light' ? 0.4 : 0.24;
-    this.sunDisc.scale.setScalar(theme.name === 'light' ? 1 : 0.72);
-    this.sunHalo.scale.setScalar(theme.name === 'light' ? 1.5 : 1);
+    this.sunDiscMaterial.opacity = 0.42 + day * 0.28;
+    this.sunHaloMaterial.opacity = 0.24 + day * 0.16;
+    this.sunDisc.scale.setScalar(0.72 + day * 0.28);
+    this.sunHalo.scale.setScalar(1 + day * 0.5);
 
     this.hemi.color.setHex(theme.skyHorizon);
     this.hemi.groundColor.setHex(theme.stoneDeep);
@@ -194,8 +205,9 @@ export class Atmosphere {
     this.key.color.setHex(theme.key);
     this.key.intensity = theme.keyIntensity;
     this.fill.color.setHex(theme.skyTop);
-    this.fill.intensity = theme.name === 'light' ? 0.55 : 0.3;
+    this.fill.intensity = 0.3 + day * 0.25;
 
+    /* Artificial light: on at night, subdued by day. */
     for (const light of this.practicals) {
       const base = (light.userData.baseIntensity as number | undefined) ?? 0;
       light.intensity = base * theme.practicalIntensity;
@@ -207,12 +219,14 @@ export class Atmosphere {
 
     this.renderer.toneMappingExposure = theme.exposure;
 
-    /* Rebuild the environment probe for the new sky. */
-    const source = skyEnvironmentTexture(theme);
-    const generated = this.pmrem.fromEquirectangular(source);
-    source.dispose();
-    this.environment?.dispose();
-    this.environment = generated.texture;
+    if (options.environment !== false) {
+      /* Rebuild the environment probe for the new sky. */
+      const source = skyEnvironmentTexture(theme);
+      const generated = this.pmrem.fromEquirectangular(source);
+      source.dispose();
+      this.environment?.dispose();
+      this.environment = generated.texture;
+    }
   }
 
   setQuality(quality: QualitySettings): void {
@@ -247,7 +261,7 @@ export class Atmosphere {
 
   dispose(): void {
     this.skyMesh.geometry.dispose();
-    this.skyMaterial.map?.dispose();
+    this.skyTexture.dispose();
     this.skyMaterial.dispose();
     this.sunDisc.geometry.dispose();
     this.sunHalo.geometry.dispose();

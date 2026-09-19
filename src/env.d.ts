@@ -24,3 +24,22 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/**
+ * The small plain-DOM bridge the world shell uses to report a startup failure
+ * even when the module that would normally draw the interface never loaded.
+ */
+interface WorldAlertBridge {
+  (message?: string): void;
+  hide?: () => void;
+}
+
+interface Window {
+  __worldAlert?: WorldAlertBridge;
+  /** Set once the delegated theme handler is live. */
+  __abdThemeDelegated?: boolean;
+  /** Set once the header's scroll listener is live. */
+  __abdHeaderScroll?: boolean;
+  /** Read-only view of the live world, for verification and support. */
+  __worldDebug?: () => unknown;
+}

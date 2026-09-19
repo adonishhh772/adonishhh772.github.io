@@ -152,6 +152,20 @@ export interface WorldStats {
   drawCalls: number;
 }
 
+/**
+ * The physical light switch: a control post on the campus plateau whose lever
+ * throws with the day/night state. It is part of the scene, not an overlay —
+ * the environment change is driven from the same authoritative theme, so the
+ * lever, the sky and the interface can never disagree.
+ */
+export interface LightSwitchNode {
+  /** Where the DOM caption attaches. */
+  anchor: THREE.Vector3;
+  /** Raycast target for a direct tap on the switch. */
+  pick: THREE.Mesh;
+  group: THREE.Group;
+}
+
 /** Distance at which a sphere of `radius` fits the current viewport. */
 export function fitDistance(radius: number, fovDeg: number, aspect: number): number {
   const vFov = THREE.MathUtils.degToRad(fovDeg);
@@ -165,6 +179,8 @@ export class ObservatoryWorld {
   readonly exhibits = new Map<string, ExhibitNode>();
   /** Pickable objects for articles, repositories and projects. */
   readonly objectMarkers: ObjectMarker[] = [];
+  /** The in-world day/night control post. */
+  lightSwitch!: LightSwitchNode;
 
   private readonly materials: Materials;
   private readonly atmosphere: Atmosphere;
@@ -186,6 +202,8 @@ export class ObservatoryWorld {
   private beaconCore!: THREE.Mesh;
   private beaconLantern!: THREE.Mesh;
   private islandLanterns: THREE.Mesh[] = [];
+  private switchLever: THREE.Group | null = null;
+  private switchIndicator: THREE.MeshStandardMaterial | null = null;
   private mistGroup = new THREE.Group();
   private mistLayers: THREE.Mesh[] = [];
   private drone = new THREE.Group();
@@ -229,6 +247,7 @@ export class ObservatoryWorld {
     this.buildLibrary();
     this.buildWorkbench();
     this.buildContactStation();
+    this.buildLightSwitch();
     this.buildDrone();
     this.buildSignals();
     this.wirePracticalLights();
@@ -1909,17 +1928,30 @@ export class ObservatoryWorld {
     for (const layer of this.mistLayers) {
       const material = layer.material as THREE.MeshBasicMaterial;
       material.color.setHex(theme.mist);
-      material.opacity = theme.name === 'light' ? 0.34 : 0.18;
+      material.opacity = 0.18 + theme.dayness * 0.16;
     }
     if (this.hills) {
       this.setHillColors(new THREE.Color(), new THREE.Color(), new THREE.Color(), this.hillFade, this.hills);
     }
     if (this.searchlightMaterial) {
       this.searchlightMaterial.color.setHex(theme.signal);
-      this.searchlightMaterial.opacity = theme.name === 'light' ? 0.05 : 0.09;
+      this.searchlightMaterial.opacity = 0.09 - theme.dayness * 0.05;
     }
     if (this.flight) {
       (this.flight.mesh.material as THREE.MeshStandardMaterial).emissive.setHex(theme.signal);
+    }
+
+    /*
+     * The physical switch throws with the light. Because the theme arrives
+     * already blended during a transition, the lever follows the change
+     * frame by frame with no extra animation state to keep in step.
+     */
+    if (this.switchLever) {
+      this.switchLever.rotation.x = THREE.MathUtils.lerp(0.62, -0.62, theme.dayness);
+    }
+    if (this.switchIndicator) {
+      this.switchIndicator.emissive.setHex(theme.practical);
+      this.switchIndicator.emissiveIntensity = 0.4 + (1 - theme.dayness) * 1.5;
     }
   }
 
@@ -1947,6 +1979,106 @@ export class ObservatoryWorld {
         (lantern.material as THREE.MeshStandardMaterial).emissiveIntensity = 2.2;
       }
     });
+  }
+
+  /* ── The day / night switch ────────────────────────────────────────── */
+
+  /**
+   * A control post standing on the plateau between the observatory and the
+   * workshop, on the side the overview camera looks in from. Its lever and
+   * pilot lamp are driven from `theme.dayness`, so throwing the switch and
+   * the light changing are the same movement rather than two things that
+   * happen to agree.
+   */
+  private buildLightSwitch(): void {
+    const angle = (25 * Math.PI) / 180;
+    const radius = 5.05;
+    const x = Math.sin(angle) * radius;
+    const z = Math.cos(angle) * radius;
+
+    const group = new THREE.Group();
+    group.name = 'light-switch';
+    group.position.set(x, GROUND, z);
+    /* Turn the face plate toward the island centre, where the camera sits. */
+    group.rotation.y = Math.atan2(-x, -z);
+    this.group.add(group);
+
+    this.mesh(terrace(0.6, 0.2, 0.06), this.materials.stone, group, 'switch-base', {
+      position: new THREE.Vector3(0, 0.1, 0),
+    });
+    const column = this.mesh(
+      new THREE.CylinderGeometry(0.072, 0.092, 1.02, 10),
+      this.materials.metal,
+      group,
+      'switch-column',
+      { position: new THREE.Vector3(0, 0.71, 0) },
+    );
+    column.castShadow = this.quality.shadows;
+
+    this.mesh(roundedBox(0.54, 0.44, 0.24, 0.055), this.materials.metalDark, group, 'switch-housing', {
+      position: new THREE.Vector3(0, 1.42, 0),
+    });
+    this.mesh(
+      new THREE.BoxGeometry(0.38, 0.3, 0.035),
+      this.materials.ceramic,
+      group,
+      'switch-plate',
+      { position: new THREE.Vector3(0, 1.42, 0.13), cast: false },
+    );
+
+    const indicator = this.track(
+      new THREE.MeshStandardMaterial({
+        color: 0x14100a,
+        roughness: 0.3,
+        metalness: 0.1,
+        emissive: new THREE.Color(this.theme.practical),
+        emissiveIntensity: 0.5,
+      }),
+    );
+    this.switchIndicator = indicator;
+    const lamp = this.mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.035, 14),
+      indicator,
+      group,
+      'switch-lamp',
+      { position: new THREE.Vector3(0, 1.3, 0.15), cast: false, receive: false },
+    );
+    lamp.rotation.x = Math.PI / 2;
+
+    /* The lever: a group pivoting at the housing, arm offset so it swings. */
+    const lever = new THREE.Group();
+    lever.name = 'switch-lever';
+    lever.position.set(0, 1.44, 0.16);
+    group.add(lever);
+    const arm = this.mesh(
+      new THREE.BoxGeometry(0.055, 0.5, 0.055),
+      this.materials.metal,
+      lever,
+      'switch-arm',
+      { position: new THREE.Vector3(0, 0.25, 0), cast: false },
+    );
+    arm.castShadow = false;
+    this.mesh(
+      new THREE.IcosahedronGeometry(0.075, 1),
+      this.materials.practical,
+      lever,
+      'switch-knob',
+      { position: new THREE.Vector3(0, 0.52, 0), cast: false, receive: false },
+    );
+    this.switchLever = lever;
+
+    /* A generous, invisible hit volume so a tap on the post always lands. */
+    const pickGeometry = this.track(new THREE.CylinderGeometry(0.56, 0.56, 2.05, 8));
+    const pick = new THREE.Mesh(pickGeometry, this.pickMaterial);
+    pick.name = 'pick-light-switch';
+    pick.position.set(x, GROUND + 1.02, z);
+    this.group.add(pick);
+
+    this.lightSwitch = {
+      anchor: new THREE.Vector3(x, GROUND + 1.95, z),
+      pick,
+      group,
+    };
   }
 
   /* ── Animation ─────────────────────────────────────────────────────── */
@@ -2083,6 +2215,7 @@ export class ObservatoryWorld {
   /** All objects the pointer may hit: place volumes plus discovery markers. */
   pickTargets(): THREE.Object3D[] {
     const targets: THREE.Object3D[] = [];
+    if (this.lightSwitch) targets.push(this.lightSwitch.pick);
     for (const node of this.places.values()) {
       targets.push(node.pick);
       if (node.discovery && !node.discovery.found) targets.push(node.discovery.mesh);

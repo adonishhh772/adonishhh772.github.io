@@ -69,27 +69,73 @@ everything else follows from what you select.
   destination in the region the document leaves free, on both axes.
 - **Reading settles the scenery.** Ambient motion stops while a document is
   open and starts again when it closes.
+- **Tapping the world works too.** A tap that never became a drag resolves
+  against the scene: a caption under the finger is activated, otherwise the
+  object itself answers - a destination travels, the light switch throws.
+- **The chrome is always there.** A compact bar holds the location readout,
+  the **Map** (a labelled list of every place and document, as real links),
+  **Home**, the **sun/moon light switch** and **pause motion**. It takes the
+  edge opposite the reading surface on a desktop and the top strip on a phone,
+  so it stays reachable from the CV, an article, a case study or the contact
+  card. No destination can be lost behind a building or a panel.
+- **The camera is bounded and unambiguous.** A press only becomes a drag once
+  it has travelled far enough to be unarguable, and a press that starts on a
+  control belongs to that control - never to the camera.
+- **Closing puts you back.** *Close* (and `Escape`) returns to the view the
+  document was opened from, orbit and zoom included; the bar's other control
+  goes to that place's list. Focus follows the document in and back out again.
+
+### Day and night
+
+The light is one authoritative state, held as `data-theme` on `<html>` and
+remembered in `localStorage` once the visitor makes an explicit choice. Until
+then the system preference is honoured.
+
+- **Both controls, one state.** A physical lever on the campus plateau throws
+  as the light changes, and a compact sun/moon switch in the chrome is visible
+  whatever is open. Either drives the same value, as do the keyboard and the
+  caption anchored to the post.
+- **It changes the scene, not a filter.** Sky gradient, fog colour and
+  density, hemisphere and key lights, practical lamps, lamp and window
+  emissives, the environment probe, exposure and the shadow tuning all take
+  part in one coordinated ~700ms blend. There is no dark overlay over the
+  canvas.
+- **The page changes with it.** Reading panels, forms, captions and the chrome
+  cross-fade over the same period. Under `prefers-reduced-motion` the state
+  applies immediately.
+- **Nothing else moves.** Changing the light preserves the camera, the
+  destination, the open document, the reading position and any form input.
 
 ### Architecture
 
 ```
 src/lib/world/
-├── destinations.ts   the campus map, shared by server and client
-├── state.ts          the page ↔ shell contract (destination, surface, index)
-└── shell.ts          renderer lifecycle, camera composition, captions,
-                      quality, theme, navigation events, teardown
+├── destinations.ts    the campus map, shared by server and client
+├── state.ts           the page/shell contract: destination, surface, index,
+│                      and the view to return to
+├── document-state.ts  the pre-paint capability and theme decisions, carried
+│                      across Astro's route swaps
+├── theme-state.ts     the one day/night state, its storage and its events
+├── chrome.ts          the persistent controls (map, Home, light, pause)
+├── page-controls.ts   idempotent delegated page behaviour: forms, filters,
+│                      contents rails, print, counters, scroll reveal
+└── shell.ts           renderer lifecycle, camera composition, captions,
+                       tap-versus-drag, quality, navigation, teardown
 
 src/lib/observatory/  the world itself
-├── theme.ts          palette bridge — reads the --world-* tokens from CSS
+├── theme.ts          palette bridge - reads the --world-* tokens from CSS and
+│                      blends two themes for the transition
 ├── quality.ts        tiers, device detection, frame-time monitor
 ├── materials.ts      one material library, recoloured in place
 ├── parts.ts          procedural geometry (island, dome, lattice, books, drone)
 ├── lighting.ts       sky dome, key/fill/practical lights, PMREM environment
-├── world.ts          the campus: six destinations, walkways, objects, animation
-└── camera.ts         shot-to-shot travel, bounded orbit
+├── world.ts          the campus: six destinations, walkways, objects, the
+│                      light switch, animation
+└── camera.ts         shot-to-shot travel, bounded orbit, restorable state
 
 src/components/world/
 ├── WorldShell.astro  the persisted canvas + captions + status
+├── WorldChrome.astro the persisted controls + the branded failure screen
 └── Identity.astro    the campus heading: a corner caption in the world,
                       the opening of the page in the fallback
 ```
@@ -112,17 +158,27 @@ appears.
 
 ### When the world cannot run
 
-The conventional, readable pages still exist, as a genuine failure path
-rather than a mode you switch into.
+There is no mode to switch into and no silent fallback to a conventional
+portfolio. If the world cannot start, it says so.
 
 - A **pre-paint probe** decides `data-mode`: `world` when JavaScript and WebGL
-  are both available, `simple` otherwise. With no JavaScript at all the
-  attribute is simply absent, and the default CSS renders the ordinary pages.
-- **three.js is a dynamic import gated on that mode**, so a visitor whose
+  are both available. With no JavaScript at all the attribute is simply
+  absent, and the default CSS renders the same semantic documents as ordinary
+  readable pages — which is also what search engines and browserless visitors
+  get.
+- **three.js is a dynamic import gated on that decision**, so a visitor whose
   browser cannot render the world never downloads the 3D bundle.
-- There is no manual switch: the world runs whenever it can, and there is no
-  state a visitor can get stuck in.
-- Losing the WebGL context swaps to the readable pages with an honest message.
+- **A failure is reported honestly.** A browser with no WebGL, a renderer that
+  throws, a module that fails to download and a watchdog for a startup that
+  never finishes all raise the same branded screen: what happened, **Try
+  again**, **Reload the page**, and the world's own routes (which open inside
+  the world once it recovers).
+- **Retry rebuilds exactly one renderer**, disposing the failed attempt and
+  its canvas first. Nothing is retried automatically for an unsupported
+  capability.
+- **Losing the WebGL context** is announced and then recovered in place:
+  three.js re-initialises its GL state on the restored context, so the same
+  scene and camera come back rather than a second renderer being built.
 
 ### Quality
 
@@ -136,8 +192,10 @@ The starting tier is chosen conservatively from `deviceMemory`,
 `hardwareConcurrency`, pointer type, DPR, connection type and reduced-motion
 preference. A rolling 90-frame median then downgrades on sustained slowness and
 may upgrade once if the device comfortably holds 60 fps. The preference is
-stored in `localStorage` (`observatory:quality`) and exposed in the dock.
-Rendering pauses when the tab is hidden or the stage leaves the viewport.
+stored in `localStorage` (`observatory:quality`). Rendering pauses when the tab
+is hidden or the stage leaves the viewport, ambient animation settles while a
+document is open, and the chrome's **pause motion** control (or
+`prefers-reduced-motion`) does the same on demand.
 
 ## Design system
 
@@ -233,18 +291,45 @@ new article to the Buttondown list using the `BUTTONDOWN_API_KEY` secret.
 
 - Semantic documents: the CV, articles and case studies are ordinary HTML in
   the page, not text painted onto the canvas.
-- Skip link, one `h1` per page, visible focus rings, and the dock is a labelled
-  navigation of real links.
+- Skip link, one `h1` per page, visible focus rings, and the chrome is a
+  labelled set of real controls — the map is a navigation of real links.
 - Every caption is a real control: place captions are buttons that travel the
-  camera, object captions are links. Both are reachable by Tab and activated
-  by Enter.
-- Captions that are occluded, or that the reading surface covers, are removed
-  from the tab order rather than left focusable but invisible.
-- `prefers-reduced-motion` removes camera travel and ambient animation; the
-  dock's **Pause motion** control does the same on demand.
+  camera, object captions are links, the light switch is a button announced as
+  a switch with its current state. All are reachable by Tab and activated by
+  Enter.
+- Captions that the reading surface covers, or that a building hides, are
+  removed from the tab order rather than left focusable but invisible. A
+  caption that survives a rebuild keeps focus, so travelling never drops the
+  keyboard.
+- Opening a document moves focus onto its heading; closing returns focus to
+  the caption it was opened from, or to the map control.
+- `prefers-reduced-motion` removes camera travel and ambient animation and
+  applies the day/night change instantly; the chrome's **pause motion**
+  control does the same on demand.
 - Text contrast meets WCAG AA in both themes (ratios above).
-- Every destination is reachable with no JavaScript, with no WebGL, and from the
-  dock alone.
+- Touch targets are at least 44x44 CSS pixels, safe areas are respected, and
+  the reading sheet keeps its close, Home/Map and light switch reachable.
+- Every destination is reachable with no JavaScript, with no WebGL, and from
+  the map menu alone.
+
+## Verifying the world
+
+`tools/worldcheck/` drives a real headless browser over the DevTools Protocol —
+no test dependencies, just Node's own `fetch` and `WebSocket`. Run the preview
+server first, then:
+
+```bash
+npm run build
+npm run preview                                  # http://localhost:4321
+npm run verify:world   -- http://localhost:4321  # the full journey suite
+npm run verify:a11y    -- http://localhost:4321  # focus, print, scrolling
+npm run verify:content -- http://localhost:4321  # a new Markdown file appears
+```
+
+Screenshots land in `.screenshots/world/`. The suite checks navigation by
+caption, tap-versus-drag, theme persistence across routes, document open and
+close with camera and focus restoration, the physical switch, filters, forms,
+deep links, Back/Forward, context loss and recovery, and five viewport widths.
 
 ## Deployment (GitHub Pages)
 

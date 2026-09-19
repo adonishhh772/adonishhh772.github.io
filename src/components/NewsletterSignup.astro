@@ -38,6 +38,7 @@ const linkedinUrl = social.linkedin;
         <>
           <form
             class="signup-form"
+            data-newsletter-form
             method="post"
             action={newsletter.formUrl}
             target="_blank"
@@ -64,6 +65,7 @@ const linkedinUrl = social.linkedin;
             A confirmation tab will open — finish there, then check your
             inbox. One concise daily briefing, no spam, unsubscribe anytime.
           </p>
+          <p class="form-status" data-form-status role="status" aria-live="polite"></p>
         </>
       ) : (
         <div class="signup-notice" role="status">

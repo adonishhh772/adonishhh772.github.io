@@ -10,26 +10,53 @@
  *    a camera for it
  *  - project captions for destinations and for the objects at the current
  *    destination, skipping any that the reading surface covers
- *  - pause ambient motion while a document is open
- *  - survive client-side navigation, and tear down cleanly if asked
+ *  - blend the day/night change through the whole environment
+ *  - tell a tap from a drag, and never steal a gesture from a control
+ *  - settle ambient motion while a document is open
+ *  - survive client-side navigation, context loss and startup failure, and
+ *    tear down cleanly if asked
  *
  * Getting around is done in the world: a place caption is a button that
  * travels the camera, an object caption is a real link that opens its
  * document. Content links are ordinary anchors, so the ClientRouter
- * intercepts them, the URL updates, and Back/Forward work with no bespoke
- * history code — while the camera and the renderer stay alive throughout.
+ * intercepts them, the URL updates, and Back/Forward work — while the camera
+ * and the renderer stay alive throughout.
  */
 
 import * as THREE from 'three';
-import { DESTINATIONS, PLACE_INDEX, hostsObjects, type DestinationId } from '../world/destinations';
+import { navigate } from 'astro:transitions/client';
 import {
+  DESTINATIONS,
+  PLACE_INDEX,
+  hostsObjects,
+  type DestinationId,
+} from '../world/destinations';
+import {
+  clearReturnView,
   currentMode,
+  isDocument,
   isReading,
   readIndex,
+  readReturnView,
   readState,
+  surfaceLabel,
+  writeReturnView,
   type WorldIndex,
   type WorldState,
 } from '../world/state';
+import { restoreDocumentState } from '../world/document-state';
+import {
+  currentTheme,
+  hideWorldAlert,
+  isAmbientPaused,
+  prefersReducedMotion,
+  showWorldAlert,
+  subscribeAmbient,
+  subscribeTheme,
+  THEME_TRANSITION_MS,
+  toggleTheme,
+} from '../world/theme-state';
+import { blendTheme, readWorldTheme, type WorldTheme } from '../observatory/theme';
 import { Atmosphere } from '../observatory/lighting';
 import { Materials } from '../observatory/materials';
 import {
@@ -43,18 +70,49 @@ import {
   type QualitySettings,
   type QualityTier,
 } from '../observatory/quality';
-import {
-  currentThemeName,
-  prefersReducedMotion,
-  readWorldTheme,
-  watchTheme,
-} from '../observatory/theme';
 import { ObservatoryWorld, fitDistance, type Shot } from '../observatory/world';
 import { CameraRig } from '../observatory/camera';
 
 export interface ShellHandle {
   applyState(): void;
   dispose(): void;
+}
+
+/** How far a pointer may travel before it counts as a drag, in CSS pixels. */
+const DRAG_THRESHOLD = 6;
+
+/**
+ * Screen-space tap radius for the light switch. It is a small physical
+ * control among large buildings, so it is given a fair target of its own
+ * rather than competing with a whole destination's hit volume.
+ */
+const SWITCH_TAP_RADIUS = 26;
+
+/** Selectors whose gestures belong to the control, never to the camera. */
+const INTERACTIVE_SELECTOR = [
+  'a[href]',
+  'button',
+  'input',
+  'select',
+  'textarea',
+  'label',
+  'summary',
+  '[role="button"]',
+  '[role="link"]',
+  '[role="switch"]',
+  '[contenteditable="true"]',
+  '[data-world-no-gesture]',
+].join(',');
+
+const RETRY_EVENT = 'world:retry';
+
+/** True when the event started on something that handles its own pointer. */
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  /* Anything inside an overlay — the reading surface, the chrome, a caption —
+     owns its gestures: the camera must not eat a scroll, a tap or a link. */
+  if (target.closest('[data-surface-panel], [data-world-chrome], .world-hotspots')) return true;
+  return Boolean(target.closest(INTERACTIVE_SELECTOR));
 }
 
 /* ── Capability ──────────────────────────────────────────────────────── */
@@ -66,7 +124,7 @@ export function webglAvailable(): boolean {
     const context =
       canvas.getContext('webgl2') ??
       canvas.getContext('webgl') ??
-      canvas.getContext('experimental-webgl');
+      (canvas.getContext('experimental-webgl') as WebGLRenderingContext | null);
     if (!context) return false;
     (context as WebGLRenderingContext).getExtension('WEBGL_lose_context')?.loseContext();
     return true;
@@ -155,11 +213,11 @@ function readingShot(base: Shot, view: ViewMetrics): Shot {
   return { position, target, fov: base.fov };
 }
 
-/* ── Shell ───────────────────────────────────────────────────────────── */
-
-interface Mounted {
-  handle: ShellHandle;
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
+
+/* ── Mount bookkeeping ───────────────────────────────────────────────── */
 
 const MOUNT_KEY = '__abdWorldShell';
 
@@ -167,36 +225,19 @@ interface WorldHost extends HTMLElement {
   [MOUNT_KEY]?: Mounted;
 }
 
-/**
- * A client-side navigation replaces the attributes on <html> with the ones
- * from the incoming document, and that document never executes its inline
- * probe. Put the two pre-paint decisions back.
- */
-export function restoreDocumentState(): void {
-  if (typeof document === 'undefined') return;
-  const html = document.documentElement;
-  if (!html.dataset.mode) {
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem('world:mode');
-    } catch {
-      stored = null;
-    }
-    html.dataset.mode = stored === 'simple' ? 'simple' : 'world';
-  }
-  if (!html.dataset.theme) {
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem('theme');
-    } catch {
-      stored = null;
-    }
-    const prefersLight =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-color-scheme: light)').matches;
-    html.dataset.theme = stored || (prefersLight ? 'light' : 'dark');
-  }
+interface Mounted {
+  handle: ShellHandle;
+  /** Set when the renderer has lost its context and needs a rebuild. */
+  lost: boolean;
 }
+
+/** Report a startup problem honestly, with a retry, and never a silent swap. */
+export function failStartup(reason: string): void {
+  hideWorldAlert();
+  showWorldAlert(reason);
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────── */
 
 export function mountShell(root: WorldHost): ShellHandle {
   const stage = root.querySelector<HTMLElement>('[data-world-stage]');
@@ -213,12 +254,13 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   const portraitUrl = root.dataset.portrait ?? '';
   const index: WorldIndex = readIndex();
-  const reducedMotion = prefersReducedMotion();
+  const reducedMotionQuery = prefersReducedMotion();
   const storedPreference = loadPreference();
   let tier: QualityTier = storedPreference ?? detectTier();
-  let ambientAllowed = !reducedMotion;
+  let reducedMotion = reducedMotionQuery;
+  let ambientAllowed = !reducedMotionQuery && !isAmbientPaused();
   let settings: QualitySettings = settingsFor(tier, ambientAllowed);
-  let theme = readWorldTheme(currentThemeName());
+  let theme: WorldTheme = readWorldTheme(currentTheme());
 
   /* ── Renderer, scene, world ──────────────────────────────────────── */
   const renderer = new THREE.WebGLRenderer({
@@ -233,7 +275,8 @@ export function mountShell(root: WorldHost): ShellHandle {
   renderer.toneMappingExposure = theme.exposure;
   renderer.shadowMap.enabled = settings.shadows;
   renderer.shadowMap.type = THREE.PCFShadowMap;
-  renderer.setClearColor(new THREE.Color(theme.fog), 1);
+  const clearColor = new THREE.Color(theme.fog);
+  renderer.setClearColor(clearColor, 1);
 
   const scene = new THREE.Scene();
   const materials = new Materials(theme, settings);
@@ -255,8 +298,14 @@ export function mountShell(root: WorldHost): ShellHandle {
   let onScreen = true;
   let reading = false;
   let focusPlace: DestinationId = 'campus';
+  let announced: DestinationId = 'campus';
   let hintTimer = 0;
   let hintDone = false;
+  let currentHref = typeof location === 'undefined' ? '/' : location.pathname;
+  let contextLost = false;
+  /** The caption that opened the open document, so focus can go back to it. */
+  let lastOpenedKey: string | null = null;
+  let openedByKeyboard = false;
 
   const hotspots = new Map<string, HTMLElement>();
   const occluded = new Map<string, boolean>();
@@ -268,11 +317,13 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   function labelLimitFor(value: QualityTier): number {
     const width = window.innerWidth;
-    const base = width < 560 ? 3 : width < 900 ? 5 : 7;
-    return value === 'low' ? Math.min(base, 4) : base;
+    /* Phones get a small budget on purpose — but enough that the campus still
+       reads as a set of destinations rather than one label at a time. */
+    const base = width < 560 ? 4 : width < 900 ? 5 : 7;
+    return value === 'low' ? Math.min(base, 5) : base;
   }
 
-  /* ── Quality and theme ───────────────────────────────────────────── */
+  /* ── Quality ─────────────────────────────────────────────────────── */
   function applyQuality(next: QualityTier, persist: boolean): void {
     tier = next;
     settings = settingsFor(next, ambientAllowed);
@@ -283,8 +334,6 @@ export function mountShell(root: WorldHost): ShellHandle {
     world.setQuality(settings);
     labelLimit = labelLimitFor(next);
     if (persist) savePreference(next);
-    const select = document.querySelector<HTMLSelectElement>('[data-world-quality]');
-    if (select) select.value = persist ? next : 'auto';
   }
 
   /** A stored preference is the visitor's decision, so the monitor stands down. */
@@ -309,16 +358,79 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   applyQuality(tier, storedPreference !== null);
 
-  const stopThemes = watchTheme((name) => {
-    theme = readWorldTheme(name);
-    materials.setTheme(theme);
-    atmosphere.setTheme(theme);
-    world.setTheme(theme);
+  /* ── Theme: one state, blended through the whole environment ─────── */
+
+  let liveTheme: WorldTheme = theme;
+  let themeFrom: WorldTheme | null = null;
+  let themeTo: WorldTheme | null = null;
+  let themeT = 0;
+  let envClock = 0;
+  const themeScratch = {} as WorldTheme;
+
+  /**
+   * Push a theme into every part of the environment. `environment` refreshes
+   * the image-based probe: during a blend that is throttled, because the probe
+   * is a render pass and the blend only needs a handful of them.
+   */
+  function applyTheme(next: WorldTheme, environment: boolean): void {
+    theme = next;
+    materials.setTheme(next);
+    atmosphere.setTheme(next, { environment });
+    world.setTheme(next);
     scene.environment = atmosphere.environment;
-    scene.environmentIntensity = theme.environmentIntensity;
-    renderer.setClearColor(new THREE.Color(theme.fog), 1);
-    renderer.toneMappingExposure = theme.exposure;
-    renderOnce();
+    scene.environmentIntensity = next.environmentIntensity;
+    clearColor.setHex(next.fog);
+    renderer.setClearColor(clearColor, 1);
+    renderer.toneMappingExposure = next.exposure;
+  }
+
+  function startThemeTransition(next: WorldTheme, animate: boolean): void {
+    if (!animate || reducedMotion) {
+      themeFrom = null;
+      themeTo = null;
+      liveTheme = next;
+      applyTheme(next, true);
+      if (!running) renderOnce();
+      return;
+    }
+    themeFrom = { ...liveTheme };
+    themeTo = next;
+    themeT = 0;
+    envClock = 0;
+  }
+
+  /** Step the blend. Returns true while a transition is in flight. */
+  function advanceTheme(delta: number): boolean {
+    if (!themeFrom || !themeTo) return false;
+    themeT = Math.min(1, themeT + (delta * 1000) / THEME_TRANSITION_MS);
+    blendTheme(themeFrom, themeTo, easeInOut(themeT), themeScratch);
+    envClock += delta * 1000;
+    const environment = envClock >= 120 || themeT >= 1;
+    if (environment) envClock = 0;
+    liveTheme = { ...themeScratch };
+    applyTheme(themeScratch, environment);
+    if (themeT >= 1) {
+      const settled = themeTo;
+      themeFrom = null;
+      themeTo = null;
+      liveTheme = settled;
+      applyTheme(settled, true);
+    }
+    return true;
+  }
+
+  const stopThemes = subscribeTheme((detail) => {
+    startThemeTransition(readWorldTheme(detail.theme), detail.animate);
+    updateSwitchHotspot();
+    if (!running) renderOnce();
+  });
+
+  const stopAmbient = subscribeAmbient((paused) => {
+    ambientAllowed = !paused && !reducedMotion;
+    settings = settingsFor(tier, ambientAllowed);
+    materials.setQuality(settings);
+    atmosphere.setQuality(settings);
+    world.setQuality(settings);
   });
 
   /* ── Captions ────────────────────────────────────────────────────── */
@@ -327,18 +439,19 @@ export function mountShell(root: WorldHost): ShellHandle {
     href: string,
     label: string,
     meta: string,
-    kind: 'place' | 'object',
+    kind: 'place' | 'object' | 'switch',
   ): HTMLElement {
     /*
      * A place caption moves the camera, so it is a button; an object caption
-     * opens a document, so it is a link with a real URL. That keeps history,
-     * deep links and middle-click working for content while the world itself
-     * stays the way you get around.
+     * opens a document, so it is a link with a real URL; the light switch is
+     * a button that throws the same shared state as the interface control.
+     * That keeps history, deep links and middle-click working for content
+     * while the world itself stays the way you get around.
      */
     const link: HTMLElement =
-      kind === 'place' ? document.createElement('button') : document.createElement('a');
-    if (kind === 'place') (link as HTMLButtonElement).type = 'button';
-    else (link as HTMLAnchorElement).href = href;
+      kind === 'object' ? document.createElement('a') : document.createElement('button');
+    if (kind === 'object') (link as HTMLAnchorElement).href = href;
+    else (link as HTMLButtonElement).type = 'button';
     link.className = `world-hotspot world-hotspot--${kind}`;
     link.dataset.worldHotspot = key;
     link.dataset.visible = 'false';
@@ -365,6 +478,16 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (kind === 'place') {
       const id = key.startsWith('place:') ? (key.slice(6) as DestinationId) : 'campus';
       link.addEventListener('click', () => travelTo(id));
+    } else if (kind === 'switch') {
+      link.addEventListener('click', () => toggleTheme({ animate: true }));
+      link.setAttribute('role', 'switch');
+    } else {
+      /* Remembered so closing the document can hand focus back to the caption
+         the visitor opened it from. */
+      link.addEventListener('click', () => {
+        lastOpenedKey = key;
+        openedByKeyboard = link.matches(':focus-visible');
+      });
     }
     return link;
   }
@@ -385,22 +508,37 @@ export function mountShell(root: WorldHost): ShellHandle {
   function travelTo(id: DestinationId, immediate = false): void {
     if (disposed) return;
     focusPlace = id;
-    lastDestination = id === 'campus' ? null : id;
     root.dataset.focus = id;
     world.setPlaceState(id === 'campus' ? null : id);
-    if (id !== 'campus') world.triggerSignal(id);
+    if (id !== 'campus' && id !== announced) world.triggerSignal(id);
+    announced = id;
     rig.resetOrbit();
     rebuildHotspots();
     compose(immediate);
+    syncChromeLocation();
   }
 
   /** Which captions belong on screen for the current state. */
   function rebuildHotspots(): void {
+    /*
+     * Replacing the captions must not drop the keyboard onto the body. A
+     * caption that survives the rebuild keeps focus, which is what makes
+     * travelling between places usable without a pointer.
+     */
+    const active = document.activeElement;
+    const activeKey =
+      active instanceof HTMLElement ? active.dataset.worldHotspot ?? null : null;
+
     hotspotEl.replaceChildren();
     hotspots.clear();
 
     const place = world.places.get(focusPlace);
     const atPlace = focusPlace !== 'campus' && Boolean(place);
+
+    /* The light switch belongs to the campus, but it stays a live caption
+       whenever it is on screen: it is how the environment is controlled. */
+    const lightSwitch = makeHotspot('switch:lights', '#', 'Light switch', '', 'switch');
+    hotspots.set('switch:lights', lightSwitch);
 
     if (!atPlace) {
       for (const destination of DESTINATIONS) {
@@ -421,8 +559,8 @@ export function mountShell(root: WorldHost): ShellHandle {
 
       if (hostsObjects(focusPlace)) {
         /*
-         * The way into the place's own index page. Without the dock this is
-         * what keeps every section reachable from the world alone.
+         * The way into the place's own index page. Without the map menu this
+         * is what keeps every section reachable from the world alone.
          */
         const index = PLACE_INDEX[focusPlace];
         if (index) {
@@ -448,9 +586,29 @@ export function mountShell(root: WorldHost): ShellHandle {
         }
       }
     }
+
+    updateSwitchHotspot();
+
+    if (activeKey) {
+      hotspots.get(activeKey)?.focus({ preventScroll: true });
+    }
+  }
+
+  /** Keep the physical switch's caption showing the live environment. */
+  function updateSwitchHotspot(): void {
+    const link = hotspots.get('switch:lights');
+    if (!link) return;
+    const day = currentTheme() === 'light';
+    link.setAttribute('aria-pressed', day ? 'true' : 'false');
+    link.setAttribute('aria-label', `Day and night light switch — currently ${day ? 'daylight' : 'night'}`);
+    const meta = link.querySelector<HTMLElement>('.world-hotspot-meta');
+    if (meta) meta.textContent = day ? 'Daylight' : 'Night';
   }
 
   function anchorFor(key: string): THREE.Vector3 | null {
+    if (key === 'switch:lights') {
+      return world.lightSwitch ? world.lightSwitch.anchor.clone() : null;
+    }
     if (key.startsWith('place:')) {
       const id = key.slice(6) as DestinationId;
       if (id === 'campus') {
@@ -471,7 +629,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   }
 
   function measurePanel(): void {
-    const surface = document.querySelector<HTMLElement>('[data-surface-panel]');
+    const surface = document.querySelector<HTMLElement>('[data-surface-panel]:not([hidden])');
     if (!surface || currentMode() !== 'world' || !reading) {
       panelRect = null;
       return;
@@ -538,9 +696,14 @@ export function mountShell(root: WorldHost): ShellHandle {
           (isFocused ? 500 : 0) +
           /*
            * The place's own index page is the only route to its archive, so
-           * it outranks the individual objects when the label budget bites.
+           * it outranks the individual objects when the label budget bites;
+           * destinations outrank the light switch, which is also in the
+           * interface and always reachable there.
            */
-          (key.startsWith('object:index:') ? 200 : key.startsWith('object:') ? 100 : 0) +
+          (key.startsWith('object:index:') ? 300 : 0) +
+          (key.startsWith('object:') ? 200 : 0) +
+          (key.startsWith('place:') ? 150 : 0) +
+          (key === 'switch:lights' ? 40 : 0) +
           Math.max(0, 60 - distance),
         occluded: isOccluded || offscreen || underPanel,
       });
@@ -670,22 +833,86 @@ export function mountShell(root: WorldHost): ShellHandle {
     rig.goTo(shotFor(), { immediate: immediate || reducedMotion });
   }
 
+  /* ── Chrome sync ─────────────────────────────────────────────────── */
+
+  function syncChromeLocation(): void {
+    const readout = document.querySelector<HTMLElement>('[data-world-location]');
+    if (readout) {
+      const place = state.destination;
+      const name =
+        DESTINATIONS.find((d) => d.id === place)?.name ?? 'The observatory campus';
+      const label = state.surface === 'none' ? 'Campus overview' : surfaceLabel(state.surface);
+      readout.textContent = state.surface === 'none' ? name : `${name} · ${label}`;
+    }
+    for (const link of document.querySelectorAll<HTMLElement>('[data-world-dest]')) {
+      const id = link.dataset.worldDest;
+      const active =
+        id === state.destination ||
+        (id === 'studio' && state.destination === 'studio' && state.surface === 'cv');
+      if (active) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    }
+  }
+
+  /** Point the close control at where the visitor actually came from. */
+  function syncCloseControl(): void {
+    const close = document.querySelector<HTMLElement>('[data-surface-close]');
+    if (!close) return;
+    const returned = readReturnView();
+    const back = document.querySelector<HTMLAnchorElement>('[data-surface-back]');
+    const fallback = back?.getAttribute('href') ?? '/';
+    const target = nowDocument ? returned?.href || fallback : fallback;
+    close.dataset.closeHref = target;
+    close.setAttribute('aria-label', `Close and return to ${describeHref(target)}`);
+  }
+
+  function describeHref(href: string): string {
+    if (href === '/' || href === '') return 'the campus overview';
+    if (href.startsWith('/writing')) return 'the article archive';
+    if (href.startsWith('/work')) return 'the project list';
+    if (href.startsWith('/open-source')) return 'the repository list';
+    if (href.startsWith('/about')) return 'the biography';
+    if (href.startsWith('/cv')) return 'the CV';
+    if (href.startsWith('/contact')) return 'the contact station';
+    return 'the previous view';
+  }
+
   /* ── Apply the page's state ──────────────────────────────────────── */
-  let lastDestination: DestinationId | null = null;
+  let nowDocument = false;
 
   function applyState(): void {
     const previous = state;
     state = readState();
+    const wasReading = isReading(previous);
+    const wasDocument = isDocument(previous);
+    nowDocument = isDocument(state);
     reading = isReading(state);
+
+    /*
+     * Opening a document remembers where the visitor was standing, so closing
+     * it puts them back exactly there rather than at some default view.
+     */
+    if (nowDocument && !wasDocument) {
+      writeReturnView({
+        href: currentHref || '/',
+        destination: previous.destination,
+        surface: previous.surface,
+        focusPlace,
+        ...rig.orbitState,
+      });
+    } else if (!reading && wasReading) {
+      const returned = readReturnView();
+      if (returned) rig.setOrbitState(returned);
+      clearReturnView();
+    }
     /*
      * Where the camera starts for this page: the place the URL names, or the
-     * campus overview. Travel from there is the visitor's to change.
+     * campus overview.
      */
     focusPlace = state.destination;
     if (state.surface === 'none') focusPlace = 'campus';
 
     world.setPlaceState(focusPlace === 'campus' ? null : focusPlace);
-    lastDestination = focusPlace === 'campus' ? null : focusPlace;
     rebuildHotspots();
     measurePanel();
     compose(
@@ -694,9 +921,9 @@ export function mountShell(root: WorldHost): ShellHandle {
         previous.panel !== state.panel,
     );
 
-    if (focusPlace !== lastDestination) {
+    if (focusPlace !== announced) {
       if (focusPlace !== 'campus') world.triggerSignal(focusPlace);
-      lastDestination = focusPlace;
+      announced = focusPlace;
     }
     root.dataset.worldReading = reading ? 'true' : 'false';
     root.dataset.focus = focusPlace;
@@ -706,7 +933,69 @@ export function mountShell(root: WorldHost): ShellHandle {
       else panel.setAttribute('hidden', '');
     });
 
+    /* The panel was just swapped in: re-measure before composing the shot. */
+    if (reading) measurePanel();
+    syncChromeLocation();
+    syncCloseControl();
+    projectHotspots();
+
+    /*
+     * Keyboard focus follows the document. Opening one moves focus onto its
+     * heading — so a screen reader announces the new content and Tab starts
+     * inside it — and closing hands focus back to the caption it came from,
+     * which is what makes the world navigable without a pointer. When that
+     * caption no longer exists (the document was opened from a place we have
+     * left), focus goes to the map control rather than being dropped on the
+     * body.
+     */
+    const openedDocument = nowDocument && !wasDocument;
+    const closedDocument = wasDocument && !nowDocument;
+
+    if (openedDocument) {
+      const panel = document.querySelector<HTMLElement>('[data-surface-panel]:not([hidden])');
+      const heading = panel?.querySelector<HTMLElement>('h1');
+      if (panel) panel.scrollTop = 0;
+      if (heading) {
+        heading.tabIndex = -1;
+        heading.focus({ preventScroll: true });
+      } else {
+        document.querySelector<HTMLElement>('[data-surface-close]')?.focus({ preventScroll: true });
+      }
+      openedByKeyboard = false;
+    } else if (closedDocument) {
+      const caption = lastOpenedKey ? hotspots.get(lastOpenedKey) : null;
+      if (caption) caption.focus({ preventScroll: true });
+      else {
+        document
+          .querySelector<HTMLElement>('[data-world-chrome] [data-world-map]')
+          ?.focus({ preventScroll: true });
+      }
+      openedByKeyboard = false;
+    }
+
+    currentHref = typeof location === 'undefined' ? '/' : location.pathname;
     renderOnce();
+  }
+
+  /* ── Closing a document ──────────────────────────────────────────── */
+
+  /**
+   * Close the open document and return to the view the visitor came from.
+   * This is a client-side navigation, so the renderer, the scene and the
+   * camera all survive it.
+   */
+  function closeDocument(): void {
+    const close = document.querySelector<HTMLElement>('[data-surface-close]');
+    const target = close?.dataset.closeHref || '/';
+    const here = typeof location === 'undefined' ? '/' : location.pathname;
+    if (target && target !== here) {
+      void navigate(target);
+      return;
+    }
+    /* Landing directly on a document: the archive is the honest destination. */
+    const back = document.querySelector<HTMLAnchorElement>('[data-surface-back]');
+    const href = back?.getAttribute('href');
+    if (href) void navigate(href);
   }
 
   function dismissHint(): void {
@@ -720,39 +1009,96 @@ export function mountShell(root: WorldHost): ShellHandle {
     }, 460);
   }
 
-  /* ── Controls ────────────────────────────────────────────────────── */
+  /* ── Interaction ─────────────────────────────────────────────────── */
+
   const cleanups: (() => void)[] = [];
 
+  interface Gesture {
+    id: number;
+    x: number;
+    y: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    captured: boolean;
+    type: string;
+  }
+
   /*
-   * Interaction: the world is the interface, so dragging it and zooming it
-   * are always available. One pointer orbits, two pinch to zoom, the wheel
-   * zooms. Pointer capture means a drag that leaves the stage keeps working.
+   * Gestures belong to the canvas, not to the whole stage: a press that
+   * starts on a caption, a link, a form field or the reading surface is that
+   * control's business. A press becomes a drag only once it has travelled far
+   * enough to be unambiguous, and only then is the pointer captured — so a
+   * tap can never be mistaken for a drag, and a drag that leaves the canvas
+   * keeps working.
    */
   function wireInteraction(): void {
-    if (stageEl.dataset.wired === '1') return;
-    stageEl.dataset.wired = '1';
+    if (canvasEl.dataset.wired === '1') return;
+    canvasEl.dataset.wired = '1';
 
-    const active = new Map<number, { x: number; y: number }>();
+    const pointers = new Map<number, Gesture>();
     let pinchDistance = 0;
+    let suppressClick = false;
+
+    const capture = (gesture: Gesture, element: HTMLElement) => {
+      if (gesture.captured) return;
+      try {
+        element.setPointerCapture(gesture.id);
+        gesture.captured = true;
+      } catch {
+        /* The pointer is already gone; the gesture simply ends with it. */
+      }
+    };
 
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 && event.pointerType === 'mouse') return;
-      active.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      stageEl.setPointerCapture(event.pointerId);
-      stageEl.dataset.dragging = 'true';
-      if (active.size === 2) pinchDistance = twoPointerDistance(active);
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (isInteractiveTarget(event.target)) return;
+      if (currentMode() !== 'world') return;
+
+      pointers.set(event.pointerId, {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        startX: event.clientX,
+        startY: event.clientY,
+        moved: false,
+        captured: false,
+        type: event.pointerType,
+      });
+
+      if (pointers.size >= 2) {
+        /* A second finger is a pinch from the outset. */
+        for (const gesture of pointers.values()) {
+          gesture.moved = true;
+          capture(gesture, canvasEl);
+        }
+        canvasEl.dataset.dragging = 'true';
+        pinchDistance = twoPointerDistance(pointers);
+      }
       dismissHint();
     };
 
     const onPointerMove = (event: PointerEvent) => {
-      const previous = active.get(event.pointerId);
-      if (!previous) return;
-      const dx = event.clientX - previous.x;
-      const dy = event.clientY - previous.y;
-      active.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const gesture = pointers.get(event.pointerId);
+      if (!gesture) return;
+      const dx = event.clientX - gesture.x;
+      const dy = event.clientY - gesture.y;
+      gesture.x = event.clientX;
+      gesture.y = event.clientY;
 
-      if (active.size >= 2) {
-        const next = twoPointerDistance(active);
+      if (!gesture.moved) {
+        const travelled = Math.hypot(
+          event.clientX - gesture.startX,
+          event.clientY - gesture.startY,
+        );
+        if (travelled < DRAG_THRESHOLD) return;
+        gesture.moved = true;
+        capture(gesture, canvasEl);
+        canvasEl.dataset.dragging = 'true';
+      }
+
+      if (pointers.size >= 2) {
+        const next = twoPointerDistance(pointers);
         if (pinchDistance > 0 && next > 0) rig.zoomBy((next - pinchDistance) / pinchDistance);
         pinchDistance = next;
         return;
@@ -761,57 +1107,183 @@ export function mountShell(root: WorldHost): ShellHandle {
     };
 
     const endPointer = (event: PointerEvent) => {
-      active.delete(event.pointerId);
-      if (active.size < 2) pinchDistance = 0;
-      if (active.size === 0) stageEl.dataset.dragging = 'false';
+      const gesture = pointers.get(event.pointerId);
+      if (!gesture) return;
+      pointers.delete(event.pointerId);
+      if (gesture.captured) {
+        try {
+          canvasEl.releasePointerCapture(event.pointerId);
+        } catch {
+          /* already released */
+        }
+      }
+      if (pointers.size < 2) pinchDistance = 0;
+      if (pointers.size === 0) canvasEl.dataset.dragging = 'false';
+
+      if (gesture.moved) {
+        /*
+         * A real drag: the click the browser is about to synthesise is not a
+         * selection, so it is swallowed once.
+         */
+        suppressClick = true;
+        window.setTimeout(() => {
+          suppressClick = false;
+        }, 0);
+        return;
+      }
+      if (event.type === 'pointerup' && pointers.size === 0) {
+        handleTap(event.clientX, event.clientY);
+      }
+    };
+
+    const onClickCapture = (event: MouseEvent) => {
+      if (!suppressClick) return;
+      suppressClick = false;
+      event.preventDefault();
+      event.stopPropagation();
     };
 
     const onWheel = (event: WheelEvent) => {
       if (currentMode() !== 'world') return;
+      if (isInteractiveTarget(event.target)) return;
       /* Line and page deltas normalise to roughly one notch. */
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
       rig.zoomBy(THREE.MathUtils.clamp((event.deltaY * unit) / 600, -0.4, 0.4));
       dismissHint();
     };
 
-    const onDoubleClick = () => {
+    const onDoubleClick = (event: MouseEvent) => {
+      if (isInteractiveTarget(event.target)) return;
       rig.resetOrbit();
     };
 
-    stageEl.addEventListener('pointerdown', onPointerDown);
-    stageEl.addEventListener('pointermove', onPointerMove);
-    stageEl.addEventListener('pointerup', endPointer);
-    stageEl.addEventListener('pointercancel', endPointer);
-    stageEl.addEventListener('pointerleave', endPointer);
-    stageEl.addEventListener('wheel', onWheel, { passive: true });
-    stageEl.addEventListener('dblclick', onDoubleClick);
+    canvasEl.addEventListener('pointerdown', onPointerDown);
+    canvasEl.addEventListener('pointermove', onPointerMove);
+    canvasEl.addEventListener('pointerup', endPointer);
+    canvasEl.addEventListener('pointercancel', endPointer);
+    canvasEl.addEventListener('lostpointercapture', endPointer);
+    canvasEl.addEventListener('click', onClickCapture, true);
+    canvasEl.addEventListener('wheel', onWheel, { passive: true });
+    canvasEl.addEventListener('dblclick', onDoubleClick);
     cleanups.push(() => {
-      stageEl.removeEventListener('pointerdown', onPointerDown);
-      stageEl.removeEventListener('pointermove', onPointerMove);
-      stageEl.removeEventListener('pointerup', endPointer);
-      stageEl.removeEventListener('pointercancel', endPointer);
-      stageEl.removeEventListener('pointerleave', endPointer);
-      stageEl.removeEventListener('wheel', onWheel);
-      stageEl.removeEventListener('dblclick', onDoubleClick);
+      canvasEl.removeEventListener('pointerdown', onPointerDown);
+      canvasEl.removeEventListener('pointermove', onPointerMove);
+      canvasEl.removeEventListener('pointerup', endPointer);
+      canvasEl.removeEventListener('pointercancel', endPointer);
+      canvasEl.removeEventListener('lostpointercapture', endPointer);
+      canvasEl.removeEventListener('click', onClickCapture, true);
+      canvasEl.removeEventListener('wheel', onWheel);
+      canvasEl.removeEventListener('dblclick', onDoubleClick);
+      delete canvasEl.dataset.wired;
     });
   }
 
   /** Mean separation of two active pointers, for pinch zoom. */
-  function twoPointerDistance(points: Map<number, { x: number; y: number }>): number {
+  function twoPointerDistance(points: Map<number, Gesture>): number {
     const [a, b] = [...points.values()];
     if (!a || !b) return 0;
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
-  const onKeydown = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape' || currentMode() !== 'world') return;
-    if (reading) {
-      /* Escape leaves the document, exactly like the Back control. */
-      window.location.href = '/';
+  /** The visible caption under a point, if any. */
+  function hotspotAt(x: number, y: number): HTMLElement | null {
+    for (const link of hotspots.values()) {
+      if (link.dataset.visible !== 'true') continue;
+      const rect = link.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return link;
     }
-  };
+    return null;
+  }
+
+  /** What the world object under a point stands for. */
+  function pickAt(x: number, y: number): THREE.Object3D | null {
+    const rect = canvasEl.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const ndc = new THREE.Vector2(
+      ((x - rect.left) / rect.width) * 2 - 1,
+      -((y - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(ndc, rig.camera);
+    raycaster.far = Infinity;
+    const hits = raycaster.intersectObjects(world.pickTargets(), false);
+    return hits[0]?.object ?? null;
+  }
+
+  /**
+   * A tap that never became a drag. What the visitor can see wins: a caption
+   * under the finger is activated exactly as if it had been pressed, and
+   * otherwise the scene itself answers.
+   *
+   * The light switch is checked first, in screen space. It is a small object
+   * standing among much larger destination hit-volumes, and a ray through it
+   * can legitimately pass through a building's forgiving pick cylinder first —
+   * a visitor aiming at a visible switch should get the switch.
+   */
+  function handleTap(x: number, y: number): void {
+    if (currentMode() !== 'world') return;
+
+    if (world.lightSwitch && occluded.get('switch:lights') !== true) {
+      const projected = world.lightSwitch.pick.position.clone().project(rig.camera);
+      if (projected.z < 1) {
+        const width = stageEl.clientWidth;
+        const height = stageEl.clientHeight;
+        const sx = (projected.x * 0.5 + 0.5) * width;
+        const sy = (-projected.y * 0.5 + 0.5) * height;
+        if (Math.hypot(x - sx, y - sy) <= SWITCH_TAP_RADIUS) {
+          toggleTheme({ animate: true });
+          return;
+        }
+      }
+    }
+
+    const caption = hotspotAt(x, y);
+    if (caption) {
+      caption.click();
+      return;
+    }
+    const hit = pickAt(x, y);
+    if (!hit) return;
+
+    if (world.lightSwitch && hit === world.lightSwitch.pick) {
+      toggleTheme({ animate: true });
+      return;
+    }
+    for (const [id, node] of world.places) {
+      if (hit !== node.pick) continue;
+      if (id !== focusPlace) travelTo(id);
+      return;
+    }
+    for (const marker of world.objectMarkers) {
+      if (hit !== marker.pick) continue;
+      const link = hotspots.get(`object:${marker.kind}:${marker.id}`);
+      link?.click();
+      return;
+    }
+  }
+
+  function onKeydown(event: KeyboardEvent): void {
+    if (currentMode() !== 'world') return;
+    if (event.key !== 'Escape') return;
+    if (!reading) return;
+    /* Escape leaves the document exactly like the close control: no reload. */
+    event.preventDefault();
+    closeDocument();
+  }
+
+  function onCloseClick(event: MouseEvent): void {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (!target.closest('[data-surface-close]')) return;
+    event.preventDefault();
+    closeDocument();
+  }
+
   document.addEventListener('keydown', onKeydown);
-  cleanups.push(() => document.removeEventListener('keydown', onKeydown));
+  document.addEventListener('click', onCloseClick);
+  cleanups.push(() => {
+    document.removeEventListener('keydown', onKeydown);
+    document.removeEventListener('click', onCloseClick);
+  });
 
   /* ── Loop ────────────────────────────────────────────────────────── */
   let frameHandle = 0;
@@ -821,7 +1293,7 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   function syncLoop(): void {
     const shouldRun =
-      !disposed && onScreen && currentMode() === 'world' && stageEl.clientHeight > 0;
+      !disposed && onScreen && !contextLost && currentMode() === 'world' && stageEl.clientHeight > 0;
     if (shouldRun && !running) {
       running = true;
       last = performance.now();
@@ -833,7 +1305,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   }
 
   function renderOnce(): void {
-    if (currentMode() !== 'world') return;
+    if (currentMode() !== 'world' || contextLost) return;
     atmosphere.follow(rig.camera);
     renderer.render(scene, rig.camera);
     projectHotspots();
@@ -850,6 +1322,8 @@ export function mountShell(root: WorldHost): ShellHandle {
 
     rig.update(delta);
     world.update(clock, step);
+    /* The day/night blend runs on real time, so it finishes while reading. */
+    advanceTheme(delta);
     atmosphere.follow(rig.camera);
     renderer.render(scene, rig.camera);
 
@@ -898,16 +1372,36 @@ export function mountShell(root: WorldHost): ShellHandle {
   window.addEventListener('scroll', onScroll, { passive: true });
   cleanups.push(() => window.removeEventListener('scroll', onScroll));
 
+  /* Motion preference can change mid-session. */
+  let stopMotionQuery: () => void = () => {};
+  if (typeof window.matchMedia === 'function') {
+    try {
+      const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+      const onChange = () => {
+        reducedMotion = media.matches;
+        ambientAllowed = !reducedMotion && !isAmbientPaused();
+        rig.setReducedMotion(reducedMotion);
+        settings = settingsFor(tier, ambientAllowed);
+        materials.setQuality(settings);
+        atmosphere.setQuality(settings);
+        world.setQuality(settings);
+      };
+      media.addEventListener('change', onChange);
+      stopMotionQuery = () => media.removeEventListener('change', onChange);
+    } catch {
+      /* older engines: the boot value stands */
+    }
+  }
+  cleanups.push(() => stopMotionQuery());
+
   /* ── Navigation events ───────────────────────────────────────────── */
   const onAfterSwap = () => {
     restoreDocumentState();
-    wireInteraction();
     applyState();
     syncLoop();
   };
   const onPageLoad = () => {
     restoreDocumentState();
-    wireInteraction();
     applyState();
     syncLoop();
   };
@@ -918,7 +1412,97 @@ export function mountShell(root: WorldHost): ShellHandle {
     document.removeEventListener('astro:page-load', onPageLoad);
   });
 
+  /* ── Context loss ────────────────────────────────────────────────── */
+  /*
+   * three.js handles a lost-and-restored context itself: on restore it
+   * re-initialises its GL state and re-uploads resources lazily, so the
+   * correct recovery is to stop drawing, say what happened, and resume the
+   * same renderer. Rebuilding would mean a second renderer and a second
+   * scene, which is exactly what must not happen.
+   */
+  const onContextLost = (event: Event) => {
+    if (disposed || contextLost) return;
+    /* Allowing the default is what keeps the context restorable. */
+    event.preventDefault();
+    contextLost = true;
+    running = false;
+    window.cancelAnimationFrame(frameHandle);
+    root.dataset.worldState = 'error';
+    failStartup(
+      'The graphics context was lost — this usually happens when the device reclaims GPU memory. It will recover on its own if the browser restores it, or you can try again.',
+    );
+  };
+  const onContextRestored = () => {
+    if (disposed) return;
+    contextLost = false;
+    root.dataset.worldState = 'ready';
+    hideWorldAlert();
+    /* Give the restored context a moment before the first frame. */
+    window.setTimeout(() => {
+      if (disposed || contextLost) return;
+      last = performance.now();
+      syncLoop();
+      renderOnce();
+    }, 60);
+  };
+  canvasEl.addEventListener('webglcontextlost', onContextLost, false);
+  canvasEl.addEventListener('webglcontextrestored', onContextRestored, false);
+  cleanups.push(() => {
+    canvasEl.removeEventListener('webglcontextlost', onContextLost);
+    canvasEl.removeEventListener('webglcontextrestored', onContextRestored);
+  });
+
   /* ── Ready ───────────────────────────────────────────────────────── */
+  /*
+   * A small, read-only view of the live world. It exists for verification and
+   * for support ("where is the camera?"), and it never mutates anything.
+   */
+  (window as unknown as { __worldDebug?: () => unknown }).__worldDebug = () => {
+    const anchor = world.lightSwitch?.anchor;
+    const pick = world.lightSwitch?.pick;
+    const projected = anchor ? anchor.clone().project(rig.camera) : null;
+    const pickProjected = pick ? pick.position.clone().project(rig.camera) : null;
+    const width = stageEl.clientWidth;
+    const height = stageEl.clientHeight;
+    const toScreen = (point: THREE.Vector3 | null) =>
+      point
+        ? {
+            x: (point.x * 0.5 + 0.5) * width,
+            y: (-point.y * 0.5 + 0.5) * height,
+            onScreen: point.z < 1,
+          }
+        : null;
+    return {
+      destination: focusPlace,
+      surface: state.surface,
+      reading,
+      theme: theme.name,
+      ambient: ambientAllowed,
+      orbit: rig.orbitState,
+      /** Which caption opened the current document, if any. */
+      openedFrom: lastOpenedKey,
+      /** Where the switch's caption sits. */
+      switchScreen: toScreen(projected),
+      /** Where the switch's body is — the point a tap resolves against. */
+      switchPick: toScreen(pickProjected),
+    };
+  };
+
+  /* The same resolution a tap uses, exposed for diagnostics. */
+  (window as unknown as { __worldProbe?: (x: number, y: number) => string | null }).__worldProbe = (
+    x: number,
+    y: number,
+  ) => {
+    const hit = pickAt(x, y);
+    if (!hit) return null;
+    if (world.lightSwitch && hit === world.lightSwitch.pick) return 'light-switch';
+    for (const [id, node] of world.places) if (hit === node.pick) return `place:${id}`;
+    for (const marker of world.objectMarkers) {
+      if (hit === marker.pick) return `object:${marker.kind}:${marker.id}`;
+    }
+    return hit.name || hit.type;
+  };
+
   root.dataset.worldState = 'ready';
   const stats = world.stats();
   root.dataset.triangles = String(stats.triangles);
@@ -939,7 +1523,7 @@ export function mountShell(root: WorldHost): ShellHandle {
       hintTimer = window.setTimeout(dismissHint, 7000);
     }, 1400);
   }
-  root.addEventListener('pointerdown', dismissHint, { once: true });
+  stageEl.addEventListener('pointerdown', dismissHint, { once: true, passive: true });
 
   resize();
   wireInteraction();
@@ -947,7 +1531,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   renderOnce();
   syncLoop();
 
-  return {
+  const handle: ShellHandle = {
     applyState,
     dispose() {
       if (disposed) return;
@@ -958,16 +1542,57 @@ export function mountShell(root: WorldHost): ShellHandle {
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       stopThemes();
+      stopAmbient();
       for (const cleanup of cleanups) cleanup();
       world.dispose();
       materials.dispose();
       atmosphere.dispose();
       scene.clear();
       renderer.dispose();
-      renderer.forceContextLoss();
+      /* The context is already gone when this runs after a loss event. */
+      if (!contextLost) renderer.forceContextLoss();
     },
   };
+
+  return handle;
 }
+
+/**
+ * Dispose the current mount and build a fresh one.
+ *
+ * The canvas is replaced rather than reused: a canvas only ever hands back the
+ * context it already has, and after an explicit teardown that context is gone.
+ * A new canvas is the only reliable way to get a new one, and it keeps the
+ * "one renderer" rule true — the old one is disposed before the new one
+ * exists.
+ */
+function rebuild(): void {
+  const root = document.querySelector<WorldHost>('[data-world]');
+  if (!root) return;
+  const existing = root[MOUNT_KEY];
+  if (existing) {
+    existing.handle.dispose();
+    delete root[MOUNT_KEY];
+  }
+  const canvas = root.querySelector<HTMLCanvasElement>('[data-world-canvas]');
+  if (canvas) {
+    const fresh = document.createElement('canvas');
+    fresh.className = canvas.className;
+    fresh.width = canvas.width;
+    fresh.height = canvas.height;
+    for (const name of ['role', 'aria-label']) {
+      const value = canvas.getAttribute(name);
+      if (value) fresh.setAttribute(name, value);
+    }
+    fresh.setAttribute('data-world-canvas', '');
+    canvas.replaceWith(fresh);
+  }
+  bootstrapShell();
+}
+
+/* ── Boot ────────────────────────────────────────────────────────────── */
+
+let retryBound = false;
 
 /**
  * Boot the shell once per page load. With the ClientRouter the world element
@@ -977,17 +1602,50 @@ export function mountShell(root: WorldHost): ShellHandle {
 export function bootstrapShell(): void {
   if (typeof document === 'undefined') return;
   restoreDocumentState();
+
+  if (!retryBound) {
+    retryBound = true;
+    document.addEventListener(RETRY_EVENT, () => {
+      /* Retry is an explicit act: dispose the failed attempt, including its
+         canvas, and build a fresh one. */
+      rebuild();
+    });
+  }
+
   const root = document.querySelector<WorldHost>('[data-world]');
   if (!root) return;
 
-  if (currentMode() !== 'world') return;
-
   const existing = root[MOUNT_KEY];
-  if (existing) {
+  if (existing && !existing.lost) {
     existing.handle.applyState();
     return;
   }
-  root[MOUNT_KEY] = { handle: mountShell(root) };
+  if (existing) {
+    existing.handle.dispose();
+    delete root[MOUNT_KEY];
+  }
+
+  if (!webglAvailable()) {
+    root.dataset.worldState = 'error';
+    failStartup(
+      'This browser cannot create a WebGL context, which the interactive world needs.',
+    );
+    return;
+  }
+
+  /* The probe in the head decided this; if it disagreed with reality, the
+     world is what is actually available, so correct it. */
+  document.documentElement.dataset.mode = 'world';
+  root.dataset.worldState = 'loading';
+  try {
+    const handle = mountShell(root);
+    root[MOUNT_KEY] = { handle, lost: false };
+    hideWorldAlert();
+  } catch (error) {
+    root.dataset.worldState = 'error';
+    const message = error instanceof Error ? error.message : String(error);
+    failStartup(`The renderer could not start (${message}).`);
+  }
 }
 
 export { webglAvailable as supportsWebgl };

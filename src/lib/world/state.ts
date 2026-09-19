@@ -53,25 +53,85 @@ export function readState(root: ParentNode = document): WorldState {
 }
 
 /**
- * Surfaces that are documents to read. The campus welcome card and the 404
- * notice are landing views, so the world keeps breathing behind them.
+ * Surfaces that are index views: a place's list of its own objects. They are
+ * places rather than documents, so opening and closing one is travel.
  */
-const DOCUMENTS: ReadonlySet<SurfaceKind> = new Set<SurfaceKind>([
-  'cv',
-  'about',
+const INDEX_SURFACES: ReadonlySet<SurfaceKind> = new Set<SurfaceKind>([
   'projects',
-  'project',
   'articles',
-  'article',
   'repos',
-  'contact',
-  'thanks',
 ]);
 
-/** True when a document is open, so the shell settles the scene. */
+/**
+ * True when a reading surface is open and therefore covers part of the world:
+ * the scene settles and the camera composes for the space left over.
+ */
 export function isReading(state: WorldState): boolean {
-  return DOCUMENTS.has(state.surface);
+  return state.surface !== 'none';
 }
+
+/**
+ * True when a specific document is open — the CV, the biography, one article,
+ * one case study, the contact card. Those are what "close" returns from, so
+ * they are what the return view is captured for.
+ */
+export function isDocument(state: WorldState): boolean {
+  return state.surface !== 'none' && !INDEX_SURFACES.has(state.surface);
+}
+
+/* ── The return view ─────────────────────────────────────────────────── */
+
+const RETURN_KEY = 'world:return';
+
+/** Where the visitor was when they opened a document, and how they were looking. */
+export interface ReturnView {
+  /** Path they came from, so the close control can point at it. */
+  href: string;
+  destination: DestinationId;
+  surface: SurfaceKind;
+  focusPlace: DestinationId;
+  azimuth: number;
+  polar: number;
+  zoom: number;
+}
+
+export function readReturnView(): ReturnView | null {
+  try {
+    const raw = sessionStorage.getItem(RETURN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ReturnView>;
+    if (typeof parsed?.href !== 'string') return null;
+    return {
+      href: parsed.href,
+      destination: isDestinationId(parsed.destination) ? parsed.destination : 'campus',
+      surface: isSurfaceKind(parsed.surface) ? (parsed.surface as SurfaceKind) : 'none',
+      focusPlace: isDestinationId(parsed.focusPlace) ? parsed.focusPlace : 'campus',
+      azimuth: Number(parsed.azimuth) || 0,
+      polar: Number(parsed.polar) || 0,
+      zoom: Number(parsed.zoom) || 1,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function writeReturnView(view: ReturnView): void {
+  try {
+    sessionStorage.setItem(RETURN_KEY, JSON.stringify(view));
+  } catch {
+    /* storage unavailable — close falls back to the archive link */
+  }
+}
+
+export function clearReturnView(): void {
+  try {
+    sessionStorage.removeItem(RETURN_KEY);
+  } catch {
+    /* nothing to do */
+  }
+}
+
+/** Human-readable label for the location readout. */
 
 export function readModePreference(): WorldMode | null {
   try {

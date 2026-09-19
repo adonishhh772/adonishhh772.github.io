@@ -36,6 +36,13 @@ export interface TravelOptions {
   immediate?: boolean;
 }
 
+/** How far the visitor has looked around from the composed shot. */
+export interface OrbitState {
+  azimuth: number;
+  polar: number;
+  zoom: number;
+}
+
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
 
@@ -147,6 +154,36 @@ export class CameraRig {
     this.targetAzimuth = 0;
     this.targetPolar = 0;
     this.targetZoom = 1;
+  }
+
+  /** The visitor's current look-around, for restoring a previous view. */
+  get orbitState(): OrbitState {
+    return {
+      azimuth: this.targetAzimuth,
+      polar: this.targetPolar,
+      zoom: this.targetZoom,
+    };
+  }
+
+  /**
+   * Restore a look-around. Both the live and the target values are set, so a
+   * restored view does not drift back to where the camera happened to be.
+   */
+  setOrbitState(state: Partial<OrbitState> | null | undefined): void {
+    if (!state) return;
+    if (typeof state.azimuth === 'number') {
+      this.orbitAzimuth = state.azimuth;
+      this.targetAzimuth = state.azimuth;
+    }
+    if (typeof state.polar === 'number') {
+      this.orbitPolar = state.polar;
+      this.targetPolar = state.polar;
+    }
+    if (typeof state.zoom === 'number') {
+      this.zoom = THREE.MathUtils.clamp(state.zoom, ZOOM_MIN, ZOOM_MAX);
+      this.targetZoom = this.zoom;
+    }
+    this.apply();
   }
 
   update(delta: number): void {

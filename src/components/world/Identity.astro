@@ -136,19 +136,28 @@ import { site, hero } from '../../site.config';
     font-size: clamp(0.95rem, 1.2vw, 1.1rem);
   }
 
-  /* Phones: keep it, but out of the way of the scene and the sheet. */
+  /* Phones: keep it, but clear of the control bar above and the sheet below. */
   @media (max-width: 860px) {
     :global(html[data-mode='world']) .world-identity {
-      left: 1rem;
-      right: 1rem;
+      left: calc(0.9rem + env(safe-area-inset-left, 0px));
+      right: calc(0.9rem + env(safe-area-inset-right, 0px));
       bottom: auto;
-      top: 0.9rem;
+      top: calc(4.1rem + env(safe-area-inset-top, 0px));
       width: auto;
+      max-width: none;
     }
 
     :global(html[data-mode='world']) .identity-lead,
     :global(html[data-mode='world']) .identity-currently {
       display: none;
+    }
+
+    :global(html[data-mode='world']) .identity-name {
+      font-size: 1.2rem;
+    }
+
+    :global(html[data-mode='world']) .identity-headline {
+      font-size: 0.92rem;
     }
   }
 

@@ -54,7 +54,13 @@ const description = `Get in touch with ${site.name} — email, contact form or s
       <div>
         {
           hasForm ? (
-            <form class="card contact-form" id="contact-form" method="post" action={contact.formEndpoint}>
+            <form
+              class="card contact-form"
+              id="contact-form"
+              data-contact-form
+              method="post"
+              action={contact.formEndpoint}
+            >
               <span class="kicker kicker--plain">Send a message</span>
               <input type="hidden" name="access_key" value={contact.formAccessKey} />
               <input type="hidden" name="subject" value="New message from adonishhh772.github.io" />
@@ -89,7 +95,13 @@ const description = `Get in touch with ${site.name} — email, contact form or s
                 ></textarea>
               </div>
               <button class="btn btn--primary" type="submit">Send message</button>
-              <p class="form-status" id="contact-status" role="status" aria-live="polite">
+              <p
+                class="form-status"
+                id="contact-status"
+                data-form-status
+                role="status"
+                aria-live="polite"
+              >
                 Goes straight to my inbox — I usually reply within a day or two.
               </p>
             </form>
@@ -114,53 +126,12 @@ const description = `Get in touch with ${site.name} — email, contact form or s
         }
 
         {
-          hasForm && (
-            <script is:inline>
-              (function () {
-                var form = document.getElementById('contact-form');
-                var status = document.getElementById('contact-status');
-                if (!form || !status) return;
-
-                form.addEventListener('submit', function (event) {
-                  event.preventDefault();
-                  var button = form.querySelector('button[type="submit"]');
-                  if (button) button.disabled = true;
-                  status.textContent = 'Sending…';
-
-                  fetch(form.action, {
-                    method: 'POST',
-                    body: new FormData(form),
-                    headers: { Accept: 'application/json' },
-                  })
-                    .then(function (res) {
-                      return res.json().catch(function () {
-                        return {};
-                      });
-                    })
-                    .then(function (data) {
-                      if (data && data.success) {
-                        form.reset();
-                        status.textContent =
-                          'Thanks — your message is on its way. I’ll reply to your email soon.';
-                        status.classList.add('form-status--ok');
-                      } else {
-                        status.textContent =
-                          'Something went wrong sending that. Please email abdabastola97@gmail.com instead.';
-                        status.classList.add('form-status--error');
-                      }
-                    })
-                    .catch(function () {
-                      status.textContent =
-                        'Network problem — please email abdabastola97@gmail.com instead.';
-                      status.classList.add('form-status--error');
-                    })
-                    .finally(function () {
-                      if (button) button.disabled = false;
-                    });
-                });
-              })();
-            </script>
-          )
+          /*
+            Submission, validation and status reporting are handled by the
+            delegated controller in src/lib/world/page-controls.ts, so the
+            form keeps working after a client-side navigation — which a script
+            bound at parse time does not.
+          */
         }
       </div>
 

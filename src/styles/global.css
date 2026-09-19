@@ -214,8 +214,38 @@
   color-scheme: light;
 }
 
-/* ── 02. Reset & base ──────────────────────────────────────────────── */
+/* ── Changing the light ────────────────────────────────────────────── */
 
+/*
+  The 3D environment blends its own colours over ~700ms. The interface has to
+  change with it rather than snapping, so for exactly as long as the change is
+  happening the surfaces that carry colour transition too. The attribute is
+  written by src/lib/world/theme-state.ts, which also removes it afterwards —
+  a permanent transition on every element would make hovering feel soft-edged.
+
+  Reduced motion shortens all of this to nothing through the block in section
+  14, so the state still applies immediately.
+*/
+html[data-theme-anim='true'] body,
+html[data-theme-anim='true'] .site-header,
+html[data-theme-anim='true'] .surface-host,
+html[data-theme-anim='true'] .surface-bar,
+html[data-theme-anim='true'] .card,
+html[data-theme-anim='true'] .world-hotspot,
+html[data-theme-anim='true'] .world-status,
+html[data-theme-anim='true'] .world-hint,
+html[data-theme-anim='true'] .signup-input,
+html[data-theme-anim='true'] .site-footer,
+html[data-theme-anim='true'] .world-identity,
+html[data-theme-anim='true'] .chip,
+html[data-theme-anim='true'] .btn,
+html[data-theme-anim='true'] .prose pre,
+html[data-theme-anim='true'] .prose code {
+  transition: background-color 700ms var(--ease-out), color 700ms var(--ease-out),
+    border-color 700ms var(--ease-out), box-shadow 700ms var(--ease-out);
+}
+
+/* ── 02. Reset & base ──────────────────────────────────────────────── */
 *,
 *::before,
 *::after {
@@ -1016,16 +1046,29 @@ html[data-mode='world'] body {
   z-index: 0;
 }
 
-/* The stage is grabbable: dragging it is how you look around. */
+/* The stage is grabbable: dragging it is how you look around.
+
+   `touch-action` is decided deliberately in one place. The stage and the
+   canvas own every touch gesture — orbit and pinch are the only way to look
+   around, and the page behind them never scrolls in world mode. Captions
+   opt back into normal tapping, and the reading surface (a separate element
+   above the stage) keeps native scrolling of its own. */
 .world-stage {
   cursor: grab;
-  touch-action: none;
   position: absolute;
   inset: 0;
   overflow: hidden;
   background: var(--world-fog);
-  /* Full-viewport: the world must not swallow page gestures. */
-  touch-action: pan-y;
+  touch-action: none;
+}
+
+.world-canvas {
+  touch-action: none;
+}
+
+.world-hotspots,
+.world-hotspot {
+  touch-action: manipulation;
 }
 
 .world-poster,
@@ -1239,6 +1282,39 @@ html[data-mode='world'] body {
   padding-left: 0.25rem;
 }
 
+/*
+  Phones: the pills are the taps, so they stay 44px tall but must be narrow
+  enough that several can share a portrait screen without overlapping — which
+  is the difference between seeing three destinations and seeing one.
+*/
+@media (max-width: 560px) {
+  .world-hotspot {
+    gap: 0.35rem;
+    padding: 0.15rem 0.6rem 0.15rem 0.25rem;
+    font-size: 0.74rem;
+  }
+
+  .world-hotspot-mark {
+    width: 22px;
+    height: 22px;
+  }
+
+  .world-hotspot-name,
+  .world-hotspot--object .world-hotspot-name {
+    max-width: 8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .world-hotspot--switch .world-hotspot-name {
+    max-width: 6rem;
+  }
+
+  .world-hotspot-meta {
+    display: none;
+  }
+}
+
 /* Reading a document settles the scenery. */
 .world[data-world-reading='true'] .world-hint {
   display: none;
@@ -1305,11 +1381,51 @@ html[data-mode='world'] .simple-only {
 .surface-bar {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 0.6rem 0.9rem;
   flex-wrap: wrap;
   margin-bottom: clamp(1.1rem, 2.6vw, 1.9rem);
   padding-bottom: 0.85rem;
   border-bottom: 1px solid var(--hairline);
+}
+
+/*
+  The bar is the one part of a reading surface that must never scroll away:
+  close, the archive and the location readout stay reachable wherever the
+  visitor has read to.
+*/
+html[data-mode='world'] .surface-bar {
+  position: sticky;
+  top: calc(-1 * clamp(1.6rem, 3vw, 2.6rem));
+  z-index: 2;
+  margin-inline: calc(-1 * clamp(1.1rem, 2.4vw, 2.4rem));
+  padding: 0.6rem clamp(1.1rem, 2.4vw, 2.4rem) 0.7rem;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.surface-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  margin-left: auto;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+}
+
+.surface-close:hover,
+.surface-close:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
 }
 
 .surface-back {
@@ -1348,18 +1464,8 @@ html[data-mode='world'] .simple-only {
 }
 
 /* Phone: the world keeps the top of the screen, the document takes the
-   bottom, and the dock moves out of the document's way. */
+   bottom, and the chrome moves out of the document's way. */
 @media (max-width: 860px) {
-
-  html[data-mode='world'] body:not([data-surface='none']) .dock {
-    top: 0;
-    bottom: auto;
-    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-    border-bottom: 1px solid var(--hairline-strong);
-    padding-bottom: 0;
-    padding-top: env(safe-area-inset-top, 0px);
-  }
-
   html[data-mode='world'] .surface-host {
     top: auto;
     bottom: 0;
@@ -1371,6 +1477,41 @@ html[data-mode='world'] .simple-only {
     border-top: 1px solid var(--hairline-strong);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     padding: 1rem 1.1rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(1.1rem + env(safe-area-inset-left, 0px));
+    padding-right: calc(1.1rem + env(safe-area-inset-right, 0px));
+  }
+
+  html[data-mode='world'] .surface-bar {
+    top: -1rem;
+    margin-inline: -1.1rem;
+    padding: 0.55rem 1.1rem 0.6rem;
+  }
+
+  .surface-close-label {
+    display: none;
+  }
+
+  .surface-close {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* A drag handle, so the sheet reads as something you can push away. */
+  html[data-mode='world'] .surface-host::before {
+    content: '';
+    display: block;
+    width: 42px;
+    height: 4px;
+    margin: -0.55rem auto 0.7rem;
+    border-radius: 999px;
+    background: var(--hairline-strong);
+  }
+
+  /* The identity caption yields to the sheet: the top strip is the world. */
+  html[data-mode='world'] body:not([data-surface='none']) .world-identity {
+    display: none;
   }
 
   .world-hint {
@@ -1380,6 +1521,13 @@ html[data-mode='world'] .simple-only {
     max-width: calc(100vw - 2rem);
     white-space: normal;
     text-align: center;
+  }
+}
+
+/* Landscape phones: the sheet gets shorter so the world stays usable. */
+@media (max-width: 860px) and (orientation: landscape) {
+  html[data-mode='world'] .surface-host {
+    height: min(70vh, 26rem);
   }
 }
 
@@ -2601,6 +2749,7 @@ html[data-mode='world'] .surface-frame .lead-rail {
   .site-footer,
   .skip-link,
   .world,
+  .world-chrome,
   .cv-toc,
   .page-head-actions {
     display: none !important;
@@ -2609,6 +2758,36 @@ html[data-mode='world'] .surface-frame .lead-rail {
   body {
     background: #fff !important;
     color: #000 !important;
+  }
+
+  /*
+    In world mode the document lives in a fixed, internally scrolling panel.
+    Printing that as-is would emit only the visible slice, so the panel is
+    unwound into an ordinary flowing document for the printed page.
+  */
+  html[data-mode='world'] body {
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  html[data-mode='world'] .surface-host,
+  html[data-mode='world'] .surface-host[hidden] {
+    position: static !important;
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    animation: none !important;
+  }
+
+  .surface-bar,
+  .surface-close,
+  .surface-back {
+    display: none !important;
   }
 
   .has-reveal [data-reveal] {

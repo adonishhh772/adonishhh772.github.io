@@ -21,6 +21,7 @@ import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import Icon from '../components/Icon.astro';
 import WorldShell from '../components/world/WorldShell.astro';
+import WorldChrome from '../components/world/WorldChrome.astro';
 import Identity from '../components/world/Identity.astro';
 import { destinationMeta, type DestinationId, type SurfaceKind } from '../lib/world/destinations';
 import { surfaceLabel } from '../lib/world/state';
@@ -194,6 +195,7 @@ const hasSurface = surface !== 'none';
 
     <Header />
     <WorldShell />
+    <WorldChrome />
     {destination === 'campus' && !hasSurface && <Identity />}
 
     <main
@@ -208,13 +210,28 @@ const hasSurface = surface !== 'none';
             <div class="surface-bar">
               <a class="surface-back" href={rootUrl(backHref)} data-surface-back>
                 <Icon name="arrow-right" size={14} />
-                Back
+                {surface === 'article' || surface === 'project' ? 'Archive' : 'Back'}
               </a>
               <p class="surface-where mono">
                 <span>{place.name}</span>
                 <span aria-hidden="true">·</span>
                 <span>{surfaceLabel(surface)}</span>
               </p>
+              {/*
+                The close control leaves the document and puts the visitor
+                back where they were standing, without reloading anything.
+                Its target is set by the shell from the recorded view.
+              */}
+              <button
+                class="surface-close"
+                type="button"
+                data-surface-close
+                aria-label="Close and return to the previous view"
+                title="Close"
+              >
+                <Icon name="close" size={15} />
+                <span class="surface-close-label">Close</span>
+              </button>
             </div>
             <slot />
           </div>
@@ -227,35 +244,16 @@ const hasSurface = surface !== 'none';
 
     <Footer />
 
-    {/* Subtle scroll reveal — only for the readable pages. */}
-    <script is:inline>
-      (function () {
-        var reduce =
-          window.matchMedia &&
-          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (reduce || !('IntersectionObserver' in window)) return;
-
-        var items = document.querySelectorAll('[data-reveal]');
-        if (!items.length) return;
-
-        document.documentElement.classList.add('has-reveal');
-
-        var observer = new IntersectionObserver(
-          function (entries) {
-            entries.forEach(function (entry) {
-              if (entry.isIntersecting) {
-                entry.target.classList.add('is-visible');
-                observer.unobserve(entry.target);
-              }
-            });
-          },
-          { rootMargin: '0px 0px -6% 0px', threshold: 0.08 }
-        );
-
-        items.forEach(function (el) {
-          observer.observe(el);
-        });
-      })();
+    {/*
+      Page controls are installed through one bundled module rather than
+      per-page inline scripts: the client router only ever executes an inline
+      script once per session, so a script that binds on load goes silent
+      after the first navigation. This module delegates and re-initialises on
+      every `astro:page-load`, with per-element guards against double binding.
+    */}
+    <script>
+      import { watchPageControls } from '../lib/world/page-controls';
+      watchPageControls();
     </script>
   </body>
 </html>

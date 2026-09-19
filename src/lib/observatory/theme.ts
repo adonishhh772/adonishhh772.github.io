@@ -64,6 +64,12 @@ export interface Palette {
 
 export interface WorldTheme extends Palette {
   name: ThemeName;
+  /**
+   * 0 at night, 1 in daylight. Carried as a number rather than derived from
+   * `name` so a day/night change can be blended frame by frame instead of
+   * snapping at the halfway point.
+   */
+  dayness: number;
   /** Overall renderer exposure. */
   exposure: number;
   /** Exponential fog density. */
@@ -82,7 +88,7 @@ export interface WorldTheme extends Palette {
 
 const NUMERICS: Record<
   ThemeName,
-  Omit<WorldTheme, keyof Palette | 'name'>
+  Omit<WorldTheme, keyof Palette | 'name' | 'dayness'>
 > = {
   dark: {
     exposure: 1.05,
@@ -156,10 +162,71 @@ export function readWorldTheme(name: ThemeName = currentThemeName()): WorldTheme
 
   return {
     name,
+    dayness: name === 'light' ? 1 : 0,
     ...palette,
     ...numeric,
     exposure: Number.isFinite(exposureToken) && exposureToken > 0 ? exposureToken : numeric.exposure,
   };
+}
+
+/* ── Blending ────────────────────────────────────────────────────────── */
+
+const PALETTE_KEYS: (keyof Palette)[] = [
+  'skyTop',
+  'skyHorizon',
+  'fog',
+  'mist',
+  'stone',
+  'stoneDeep',
+  'ceramic',
+  'metal',
+  'grass',
+  'key',
+  'practical',
+  'signal',
+];
+
+const NUMERIC_KEYS: (keyof Omit<WorldTheme, keyof Palette | 'name'>)[] = [
+  'dayness',
+  'exposure',
+  'fogDensity',
+  'hemi',
+  'keyIntensity',
+  'practicalIntensity',
+  'emissive',
+  'environmentIntensity',
+];
+
+function mixChannel(a: number, b: number, t: number): number {
+  return Math.round(a + (b - a) * t);
+}
+
+/** Blend two 0xRRGGBB colours channel by channel. */
+export function mixColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff;
+  const ag = (a >> 8) & 0xff;
+  const ab = a & 0xff;
+  const br = (b >> 16) & 0xff;
+  const bg = (b >> 8) & 0xff;
+  const bb = b & 0xff;
+  return (mixChannel(ar, br, t) << 16) | (mixChannel(ag, bg, t) << 8) | mixChannel(ab, bb, t);
+}
+
+/**
+ * An intermediate theme. Written into `out` when one is supplied so a
+ * transition allocates nothing per frame.
+ */
+export function blendTheme(
+  from: WorldTheme,
+  to: WorldTheme,
+  t: number,
+  out?: WorldTheme,
+): WorldTheme {
+  const target = out ?? ({} as WorldTheme);
+  for (const key of PALETTE_KEYS) target[key] = mixColor(from[key], to[key], t);
+  for (const key of NUMERIC_KEYS) target[key] = from[key] + (to[key] - from[key]) * t;
+  target.name = t < 0.5 ? from.name : to.name;
+  return target;
 }
 
 /**

@@ -40,48 +40,8 @@ const format = (n: number) => n.toLocaleString('en-GB');
   </div>
 </section>
 
-<script is:inline>
-  (function () {
-    var values = document.querySelectorAll('[data-count-to]');
-    if (!values.length) return;
-
-    var reduce =
-      window.matchMedia &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce || !('IntersectionObserver' in window)) return; // keep final numbers
-
-    function animate(el) {
-      var target = Number(el.getAttribute('data-count-to'));
-      var suffix = el.getAttribute('data-suffix') || '';
-      var duration = 900;
-      var start = null;
-
-      function frame(now) {
-        if (start === null) start = now;
-        var progress = Math.min((now - start) / duration, 1);
-        var eased = 1 - Math.pow(1 - progress, 3);
-        el.textContent = Math.round(target * eased).toLocaleString('en-GB') + suffix;
-        if (progress < 1) requestAnimationFrame(frame);
-      }
-
-      el.textContent = '0' + suffix;
-      requestAnimationFrame(frame);
-    }
-
-    var observer = new IntersectionObserver(
-      function (entries) {
-        entries.forEach(function (entry) {
-          if (entry.isIntersecting) {
-            animate(entry.target);
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.4 }
-    );
-
-    values.forEach(function (el) {
-      observer.observe(el);
-    });
-  })();
-</script>
+{/*
+  The count-up is driven by the delegated controller in
+  src/lib/world/page-controls.ts. The final numbers are in the markup, so a
+  visitor with no JavaScript or reduced motion simply reads them.
+*/}
