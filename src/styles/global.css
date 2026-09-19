@@ -1320,6 +1320,60 @@ html[data-mode='world'] body {
   height: 22px;
 }
 
+/*
+  Compact captions: the icon alone.
+  When the camera pulls back, the full pills crowd each other out. Rather than
+  dropping destinations, each one that cannot fit becomes its marker — a 44px
+  circle that still names the place on hover, on focus and to a screen reader.
+*/
+.world-hotspot[data-compact='true'].world-hotspot--place,
+.world-hotspot[data-compact='true'].world-hotspot--object {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.world-hotspot[data-compact='true'] .world-hotspot-name,
+.world-hotspot[data-compact='true'] .world-hotspot-meta {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.world-hotspot[data-compact='true'] .world-hotspot-mark {
+  width: 40px;
+  height: 40px;
+  border-color: var(--hairline-strong);
+  background: color-mix(in srgb, var(--bg-raised) 80%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  transition: transform var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out);
+}
+
+.world-hotspot[data-compact='true'] .world-hotspot-mark svg {
+  width: 20px;
+  height: 20px;
+}
+
+.world-hotspot[data-compact='true']:hover .world-hotspot-mark,
+.world-hotspot[data-compact='true']:focus-visible .world-hotspot-mark {
+  transform: scale(1.1);
+  border-color: var(--accent-line);
+}
+
 .world-hotspot--object .world-hotspot-mark {
   border-color: var(--signal-line);
   background: var(--signal-soft);

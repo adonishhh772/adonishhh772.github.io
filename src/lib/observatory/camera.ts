@@ -225,6 +225,11 @@ export class CameraRig {
     this.camera.updateProjectionMatrix();
   }
 
+  /** The point the camera is currently looking at. */
+  get focus(): THREE.Vector3 {
+    return this.base.target.clone();
+  }
+
   /** True while the camera is still moving between shots. */
   get travelling(): boolean {
     return this.duration > 0 && this.travel < 1;

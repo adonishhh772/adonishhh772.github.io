@@ -446,68 +446,117 @@ export class ObservatoryWorld {
 
   /* ── Island ────────────────────────────────────────────────────────── */
 
+  /**
+   * The island's silhouette, split at the lip of the cliff.
+   *
+   * Two profiles rather than one, because the island is two materials: a pale
+   * stone plateau and a darker rock keel under it. The seam is the same ring
+   * of vertices in both, and both are cut with the same seed, so they meet
+   * exactly.
+   */
+  private static readonly ISLAND_PLATEAU: [number, number][] = [
+    [0, GROUND],
+    [3.6, GROUND],
+    [8, GROUND - 0.002],
+    [11.2, GROUND - 0.012],
+    [12.5, GROUND - 0.1],
+    [13.2, GROUND - 0.38],
+    [13.6, GROUND - 0.8],
+    [13.7, GROUND - 1.5],
+  ];
+
+  private static readonly ISLAND_KEEL: [number, number][] = [
+    [13.7, GROUND - 1.5],
+    [13.3, -2.6],
+    [11.9, -4],
+    [9.9, -5.5],
+    [7.4, -7],
+    [4.6, -8.2],
+    [2.2, -9],
+    [0.5, -9.5],
+    [0, -9.6],
+  ];
+
+  /** The cliff's radius at a given height, interpolated from the profile. */
+  private cliffRadiusAt(y: number): number {
+    const profile = [...ObservatoryWorld.ISLAND_PLATEAU, ...ObservatoryWorld.ISLAND_KEEL];
+    for (let i = 0; i < profile.length - 1; i++) {
+      const [r0, y0] = profile[i];
+      const [r1, y1] = profile[i + 1];
+      if (y <= y0 && y >= y1) {
+        const t = y0 === y1 ? 0 : (y0 - y) / (y0 - y1);
+        return r0 + (r1 - r0) * t;
+      }
+    }
+    return 0;
+  }
+
   private buildIsland(): void {
-    const geometry = lathe(
-      [
-        [0, GROUND],
-        [3.6, GROUND],
-        [8, GROUND - 0.002],
-        [11.2, GROUND - 0.012],
-        [12.5, GROUND - 0.1],
-        [13.2, GROUND - 0.38],
-        [13.6, GROUND - 0.8],
-        [13.7, GROUND - 1.5],
-        [13.3, -2.6],
-        [11.9, -4],
-        [9.9, -5.5],
-        [7.4, -7],
-        [4.6, -8.2],
-        [2.2, -9],
-        [0.5, -9.5],
-        [0, -9.6],
-      ],
-      64,
-    );
-    sculptIsland(geometry, { flatAbove: GROUND - 0.4, strength: 0.42, seed: 11 });
-    const island = this.mesh(geometry, this.materials.stone, this.group, 'island', {
+    const sculpt = { flatAbove: GROUND - 0.4, strength: 0.18, seed: 11, sectors: 11 };
+
+    const plateauGeometry = lathe(ObservatoryWorld.ISLAND_PLATEAU, 64);
+    sculptIsland(plateauGeometry, sculpt);
+    const plateau = this.mesh(plateauGeometry, this.materials.stone, this.group, 'island', {
       cast: false,
       receive: true,
       occluder: true,
     });
-    island.frustumCulled = false;
+    plateau.frustumCulled = false;
 
     /*
-     * The cliff is built as strata, not scattered rubble: three sizes of
-     * chiselled boulder, each band set deeper than the last and sunk into the
-     * rock face so the island reads as broken stone rather than an object
-     * with pebbles floating beside it.
+     * The keel is a darker rock, and it is the whole underside: the earlier
+     * island was one pale material all the way down, so from a low angle the
+     * thing read as a float with stones glued beneath its rim.
+     */
+    const keelGeometry = lathe(ObservatoryWorld.ISLAND_KEEL, 64);
+    sculptIsland(keelGeometry, sculpt);
+    const keel = this.mesh(keelGeometry, this.materials.keel, this.group, 'island-keel', {
+      cast: false,
+      receive: true,
+      occluder: true,
+    });
+    keel.frustumCulled = false;
+
+    /*
+     * Broken stone along the lip of the cliff.
+     *
+     * One band, at the rim, bedded *in* so the boulders emerge from the face
+     * rather than hanging beneath it — the deeper bands of the first version
+     * drifted out of the narrowing silhouette and read as mushrooms floating
+     * under the island. Only the vertical axis is turned, which keeps every
+     * stone tangent to the rim.
      */
     if (this.quality.detail) {
       const random = mulberry32(31);
       const matrix = new THREE.Matrix4();
+      const outward = new THREE.Vector3();
       const bands = [
-        { count: 9, geometry: boulderGeometry(7, 0.72), radius: [10.0, 11.4], y: [-1.35, -2.5], scale: [0.85, 0.5] },
-        { count: 8, geometry: boulderGeometry(19, 0.66), radius: [11.0, 12.6], y: [-2.6, -4.2], scale: [1.2, 0.7] },
-        { count: 7, geometry: boulderGeometry(41, 0.8), radius: [11.6, 13.2], y: [-4.0, -5.8], scale: [1.5, 0.9] },
+        { count: 14, geometry: boulderGeometry(7, 0.62), y: -1.05, scale: [0.55, 0.85] },
+        { count: 11, geometry: boulderGeometry(19, 0.58), y: -1.85, scale: [0.75, 1.15] },
       ];
       for (const band of bands) {
         const matrices: THREE.Matrix4[] = [];
+        const radius = this.cliffRadiusAt(band.y);
+        if (radius <= 0.5) continue;
         for (let i = 0; i < band.count; i++) {
-          const angle = (i / band.count) * Math.PI * 2 + random() * 0.7;
-          const radius = THREE.MathUtils.lerp(band.radius[0], band.radius[1], random());
-          const y = THREE.MathUtils.lerp(band.y[0], band.y[1], random());
-          /* Sunk by most of its own height, so only the top face shows. */
+          const angle = (i / band.count) * Math.PI * 2 + random() * 0.5;
           const scale = THREE.MathUtils.lerp(band.scale[0], band.scale[1], random());
+          outward.set(Math.cos(angle), 0, Math.sin(angle));
+          /* Bedded in: the centre sits deeper than the face, so the stone
+             emerges from it instead of resting against it. */
+          const radial = Math.max(0.6, radius - scale * 0.6);
           matrix.compose(
-            new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius),
-            new THREE.Quaternion().setFromEuler(
-              new THREE.Euler(random() * 0.7 - 0.35, random() * Math.PI * 2, random() * 0.7 - 0.35),
+            new THREE.Vector3(
+              outward.x * radial,
+              band.y + (random() - 0.5) * 0.25,
+              outward.z * radial,
             ),
-            new THREE.Vector3(scale, scale * 0.85, scale * 1.15),
+            new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -angle),
+            new THREE.Vector3(scale * 1.2, scale * 0.8, scale),
           );
           matrices.push(matrix.clone());
         }
-        const mesh = instancedMesh(band.geometry, this.materials.rock, matrices, 'cliff-strata');
+        const mesh = instancedMesh(band.geometry, this.materials.rock, matrices, 'cliff-ledges');
         mesh.castShadow = false;
         mesh.receiveShadow = true;
         this.group.add(mesh);
@@ -516,38 +565,37 @@ export class ObservatoryWorld {
     }
 
     /*
-     * Outcrops on the plateau itself. Stone occurs in clusters, so these come
-     * in small groups rather than an even scatter — a lone boulder every few
-     * metres reads as debris. Each is sunk by most of its own height, so it
-     * belongs to the ground rather than sitting on it.
+     * Outcrops on the plateau.
+     *
+     * Stone occurs in clusters, and it sits *in* the ground: these are turned
+     * only about the vertical axis — no tilt, which is what made the earlier
+     * ones read as plates leaning on the surface — stretched wider than they
+     * are tall, and sunk by two thirds of their height.
      */
     {
       const random = mulberry32(77);
-      const geometry = this.track(boulderGeometry(53, 0.66));
+      const geometry = this.track(boulderGeometry(53, 0.62));
       const matrices: THREE.Matrix4[] = [];
       const matrix = new THREE.Matrix4();
       const clusters = 7;
       for (let cluster = 0; cluster < clusters; cluster++) {
         const angle = (cluster / clusters) * Math.PI * 2 + random() * 0.8;
-        const radius = 7.6 + random() * 3.2;
+        const radius = 7.8 + random() * 3.2;
         const anchorX = Math.cos(angle) * radius;
         const anchorZ = Math.sin(angle) * radius;
         const stones = 1 + Math.floor(random() * 3);
         for (let stone = 0; stone < stones; stone++) {
-          const x = anchorX + (random() - 0.5) * 1.9;
-          const z = anchorZ + (random() - 0.5) * 1.9;
+          const x = anchorX + (random() - 0.5) * 1.8;
+          const z = anchorZ + (random() - 0.5) * 1.8;
           if (this.nearStation(x, z, 2.4)) continue;
-          const scale = 0.42 + random() * 0.72;
+          const scale = 0.5 + random() * 0.6;
           matrix.compose(
-            new THREE.Vector3(x, GROUND - 0.08 - scale * 0.62, z),
-            new THREE.Quaternion().setFromEuler(
-              new THREE.Euler(
-                (random() - 0.5) * 0.3,
-                random() * Math.PI * 2,
-                (random() - 0.5) * 0.3,
-              ),
+            new THREE.Vector3(x, GROUND - 0.06 - scale * 0.66, z),
+            new THREE.Quaternion().setFromAxisAngle(
+              new THREE.Vector3(0, 1, 0),
+              random() * Math.PI * 2,
             ),
-            new THREE.Vector3(scale * 1.15, scale * 0.68, scale),
+            new THREE.Vector3(scale * 1.3, scale * 0.72, scale),
           );
           matrices.push(matrix.clone());
         }

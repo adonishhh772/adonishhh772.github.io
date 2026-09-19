@@ -37,11 +37,27 @@ export function lathe(points: [number, number][], segments = 48): THREE.LatheGeo
  * turned table leg. The plateau stays flat: only material below `flatBelow`
  * moves, and it moves more the deeper it goes.
  */
+/**
+ * Cut the island's cliff.
+ *
+ * The first version displaced the silhouette with a sum of sines, which is
+ * smooth everywhere and therefore reads as a bulge with no authored form —
+ * and, worse, it wobbled the radius by a quarter of its value, so the rim
+ * looked soft from every angle. This cuts instead: the perimeter is divided
+ * into sectors and each sector is pushed out or in by one flat amount, which
+ * produces the long straight edges and hard corners of split stone. The
+ * plateau above `flatAbove` is left exactly flat, and the underside tapers
+ * into a single symmetrical keel rather than a lopsided swirl.
+ */
 export function sculptIsland(
   geometry: THREE.BufferGeometry,
-  options: { flatAbove?: number; strength?: number; seed?: number } = {},
+  options: { flatAbove?: number; strength?: number; seed?: number; sectors?: number } = {},
 ): void {
-  const { flatAbove = 0.4, strength = 0.5, seed = 7 } = options;
+  const { flatAbove = 0.4, strength = 0.5, seed = 7, sectors = 11 } = options;
+  const random = mulberry32(seed);
+  const offsets = new Float32Array(sectors);
+  for (let i = 0; i < sectors; i++) offsets[i] = random() * 2 - 1;
+
   const position = geometry.attributes.position as THREE.BufferAttribute;
   const vector = new THREE.Vector3();
   for (let i = 0; i < position.count; i++) {
@@ -49,16 +65,18 @@ export function sculptIsland(
     const radius = Math.hypot(vector.x, vector.z);
     if (radius < 0.001 || vector.y > flatAbove) continue;
     const angle = Math.atan2(vector.z, vector.x);
-    const depth = Math.min(1, Math.max(0, (flatAbove - vector.y) / 6));
-    const wobble =
-      Math.sin(angle * 3 + seed) * 0.55 +
-      Math.sin(angle * 5.7 - seed * 0.6) * 0.3 +
-      Math.sin(angle * 9.3 + seed * 1.7) * 0.16;
-    const scale = 1 + wobble * strength * depth;
+    const depth = Math.min(1, Math.max(0, (flatAbove - vector.y) / 5));
+    /* Ease the facet in over the top of the cliff, so the rim stays level. */
+    const bite = depth * depth;
+    const sector = Math.min(
+      sectors - 1,
+      Math.max(0, Math.floor(((angle + Math.PI) / (Math.PI * 2)) * sectors)),
+    );
+    const scale = 1 + offsets[sector] * strength * bite;
     vector.x *= scale;
     vector.z *= scale;
-    /* Pull the underside into a slightly asymmetric keel. */
-    vector.y -= depth * depth * 0.5 * Math.cos(angle * 2 + seed);
+    /* One symmetrical keel under the island. */
+    vector.y -= bite * 0.55;
     position.setXYZ(i, vector.x, vector.y, vector.z);
   }
   position.needsUpdate = true;

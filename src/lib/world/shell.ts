@@ -584,9 +584,6 @@ export function mountShell(root: WorldHost): ShellHandle {
     anchor: THREE.Vector3;
     priority: number;
     occluded: boolean;
-    /** Nudges applied when a caption has to step around the sun. */
-    offsetY: number;
-    offsetX: number;
   }
 
   /**
@@ -627,13 +624,11 @@ export function mountShell(root: WorldHost): ShellHandle {
     const atPlace = focusPlace !== 'campus' && Boolean(place);
 
     /*
-     * The sun is the overview's own control, so its caption exists only there
-     * — and it is icon-only, because the body it names is already obvious.
+     * The sun is not captioned. Its own body is the control — large, at the
+     * top of the view, and clickable directly — and a second icon floating
+     * beneath it only competed with it. The labelled switch in the chrome is
+     * the discoverable route for anybody who does not try clicking the sky.
      */
-    if (!atPlace) {
-      const celestial = makeHotspot(CELESTIAL_KEY, '#', '', '', 'celestial');
-      hotspots.set(CELESTIAL_KEY, celestial);
-    }
 
     if (!atPlace) {
       for (const destination of DESTINATIONS) {
@@ -828,6 +823,8 @@ export function mountShell(root: WorldHost): ShellHandle {
     const focused = document.activeElement as HTMLElement | null;
     const projected = new THREE.Vector3();
     const placed: { x: number; y: number; w: number; h: number }[] = [];
+    /** The markers among them, which are allowed to crowd each other. */
+    const markers: { x: number; y: number; w: number; h: number }[] = [];
 
     const candidates: Candidate[] = [];
     for (const [key, link] of hotspots) {
@@ -865,28 +862,44 @@ export function mountShell(root: WorldHost): ShellHandle {
           (key === CELESTIAL_KEY ? 360 : 0) +
           Math.max(0, 60 - distance),
         occluded: isOccluded || offscreen || underPanel,
-        offsetY: 0,
-        offsetX: 0,
       });
     }
 
     candidates.sort((a, b) => b.priority - a.priority);
 
+    /** Where a caption would sit at its current size, in stage pixels. */
+    const boxFor = (link: HTMLElement) => {
+      const anchor = candidateAnchor(link);
+      if (!anchor) return null;
+      const p = anchor.clone().project(rig.camera);
+      const w = link.offsetWidth || 44;
+      const h = link.offsetHeight || 44;
+      return {
+        x: (p.x * 0.5 + 0.5) * width - w / 2,
+        y: (-p.y * 0.5 + 0.5) * height - h / 2,
+        w,
+        h,
+      };
+    };
+
+    const overlapsAny = (box: { x: number; y: number; w: number; h: number }, list: typeof placed) =>
+      list.some(
+        (o) => box.x < o.x + o.w && box.x + box.w > o.x && box.y < o.y + o.h && box.y + box.h > o.y,
+      );
+
     /*
-     * The sun's core is reserved.
-     *
-     * Captions float over the scene and may overlap buildings harmlessly, but a
-     * caption on the sun makes the control unreachable: the visitor presses a
-     * label while aiming at the sun. Rather than dropping a destination label
-     * for it, each one tries a few nudges before giving up.
+     * The sun's core, which a pill must keep off: the body is the control, and
+     * a caption sitting on it means pressing a label while aiming at the sun.
+     * A pill that would cover it is placed as its marker instead — markers are
+     * centred on their own anchor, so they clear it.
      */
-    const reserved: { x: number; y: number; w: number; h: number }[] = [];
+    const sunCore: { x: number; y: number; w: number; h: number }[] = [];
     const celestial = atmosphere.activeCelestialPosition();
     if (celestial) {
       const p = celestial.clone().project(rig.camera);
       if (p.z < 1) {
-        const size = Math.max(60, atmosphere.activeCelestialRadius(rig.camera) * width * 1.6);
-        reserved.push({
+        const size = Math.max(52, atmosphere.activeCelestialRadius(rig.camera) * height * 1.2);
+        sunCore.push({
           x: (p.x * 0.5 + 0.5) * width - size / 2,
           y: (-p.y * 0.5 + 0.5) * height - size / 2,
           w: size,
@@ -895,89 +908,81 @@ export function mountShell(root: WorldHost): ShellHandle {
       }
     }
 
-    const intersects = (
-      a: { x: number; y: number; w: number; h: number },
-      b: { x: number; y: number; w: number; h: number },
-    ) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-
     for (const candidate of candidates) {
-      const isFocused = focused === candidate.link;
-      const w = candidate.link.offsetWidth || 120;
-      const h = candidate.link.offsetHeight || 40;
-      candidate.offsetY = 0;
-      candidate.offsetX = 0;
+      const link = candidate.link;
+      const isFocused = focused === link;
+      link.dataset.compact = 'false';
 
-      if (candidate.occluded) {
-        candidate.link.dataset.visible = 'false';
-        const unreachable = true;
-        candidate.link.setAttribute('aria-hidden', unreachable ? 'true' : 'false');
-        candidate.link.tabIndex = unreachable ? -1 : 0;
+      if (candidate.occluded && !isFocused) {
+        link.dataset.visible = 'false';
+        link.setAttribute('aria-hidden', 'true');
+        link.tabIndex = -1;
         continue;
       }
 
-      const isCelestial = candidate.key === CELESTIAL_KEY;
-      const p = candidate.anchor.clone().project(rig.camera);
-      const box = {
-        x: (p.x * 0.5 + 0.5) * width - w / 2,
-        y: (-p.y * 0.5 + 0.5) * height - h / 2,
-        w,
-        h,
-      };
-      const blocked = (test: { x: number; y: number; w: number; h: number }) =>
-        placed.some((other) => intersects(test, other)) ||
-        (!isCelestial && reserved.some((other) => intersects(test, other)));
+      /*
+       * Captions are placed in two weights.
+       *
+       * A full pill has to have room — it must not touch another pill, another
+       * marker, or the sun — and it has to be within the label budget. When it
+       * cannot, the caption falls back to its marker: a 40px circle centred on
+       * the same anchor. Markers keep off pills but may crowd each other, so
+       * zooming out turns the view into a map of markers instead of quietly
+       * losing destinations.
+       */
+      const compactAll = rig.zoomLevel > 1.28;
+      let compact = false;
+      let box = isFocused ? boxFor(link) : null;
 
-      let chosen = box;
-      let show = true;
-      if (!isFocused && blocked(chosen)) {
-        /* Nudge it out of the way before giving up on it. */
-        let found = false;
-        for (const step of [1, -1, 2, -2, 3, -3]) {
-          const shifted = { ...box, y: box.y + step * (h + 10) };
-          if (!blocked(shifted)) {
-            candidate.offsetY = step * (h + 10);
-            chosen = shifted;
-            found = true;
-            break;
-          }
+      if (!isFocused) {
+        const full = compactAll ? null : boxFor(link);
+        const fitsFull =
+          full !== null &&
+          !overlapsAny(full, placed) &&
+          !overlapsAny(full, markers) &&
+          !overlapsAny(full, sunCore) &&
+          placed.length < labelLimit;
+        if (fitsFull) {
+          box = full;
+        } else if (placed.length + markers.length < labelLimit + 6) {
+          compact = true;
+          const marker = boxFor(link);
+          box = marker && !overlapsAny(marker, placed) ? marker : null;
+        } else {
+          box = null;
         }
-        if (!found) {
-          for (const step of [1, -1, 2, -2]) {
-            const shifted = { ...box, x: box.x + step * (w * 0.55) };
-            if (!blocked(shifted)) {
-              candidate.offsetX = step * (w * 0.55);
-              chosen = shifted;
-              found = true;
-              break;
-            }
-          }
-        }
-        if (!found) show = false;
       }
-      if (show && !isFocused && placed.length >= labelLimit) show = false;
-      if (show) placed.push(chosen);
+      link.dataset.compact = compact ? 'true' : 'false';
 
-      if (show) {
-        const p = candidate.anchor.clone().project(rig.camera);
-        const y = (-p.y * 0.5 + 0.5) * height + candidate.offsetY;
-        /* Keep the whole pill on screen: its own width decides the margin. */
-        const margin = 8;
-        const x = THREE.MathUtils.clamp(
-          (p.x * 0.5 + 0.5) * width + candidate.offsetX,
-          w / 2 + margin,
-          Math.max(w / 2 + margin, width - w / 2 - margin),
-        );
-        candidate.link.dataset.visible = 'true';
-        candidate.link.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
-        candidate.link.setAttribute('aria-hidden', 'false');
-        candidate.link.tabIndex = 0;
-      } else {
-        candidate.link.dataset.visible = 'false';
-        const unreachable = candidate.occluded;
-        candidate.link.setAttribute('aria-hidden', unreachable ? 'true' : 'false');
-        candidate.link.tabIndex = unreachable ? -1 : 0;
+      if (!box) {
+        link.dataset.visible = 'false';
+        link.setAttribute('aria-hidden', 'false');
+        link.tabIndex = 0;
+        continue;
       }
+
+      placed.push(box);
+      if (compact) markers.push(box);
+      /* Keep the whole caption on screen: its own width decides the margin. */
+      const margin = 8;
+      const x = THREE.MathUtils.clamp(
+        box.x + box.w / 2,
+        box.w / 2 + margin,
+        Math.max(box.w / 2 + margin, width - box.w / 2 - margin),
+      );
+      const y = box.y + box.h / 2;
+      link.dataset.visible = 'true';
+      link.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
+      link.setAttribute('aria-hidden', 'false');
+      link.tabIndex = 0;
     }
+  }
+
+  /** The projected anchor a caption belongs to. */
+  function candidateAnchor(link: HTMLElement): THREE.Vector3 | null {
+    const key = link.dataset.worldHotspot;
+    if (!key) return null;
+    return anchorFor(key);
   }
 
   /* ── Camera composition ──────────────────────────────────────────── */
@@ -1313,6 +1318,29 @@ export function mountShell(root: WorldHost): ShellHandle {
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      /*
+       * Over the sun or moon, the cursor says it can be pressed: the body is
+       * the control, and nothing else in the sky is clickable.
+       */
+      if (!pointers.has(event.pointerId) && event.pointerType === 'mouse') {
+        const body = atmosphere.activeCelestialPosition();
+        let over = false;
+        if (body) {
+          const p = body.clone().project(rig.camera);
+          if (p.z < 1) {
+            const rect = canvasEl.getBoundingClientRect();
+            const sx = (p.x * 0.5 + 0.5) * rect.width + rect.left;
+            const sy = (-p.y * 0.5 + 0.5) * rect.height + rect.top;
+            const reach = Math.max(
+              CELESTIAL_TAP_RADIUS,
+              atmosphere.activeCelestialRadius(rig.camera) * rect.height,
+            );
+            over = Math.hypot(event.clientX - sx, event.clientY - sy) <= reach;
+          }
+        }
+        canvasEl.style.cursor = over ? 'pointer' : '';
+      }
+
       const gesture = pointers.get(event.pointerId);
       if (!gesture) return;
       const dx = event.clientX - gesture.x;
@@ -1464,7 +1492,7 @@ export function mountShell(root: WorldHost): ShellHandle {
         const sx = (projected.x * 0.5 + 0.5) * width;
         const sy = (-projected.y * 0.5 + 0.5) * height;
         /* The body is large, so its own on-screen size sets the target. */
-        const reach = Math.max(CELESTIAL_TAP_RADIUS, atmosphere.activeCelestialRadius(rig.camera) * width);
+        const reach = Math.max(CELESTIAL_TAP_RADIUS, atmosphere.activeCelestialRadius(rig.camera) * height);
         if (Math.hypot(x - sx, y - sy) <= reach) {
           toggleTheme({ animate: true });
           return;
@@ -1538,7 +1566,7 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   function renderOnce(): void {
     if (currentMode() !== 'world' || contextLost) return;
-    atmosphere.follow(rig.camera);
+    atmosphere.follow(rig.camera, rig.focus);
     renderer.render(scene, rig.camera);
     projectHotspots();
   }
@@ -1556,7 +1584,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     world.update(clock, step);
     /* The day/night blend runs on real time, so it finishes while reading. */
     advanceTheme(delta);
-    atmosphere.follow(rig.camera);
+    atmosphere.follow(rig.camera, rig.focus);
     renderer.render(scene, rig.camera);
 
     updateOcclusion(delta);
@@ -1740,7 +1768,7 @@ export function mountShell(root: WorldHost): ShellHandle {
        * — as a screen point and the tap radius it deserves.
        */
       celestial: toScreen(projected),
-      celestialRadius: atmosphere.activeCelestialRadius(rig.camera) * width,
+      celestialRadius: atmosphere.activeCelestialRadius(rig.camera) * height,
     };
   };
 

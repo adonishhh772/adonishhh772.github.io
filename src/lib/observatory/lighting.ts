@@ -320,6 +320,8 @@ export class Atmosphere {
   private dayness = 1;
   /** Whether the sky bodies belong to where the visitor is standing. */
   private celestialEnabled = true;
+  /** How visible they are right now, so a faded body is not a tap target. */
+  private celestialOpacity = 1;
   private starOpacity = 0;
   private readonly scratchForward = new THREE.Vector3();
   private readonly scratchUp = new THREE.Vector3();
@@ -524,7 +526,7 @@ export class Atmosphere {
    * and each fades at the foot of its arc, so the change reads as one setting
    * while the other rises.
    */
-  follow(camera: THREE.Camera): void {
+  follow(camera: THREE.Camera, focus?: THREE.Vector3): void {
     this.skyMesh.position.copy(camera.position);
     this.stars.position.copy(camera.position);
 
@@ -551,10 +553,27 @@ export class Atmosphere {
        face, which is what a pill centred on the sun would do. */
     this.captionOffset.copy(up).multiplyScalar(-0.17 * halfHeight * distance);
 
+    /*
+     * Fade with the camera's distance from what it is looking at, and again
+     * when it looks steeply down.
+     *
+     * The bodies are a sky layer, so they draw over the island — right from the
+     * wide shot, wrong when the visitor has zoomed in and the sun lands on the
+     * dome, and wrongest when the camera is directly overhead and the sun
+     * appears to be inside the building. They belong to a wide, level view.
+     */
+    const pitchDown = -forward.y;
+    let range =
+      focus === undefined
+        ? 1
+        : THREE.MathUtils.clamp((camera.position.distanceTo(focus) - 6.6) / 2.8, 0, 1);
+    range *= THREE.MathUtils.clamp((0.8 - pitchDown) / 0.24, 0, 1);
+
     /* Fade at the foot of the arc, so nothing is left sliding across the
        island when it has effectively set. */
-    const sunFade = THREE.MathUtils.clamp((day - 0.08) / CELESTIAL_FADE, 0, 1);
-    const moonFade = THREE.MathUtils.clamp((0.92 - day) / CELESTIAL_FADE, 0, 1);
+    const sunFade = THREE.MathUtils.clamp((day - 0.08) / CELESTIAL_FADE, 0, 1) * range;
+    const moonFade = THREE.MathUtils.clamp((0.92 - day) / CELESTIAL_FADE, 0, 1) * range;
+    this.celestialOpacity = Math.max(sunFade, moonFade);
     this.sunMaterials.disc.opacity = sunFade;
     this.sunMaterials.glow.opacity = 0.34 * sunFade * day;
     this.moonMaterials.disc.opacity = moonFade;
@@ -580,13 +599,14 @@ export class Atmosphere {
   }
 
   /**
-   * Where the body that is currently up can be tapped, in world space. Used by
-   * the world shell for the sun's caption and for a direct tap on it.
+   * Where the body that is currently up can be tapped, in world space. Used
+   * for the direct tap on it. A body that has faded out is not a target.
    */
   activeCelestialPosition(): THREE.Vector3 | null {
-    if (!this.celestialEnabled) return null;
+    if (!this.celestialEnabled || this.celestialOpacity < 0.35) return null;
     const body = this.dayness >= 0.5 ? this.sunBody : this.moonBody;
-    if (!body.visible) return null;    return body.position.clone();
+    if (!body.visible) return null;
+    return body.position.clone();
   }
 
   /** Where the caption for the body that is up should hang. */

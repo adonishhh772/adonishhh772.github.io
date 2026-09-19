@@ -15,6 +15,12 @@ export class Materials {
   readonly stoneDark: THREE.MeshStandardMaterial;
   readonly ceramic: THREE.MeshStandardMaterial;
   readonly rock: THREE.MeshStandardMaterial;
+  /**
+   * The island's underside. The same stone pushed well toward shadow, so the
+   * island reads as a lit plateau over a dark rock keel instead of one pale
+   * mass all the way down.
+   */
+  readonly keel: THREE.MeshStandardMaterial;
   readonly grass: THREE.MeshStandardMaterial;
   readonly foliage: THREE.MeshStandardMaterial;
   /** A lighter crown for the rounded species, so a treeline has depth. */
@@ -56,6 +62,12 @@ export class Materials {
     this.stoneDark = standard(theme.stoneDeep, 0.88, 0.03);
     this.ceramic = standard(theme.ceramic, 0.68, 0.03);
     this.rock = standard(theme.stoneDeep, 0.96, 0.01, { flatShading: true });
+    this.keel = standard(
+      new THREE.Color(theme.stoneDeep).lerp(new THREE.Color(0x0b1020), 0.55).getHex(),
+      0.97,
+      0,
+      { flatShading: true },
+    );
     this.grass = standard(theme.grass, 0.95, 0);
     this.foliage = standard(theme.grass, 0.9, 0, { flatShading: true });
     /* Lifted toward the sky colour so a mixed treeline separates into shape
@@ -135,6 +147,9 @@ export class Materials {
     this.stoneDark.color.setHex(theme.stoneDeep);
     this.ceramic.color.setHex(theme.ceramic);
     this.rock.color.setHex(theme.stoneDeep);
+    this.keel.color
+      .setHex(theme.stoneDeep)
+      .lerp(new THREE.Color(0x0b1020), 0.55);
     this.grass.color.setHex(theme.grass);
     this.foliage.color.setHex(theme.grass);
     this.foliageLight.color

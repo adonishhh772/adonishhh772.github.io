@@ -105,12 +105,18 @@ async function travel(page, href, destination) {
       .find((node) => node.getAttribute('href') === ${JSON.stringify(href)});
     if (link) link.click();
   })()`);
-  await page.waitFor(`document.body.dataset.destination === ${JSON.stringify(destination)}`, {
-    timeout: 20000,
-    label: `${href} → ${destination}`,
-  });
+  /*
+   * Wait for the *shell* to have applied the new page, not just for the
+   * server-rendered attribute to change: that attribute arrives with the
+   * swapped body, while the shell applies state a moment later, and clicking
+   * in between lands on the page that is on its way out.
+   */
+  await page.waitFor(
+    `document.querySelector('[data-world]')?.dataset.focus === ${JSON.stringify(destination)}`,
+    { timeout: 20000, label: `${href} → ${destination}` },
+  );
   await ready(page);
-  await sleep(500);
+  await sleep(600);
 }
 
 const main = async () => {
@@ -367,33 +373,22 @@ const main = async () => {
       return `scene tap: ${before} → ${after}; both controls and storage agree`;
     });
 
-    await check('The sun caption is a labelled, keyboard-operable control', async () => {
+    await check('The sun is its own control, with no caption over it', async () => {
       const info = await page.evaluate(`(() => {
-        const node = document.querySelector('.world-hotspot[data-world-hotspot="celestial:sun"]');
-        if (!node) return null;
+        const caption = document.querySelector('.world-hotspot[data-world-hotspot="celestial:sun"]');
+        const toggle = document.querySelector('[data-world-chrome] [data-theme-toggle]');
         return {
-          pressed: node.getAttribute('aria-pressed'),
-          label: node.getAttribute('aria-label'),
-          name: node.querySelector('.world-hotspot-name')?.textContent?.trim(),
-          icon: node.querySelector('.world-hotspot-mark')?.dataset.worldIcon,
-          tag: node.tagName,
+          caption: caption ? caption.outerHTML.slice(0, 60) : null,
+          toggleLabel: toggle ? toggle.getAttribute('aria-label') : null,
+          togglePressed: toggle ? toggle.getAttribute('aria-pressed') : null,
         };
       })()`);
-      if (!info) throw new Error('no sun caption');
-      if (info.tag !== 'BUTTON') throw new Error(`caption is a ${info.tag}`);
-      if (info.pressed !== 'true' && info.pressed !== 'false') {
-        throw new Error('the caption does not expose its state');
+      if (info.caption) throw new Error(`the sun still has a caption: ${info.caption}`);
+      if (!info.toggleLabel) throw new Error('the chrome has no sun/moon switch');
+      if (info.togglePressed !== 'true' && info.togglePressed !== 'false') {
+        throw new Error('the switch does not expose its state');
       }
-      if (!/(sun|moon)/i.test(info.label ?? '') || !/switch/i.test(info.label ?? '')) {
-        throw new Error(`unhelpful label: ${info.label}`);
-      }
-      if (info.icon !== 'sun' && info.icon !== 'moon') {
-        throw new Error(`the circle shows "${info.icon}" rather than a sun or moon`);
-      }
-      if (info.name) {
-        throw new Error(`the sun caption should be icon-only, but shows "${info.name}"`);
-      }
-      return `${info.icon}-only / pressed=${info.pressed} / "${info.label}"`;
+      return `no caption; chrome switch "${info.toggleLabel}"`;
     });
 
     /* ── 6. Click versus drag ─────────────────────────────────────── */
