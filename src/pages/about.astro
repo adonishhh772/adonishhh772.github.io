@@ -34,15 +34,28 @@ const socialLinks = [
   backHref="/"
 >
   <section class="page-head">
-    <div class="wrap">
-      <span class="kicker">About</span>
-      <h1 class="display display--page" style="margin-top: 0.9rem;">
-        Engineer. Consultant. Builder.
-      </h1>
-      <p class="lede">
-        I’m {site.name} — a Lead AI Engineer at AWTG Ltd in {site.location},
-        building reliable enterprise AI systems end to end.
-      </p>
+    <div class="wrap about-head-inner">
+      <div>
+        <span class="kicker">About</span>
+        <h1 class="display display--page" style="margin-top: 0.9rem;">
+          Engineer. Consultant. Builder.
+        </h1>
+        <p class="lede">
+          I’m {site.name} — a Lead AI Engineer at AWTG Ltd in {site.location},
+          building reliable enterprise AI systems end to end.
+        </p>
+      </div>
+      <figure class="about-portrait">
+        <span class="about-portrait-frame">
+          <img
+            src={rootUrl('/images/abd-bastola-avatar.jpg')}
+            alt={`Portrait of ${site.name}`}
+            width="88"
+            height="88"
+            loading="eager"
+          />
+        </span>
+      </figure>
     </div>
   </section>
 
@@ -120,19 +133,6 @@ const socialLinks = [
       </div>
 
       <aside class="aside" aria-label="Focus and interests">
-        <figure class="about-portrait card">
-          <span class="about-portrait-frame">
-            <img
-              src={rootUrl('/images/abd-bastola.jpg')}
-              alt="Portrait of Abd Bastola"
-              width="800"
-              height="800"
-              loading="lazy"
-            />
-          </span>
-          <figcaption>Abd Bastola · London</figcaption>
-        </figure>
-
         <div class="card aside-card">
           <span class="kicker kicker--plain">Focus areas</span>
           <ul class="focus-list">
@@ -191,18 +191,31 @@ const socialLinks = [
     top: 5.5rem;
   }
 
+  /*
+    The portrait sits at the top of the page and small: in the reading surface
+    the aside below the biography is a long way down, and a large circular
+    image there was the first thing a visitor had to scroll past.
+  */
+  .about-head-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 88px;
+    gap: clamp(1rem, 3vw, 2rem);
+    align-items: start;
+  }
+
   .about-portrait {
     margin: 0;
-    padding: 0.7rem;
+    justify-self: end;
   }
 
   .about-portrait-frame {
     display: block;
-    width: 100%;
-    aspect-ratio: 1 / 1;
+    width: 88px;
+    height: 88px;
     border-radius: 50%;
     overflow: hidden;
-    border: 1px solid var(--hairline);
+    border: 1px solid var(--hairline-strong);
+    box-shadow: 0 0 0 4px var(--accent-soft);
   }
 
   .about-portrait-frame img {
@@ -212,14 +225,15 @@ const socialLinks = [
     object-fit: cover;
   }
 
-  .about-portrait figcaption {
-    margin-top: 0.8rem;
-    font-family: var(--font-mono);
-    font-size: 0.66rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--faint);
-    text-align: center;
+  @media (max-width: 520px) {
+    .about-head-inner {
+      grid-template-columns: minmax(0, 1fr) 64px;
+    }
+
+    .about-portrait-frame {
+      width: 64px;
+      height: 64px;
+    }
   }
 
   .aside-card {

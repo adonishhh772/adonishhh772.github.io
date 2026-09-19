@@ -1,7 +1,6 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import Icon from '../../components/Icon.astro';
-import ProjectDiagram from '../../components/observatory/ProjectDiagram.astro';
 import { rootUrl } from '../../site.config';
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 
@@ -23,12 +22,6 @@ const { data } = project;
 
 /** Section navigation from the case study's own h2 headings. */
 const sections = headings.filter((heading) => heading.depth === 2);
-
-const diagramCaptions: Record<string, string> = {
-  kai: 'Multi-agent RAG: route, retrieve, synthesise, verify — with guardrails and an approval gate.',
-  'education-platform': 'Document structure → schema-validated extraction → knowledge graph → cited answers.',
-  hyperran: 'Demand forecast feeding a policy constrained by a non-negotiable QoS floor.',
-};
 
 const title = `${data.title} — case study`;
 ---
@@ -107,11 +100,6 @@ const title = `${data.title} — case study`;
         }
 
         <div>
-          <ProjectDiagram
-            projectId={project.id}
-            caption={diagramCaptions[project.id] ?? data.tag}
-          />
-
           <div class="prose">
             <Content />
           </div>

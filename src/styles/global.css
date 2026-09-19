@@ -1281,8 +1281,43 @@ html[data-mode='world'] body {
   color: var(--signal);
 }
 
+/*
+  The sun's caption is just its icon: the body it names is already visible, so
+  a word beside it would only be noise. It keeps a full 44px target.
+*/
+.world-hotspot--celestial {
+  padding: 0;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  gap: 0;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .world-hotspot--celestial .world-hotspot-mark {
+  width: 44px;
+  height: 44px;
   color: var(--signal);
+  border-color: var(--signal-line);
+  background: color-mix(in srgb, var(--bg-raised) 74%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  transition: transform var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+}
+
+.world-hotspot--celestial:hover .world-hotspot-mark,
+.world-hotspot--celestial:focus-visible .world-hotspot-mark {
+  transform: scale(1.08);
+  border-color: var(--signal);
+  background: var(--signal-soft);
+}
+
+.world-hotspot--celestial .world-hotspot-mark svg {
+  width: 22px;
+  height: 22px;
 }
 
 .world-hotspot--object .world-hotspot-mark {
@@ -1449,6 +1484,101 @@ html[data-mode='world'] .surface-bar {
   color: var(--accent);
   border-color: var(--accent-line);
   background: var(--accent-soft);
+}
+
+/* ── Content comes alive ───────────────────────────────────────────── */
+
+/*
+  Opening a document cascades its blocks in, and the bar under the reading
+  header fills as the visitor reads. Both are pure CSS driven by two attributes
+  the shell sets — `data-entered` on open, and `--read-progress` on scroll — so
+  nothing animates per frame and nothing runs while the visitor is still.
+
+  Reduced motion voids all of it through the global block in section 14: the
+  content simply appears, and the progress bar still tracks the scroll because
+  it is a transform, not a transition.
+*/
+@keyframes surface-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+html[data-mode='world'] .surface-host[data-entered='true'] .surface-frame > * {
+  animation: surface-item-in 460ms var(--ease-out) both;
+}
+
+html[data-mode='world'] .surface-host[data-entered='true'] .surface-frame > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+html[data-mode='world'] .surface-host[data-entered='true'] .surface-frame > *:nth-child(2) {
+  animation-delay: 55ms;
+}
+
+html[data-mode='world'] .surface-host[data-entered='true'] .surface-frame > *:nth-child(3) {
+  animation-delay: 110ms;
+}
+
+html[data-mode='world'] .surface-host[data-entered='true'] .surface-frame > *:nth-child(4) {
+  animation-delay: 165ms;
+}
+
+html[data-mode='world'] .surface-host[data-entered='true'] .surface-frame > *:nth-child(5) {
+  animation-delay: 220ms;
+}
+
+html[data-mode='world'] .surface-host[data-entered='true'] .surface-frame > *:nth-child(n + 6) {
+  animation-delay: 275ms;
+}
+
+/* The reading bar doubles as a progress rule. */
+html[data-mode='world'] .surface-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  transform: scaleX(var(--read-progress, 0));
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--signal) 100%);
+  pointer-events: none;
+}
+
+/*
+  Prose links get a sweeping rule on hover rather than only a colour change, and
+  chips lift a little: small movements that make a document feel handled.
+*/
+.prose a,
+.link-inline {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 0% 1px;
+  transition: color var(--dur-2) var(--ease-out),
+    background-size var(--dur-3) var(--ease-out);
+}
+
+.prose a:hover,
+.link-inline:hover {
+  background-size: 100% 1px;
+}
+
+.chip {
+  transition: transform var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out), color var(--dur-2) var(--ease-out);
+}
+
+.chip:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-line);
+  color: var(--text-soft);
 }
 
 .surface-back {

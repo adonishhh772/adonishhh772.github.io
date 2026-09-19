@@ -544,10 +544,14 @@ export function mountShell(root: WorldHost): ShellHandle {
     mark.className = 'world-hotspot-mark';
     mark.setAttribute('aria-hidden', 'true');
     paintMark(mark, iconFor(key));
-    const name = document.createElement('span');
-    name.className = 'world-hotspot-name';
-    name.textContent = label;
-    link.append(mark, name);
+    link.append(mark);
+    /* An icon-only caption (the sun) has no label to show. */
+    if (label) {
+      const name = document.createElement('span');
+      name.className = 'world-hotspot-name';
+      name.textContent = label;
+      link.append(name);
+    }
     if (meta) {
       const aside = document.createElement('span');
       aside.className = 'world-hotspot-meta';
@@ -595,6 +599,8 @@ export function mountShell(root: WorldHost): ShellHandle {
     focusPlace = id;
     root.dataset.focus = id;
     world.setPlaceState(id === 'campus' ? null : id);
+    /* The sun and moon belong to the overview, not to every destination. */
+    atmosphere.setCelestialEnabled(id === 'campus');
     if (id !== 'campus' && id !== announced) world.triggerSignal(id);
     announced = id;
     rig.resetOrbit();
@@ -620,10 +626,14 @@ export function mountShell(root: WorldHost): ShellHandle {
     const place = world.places.get(focusPlace);
     const atPlace = focusPlace !== 'campus' && Boolean(place);
 
-    /* The sun belongs to the campus, but it stays a live caption whenever it
-       is on screen: it is how the environment is controlled. */
-    const celestial = makeHotspot(CELESTIAL_KEY, '#', 'Sun', '', 'celestial');
-    hotspots.set(CELESTIAL_KEY, celestial);
+    /*
+     * The sun is the overview's own control, so its caption exists only there
+     * — and it is icon-only, because the body it names is already obvious.
+     */
+    if (!atPlace) {
+      const celestial = makeHotspot(CELESTIAL_KEY, '#', '', '', 'celestial');
+      hotspots.set(CELESTIAL_KEY, celestial);
+    }
 
     if (!atPlace) {
       for (const destination of DESTINATIONS) {
@@ -680,20 +690,20 @@ export function mountShell(root: WorldHost): ShellHandle {
   }
 
   /**
-   * The sun's caption is the live environment: its icon, its name and its
-   * accessible label all follow the shared state, so the caption and the
-   * object it points at always say the same thing.
+   * The sun's caption is icon-only: the body it names is already plain, so it
+   * carries an accessible label and a title instead of a visible word, and the
+   * icon inside the circle is the whole control.
    */
   function updateCelestialHotspot(): void {
     const link = hotspots.get(CELESTIAL_KEY);
     if (!link) return;
     const day = currentTheme() === 'light';
+    const label = day
+      ? 'Sun — switch to night lighting'
+      : 'Moon — switch to daylight';
     link.setAttribute('aria-pressed', day ? 'true' : 'false');
-    link.setAttribute('aria-label', `Sun and moon — currently ${day ? 'daylight' : 'night'}; activate for ${day ? 'night' : 'daylight'}`);
-    const name = link.querySelector<HTMLElement>('.world-hotspot-name');
-    if (name) name.textContent = day ? 'Sun' : 'Moon';
-    const meta = link.querySelector<HTMLElement>('.world-hotspot-meta');
-    if (meta) meta.textContent = day ? 'Daylight' : 'Night';
+    link.setAttribute('aria-label', label);
+    link.setAttribute('title', label);
     const mark = link.querySelector<HTMLElement>('.world-hotspot-mark');
     if (mark) paintMark(mark, day ? 'sun' : 'moon');
   }
@@ -737,12 +747,55 @@ export function mountShell(root: WorldHost): ShellHandle {
     }
     const rect = surface.getBoundingClientRect();
     panelRect = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+    updateReadProgress(surface);
+  }
+
+  /**
+   * How far through the document the visitor has read, for the rule under the
+   * reading header.
+   *
+   * Written from the frame clock rather than only from a scroll listener:
+   * `scroll` does not propagate, momentum scrolling fires it in bursts, and a
+   * panel that is replaced while scrolled would otherwise never report. The
+   * write is skipped unless the value actually moved.
+   */
+  let lastProgress = -1;
+  function updateReadProgress(surface: HTMLElement): void {
+    const scrollable = surface.scrollHeight - surface.clientHeight;
+    const progress = scrollable > 8 ? THREE.MathUtils.clamp(surface.scrollTop / scrollable, 0, 1) : 0;
+    if (Math.abs(progress - lastProgress) < 0.004) return;
+    lastProgress = progress;
+    surface.style.setProperty('--read-progress', progress.toFixed(4));
+  }
+
+  /**
+   * Cascade the blocks of a freshly opened document in.
+   *
+   * The attribute is set, then cleared once the animation has run, so the same
+   * document re-animates the next time it is opened rather than only once per
+   * session.
+   */
+  let enterTimer = 0;
+  function markPanelEntered(): void {
+    const surface = document.querySelector<HTMLElement>('[data-surface-panel]:not([hidden])');
+    if (!surface) return;
+    window.clearTimeout(enterTimer);
+    surface.dataset.entered = 'true';
+    enterTimer = window.setTimeout(() => {
+      if (!disposed) delete surface.dataset.entered;
+    }, 900);
   }
 
   function updateOcclusion(delta: number): void {
     occlusionClock -= delta;
     if (occlusionClock > 0) return;
     occlusionClock = 0.15;
+    /* The reading rule is refreshed on the same slow clock as the occlusion
+       pass, so a frame never costs an extra layout read. */
+    if (reading) {
+      const surface = document.querySelector<HTMLElement>('[data-surface-panel]:not([hidden])');
+      if (surface) updateReadProgress(surface);
+    }
     occluders.length = 0;
     occluders.push(...world.occluders());
     const origin = rig.camera.position;
@@ -1089,6 +1142,8 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (state.surface === 'none') focusPlace = 'campus';
 
     world.setPlaceState(focusPlace === 'campus' ? null : focusPlace);
+    /* The sun and moon belong to the overview, not to every destination. */
+    atmosphere.setCelestialEnabled(focusPlace === 'campus');
     rebuildHotspots();
     measurePanel();
     compose(
@@ -1109,7 +1164,11 @@ export function mountShell(root: WorldHost): ShellHandle {
       else panel.setAttribute('hidden', '');
     });
 
-    /* The panel was just swapped in: re-measure before composing the shot. */
+    /*
+     * The panel was just swapped in: wire its own scroll (it is a scrolling
+     * box of its own) and re-measure before composing the shot.
+     */
+    wirePanelScroll();
     if (reading) measurePanel();
     syncChromeLocation();
     syncCloseControl();
@@ -1137,6 +1196,7 @@ export function mountShell(root: WorldHost): ShellHandle {
       } else {
         document.querySelector<HTMLElement>('[data-surface-close]')?.focus({ preventScroll: true });
       }
+      markPanelEntered();
     } else if (closedDocument) {
       const caption = lastOpenedKey ? hotspots.get(lastOpenedKey) : null;
       if (caption) caption.focus({ preventScroll: true });
@@ -1540,9 +1600,25 @@ export function mountShell(root: WorldHost): ShellHandle {
   document.addEventListener('visibilitychange', onVisibility);
   cleanups.push(() => document.removeEventListener('visibilitychange', onVisibility));
 
-  const onScroll = () => measurePanel();
-  window.addEventListener('scroll', onScroll, { passive: true });
-  cleanups.push(() => window.removeEventListener('scroll', onScroll));
+  /*
+   * The reading surface is its own scrolling box, and `scroll` does not
+   * propagate at all — not even through the capture phase — so the listener
+   * has to sit on the panel itself. Each navigation brings a fresh panel, so
+   * the wiring is keyed on the element and the old one goes with its page.
+   */
+  function wirePanelScroll(): void {
+    document.querySelectorAll<HTMLElement>('[data-surface-panel]').forEach((panel) => {
+      if (panel.dataset.scrollWired === '1') return;
+      panel.dataset.scrollWired = '1';
+      panel.addEventListener('scroll', measurePanel, { passive: true });
+    });
+  }
+  cleanups.push(() => {
+    document.querySelectorAll<HTMLElement>('[data-surface-panel]').forEach((panel) => {
+      panel.removeEventListener('scroll', measurePanel);
+      delete panel.dataset.scrollWired;
+    });
+  });
 
   /* Motion preference can change mid-session. */
   let stopMotionQuery: () => void = () => {};

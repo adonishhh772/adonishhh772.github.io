@@ -318,6 +318,8 @@ export class Atmosphere {
   private readonly hazeTexture: THREE.Texture;
   /** 0 at night, 1 in daylight — what positions the bodies. */
   private dayness = 1;
+  /** Whether the sky bodies belong to where the visitor is standing. */
+  private celestialEnabled = true;
   private starOpacity = 0;
   private readonly scratchForward = new THREE.Vector3();
   private readonly scratchUp = new THREE.Vector3();
@@ -557,8 +559,8 @@ export class Atmosphere {
     this.sunMaterials.glow.opacity = 0.34 * sunFade * day;
     this.moonMaterials.disc.opacity = moonFade;
     this.moonMaterials.glow.opacity = 0.24 * moonFade * (1 - day);
-    this.sunBody.visible = sunFade > 0.01;
-    this.moonBody.visible = moonFade > 0.01;
+    this.sunBody.visible = this.celestialEnabled && sunFade > 0.01;
+    this.moonBody.visible = this.celestialEnabled && moonFade > 0.01;
 
     if (this.starOpacity > 0.01 && this.quality.ambient) {
       const twinkle = 0.9 + Math.sin(performance.now() * 0.0011) * 0.1;
@@ -567,10 +569,22 @@ export class Atmosphere {
   }
 
   /**
+   * Show or hide the sky bodies.
+   *
+   * They belong to the campus: at a destination the frame is filled with the
+   * building and its objects, and a sun hanging over the roof is decoration
+   * where there should be none.
+   */
+  setCelestialEnabled(enabled: boolean): void {
+    this.celestialEnabled = enabled;
+  }
+
+  /**
    * Where the body that is currently up can be tapped, in world space. Used by
    * the world shell for the sun's caption and for a direct tap on it.
    */
   activeCelestialPosition(): THREE.Vector3 | null {
+    if (!this.celestialEnabled) return null;
     const body = this.dayness >= 0.5 ? this.sunBody : this.moonBody;
     if (!body.visible) return null;    return body.position.clone();
   }

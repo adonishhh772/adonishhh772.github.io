@@ -2,7 +2,6 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Icon from '../components/Icon.astro';
 import MiniProjectCard from '../components/MiniProjectCard.astro';
-import ProjectDiagram from '../components/observatory/ProjectDiagram.astro';
 import { site, social, rootUrl } from '../site.config';
 import { githubProjects, type GithubProject } from '../data/github-projects';
 import { getCollection, type CollectionEntry } from 'astro:content';
@@ -27,12 +26,6 @@ const projectsById = new Map(allProjects.map((p) => [p.id, p]));
 const projects = projectOrder
   .map((id) => projectsById.get(id))
   .filter((p): p is CollectionEntry<'projects'> => Boolean(p));
-
-const diagramCaptions: Record<string, string> = {
-  kai: 'Multi-agent RAG: route, retrieve, synthesise, verify — with guardrails and an approval gate.',
-  'education-platform': 'Document structure → schema-validated extraction → knowledge graph → cited answers.',
-  hyperran: 'Demand forecast feeding a policy constrained by a non-negotiable QoS floor.',
-};
 
 const title = 'Work — Selected projects';
 ---
@@ -110,11 +103,6 @@ const title = 'Work — Selected projects';
                   <a href={rootUrl(`/work/${project.id}/`)}>{project.data.title}</a>
                 </h2>
                 <p class="project-summary">{project.data.summary}</p>
-
-                <ProjectDiagram
-                  projectId={project.id}
-                  caption={diagramCaptions[project.id] ?? project.data.tag}
-                />
 
                 <ul class="chips" aria-label={`${project.data.shortTitle} themes`}>
                   {project.data.themes.map((theme) => (

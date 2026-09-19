@@ -2,7 +2,6 @@
 // Elegant project card used on the home page selected-work grid and /work.
 import type { CollectionEntry } from 'astro:content';
 import Icon from './Icon.astro';
-import ProjectDiagram from './observatory/ProjectDiagram.astro';
 import { rootUrl } from '../site.config';
 
 interface Props {
@@ -16,13 +15,6 @@ interface Props {
 const { project, index, delay = 0 } = Astro.props;
 const { data } = project;
 const href = rootUrl(`/work/${project.id}/`);
-
-/** Short caption for the architecture sketch, drawn from the case study. */
-const diagramCaptions: Record<string, string> = {
-  kai: 'Multi-agent RAG: route, retrieve, synthesise, verify — with guardrails and an approval gate.',
-  'education-platform': 'Document structure → schema-validated extraction → knowledge graph → cited answers.',
-  hyperran: 'Demand forecast feeding a policy constrained by a non-negotiable QoS floor.',
-};
 ---
 
 <article
@@ -39,11 +31,6 @@ const diagramCaptions: Record<string, string> = {
   <h3 class="h3-title">
     <a href={href} class="project-title-link">{data.title}</a>
   </h3>
-
-  <ProjectDiagram
-    projectId={project.id}
-    caption={diagramCaptions[project.id] ?? data.tag}
-  />
 
   <p class="project-summary">{data.summary}</p>
 

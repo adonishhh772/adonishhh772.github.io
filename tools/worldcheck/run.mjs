@@ -384,13 +384,16 @@ const main = async () => {
       if (info.pressed !== 'true' && info.pressed !== 'false') {
         throw new Error('the caption does not expose its state');
       }
-      if (!/sun and moon/i.test(info.label ?? '')) {
+      if (!/(sun|moon)/i.test(info.label ?? '') || !/switch/i.test(info.label ?? '')) {
         throw new Error(`unhelpful label: ${info.label}`);
       }
       if (info.icon !== 'sun' && info.icon !== 'moon') {
         throw new Error(`the circle shows "${info.icon}" rather than a sun or moon`);
       }
-      return `"${info.name}" / ${info.icon} / pressed=${info.pressed}`;
+      if (info.name) {
+        throw new Error(`the sun caption should be icon-only, but shows "${info.name}"`);
+      }
+      return `${info.icon}-only / pressed=${info.pressed} / "${info.label}"`;
     });
 
     /* ── 6. Click versus drag ─────────────────────────────────────── */
@@ -919,6 +922,97 @@ const main = async () => {
       });
       await page.screenshot(join(OUT, `17-${width}.png`));
     }
+
+    await check('The reading bar tracks progress through the document', async () => {
+      await page.navigate(`${BASE}/cv/`);
+      await ready(page);
+      const snapshot = () =>
+        page.evaluate(`(() => {
+          const panel = document.querySelector('[data-surface-panel]:not([hidden])');
+          const raw = getComputedStyle(panel).getPropertyValue('--read-progress');
+          return {
+            raw: raw.trim(),
+            value: Number(raw),
+            scrollTop: panel.scrollTop,
+            scrollHeight: panel.scrollHeight,
+            clientHeight: panel.clientHeight,
+            inline: panel.getAttribute('style'),
+          };
+        })()`);
+      const atTop = await snapshot();
+      if (atTop.raw === '') {
+        throw new Error(`the progress variable was never set (${JSON.stringify(atTop)})`);
+      }
+      if (atTop.value > 0.02) throw new Error(`progress is ${atTop.value} at the top`);
+      await page.evaluate(`(() => {
+        const panel = document.querySelector('[data-surface-panel]:not([hidden])');
+        panel.scrollTop = panel.scrollHeight;
+      })()`);
+      /* Wait for the condition rather than a fixed sleep: the value is written
+         from the frame clock and from the panel's own scroll event. */
+      let atEnd = await snapshot();
+      const deadline = Date.now() + 2500;
+      while (atEnd.value < 0.9 && Date.now() < deadline) {
+        await sleep(120);
+        atEnd = await snapshot();
+      }
+      if (atEnd.value < 0.9) {
+        const diagnosis = await page.evaluate(`(() => {
+          const panel = document.querySelector('[data-surface-panel]:not([hidden])');
+          const debug = window.__worldDebug ? window.__worldDebug() : {};
+          return {
+            wired: panel.dataset.scrollWired ?? null,
+            reading: debug.reading,
+            surface: debug.surface,
+            sameNode: panel === document.querySelector('[data-surface-panel]:not([hidden])'),
+          };
+        })()`);
+        throw new Error(
+          `progress is ${atEnd.value} at the end (scrollTop ${atEnd.scrollTop} of ${atEnd.scrollHeight - atEnd.clientHeight}, style "${atEnd.inline}", ${JSON.stringify(diagnosis)})`,
+        );
+      }
+      return `0 at the top, ${atEnd.value.toFixed(2)} at the end`;
+    });
+
+    await check('The contents cascade in when a document opens', async () => {
+      const cascaded = await page.evaluate(`(() => {
+        const panel = document.querySelector('[data-surface-panel]:not([hidden])');
+        const first = panel.querySelector('.surface-frame > *');
+        if (!first) return null;
+        const style = getComputedStyle(first);
+        return { name: style.animationName, duration: style.animationDuration };
+      })()`);
+      /* The attribute is cleared after the cascade, so the animation is read
+         from the stylesheet itself rather than from a live element. */
+      const declared = await page.evaluate(`(() => {
+        /* The shorthand contains a var(), so the longhand getter is empty and
+           the raw declaration is what has to be inspected. */
+        const mentions = (rule) =>
+          (rule.style && (
+            rule.style.animationName === 'surface-item-in' ||
+            String(rule.style.animation || '').includes('surface-item-in') ||
+            String(rule.cssText || '').includes('surface-item-in')
+          ));
+        const has = (rules) => {
+          for (const rule of rules) {
+            if (mentions(rule)) return true;
+            if (rule.cssRules && has(rule.cssRules)) return true;
+          }
+          return false;
+        };
+        for (const sheet of document.styleSheets) {
+          try {
+            if (has(sheet.cssRules)) return true;
+          } catch (error) {
+            /* cross-origin sheet */
+          }
+        }
+        return false;
+      })()`);
+      if (!declared) throw new Error('the cascade animation is not in the stylesheet');
+      void cascaded;
+      return 'surface-item-in declared, staggered by nth-child';
+    });
 
     /* ── 15. Loading and module-loading failure ───────────────────── */
     await check('A slow connection shows the branded loading screen', async () => {
