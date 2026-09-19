@@ -27,6 +27,19 @@ async function ready() {
   await sleep(1800);
 }
 
+/**
+ * Wait for the day/night blend to finish. It advances on clamped frame deltas,
+ * so on a slow renderer it takes longer in wall time than the nominal duration
+ * — screenshots taken on a timer catch it half-finished.
+ */
+async function settleTheme() {
+  await page.waitFor(
+    `!!window.__worldDebug && window.__worldDebug().transitioning === false`,
+    { timeout: 40000, label: 'theme settled' },
+  );
+  await sleep(500);
+}
+
 /** Choosing a destination from the map is how a visitor travels. */
 async function travel(href, destination) {
   await page.evaluate(`(() => {
@@ -60,11 +73,11 @@ try {
       document.dispatchEvent(new CustomEvent('world:themechange', { detail: { theme: 'dark', animate: true } }));
     }
   })()`);
-  await sleep(1200);
+  await settleTheme();
   await page.screenshot(join(OUT, '01-overview-night.png'));
 
   await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await sleep(1400);
+  await settleTheme();
   await page.screenshot(join(OUT, '02-overview-day.png'));
 
   /* Every destination, in daylight. */
@@ -82,13 +95,13 @@ try {
 
   /* Night, one destination at a time, to show the practical lights. */
   await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await sleep(1400);
+  await settleTheme();
   await travel('/writing/', 'library');
   await page.screenshot(join(OUT, '24-library-night.png'));
   await travel('/contact/', 'contact');
   await page.screenshot(join(OUT, '25-contact-night.png'));
   await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await sleep(1400);
+  await settleTheme();
 
   /* Reading surfaces: the CV, the archive, a full article, a case study. */
   await page.navigate(`${BASE}/cv/`);
@@ -101,6 +114,11 @@ try {
   await page.navigate(`${BASE}/writing/from-demo-to-dependable/`);
   await ready();
   await page.screenshot(join(OUT, '09-article.png'));
+
+  /* The subscription document, which the library's handbill post opens. */
+  await page.navigate(`${BASE}/subscribe/`);
+  await ready();
+  await page.screenshot(join(OUT, '29-subscribe.png'));
 
   await page.navigate(`${BASE}/work/kai/`);
   await ready();
@@ -126,7 +144,7 @@ try {
 
   /* Phones. */
   await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await sleep(1400);
+  await settleTheme();
   await page.navigate(`${BASE}/`);
   await ready();
   await page.setViewport(390, 844, true);
@@ -135,7 +153,7 @@ try {
   await page.screenshot(join(OUT, '14-mobile-night.png'));
 
   await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await sleep(1400);
+  await settleTheme();
   await page.screenshot(join(OUT, '16-mobile-day.png'));
 
   await page.evaluate(`(() => {

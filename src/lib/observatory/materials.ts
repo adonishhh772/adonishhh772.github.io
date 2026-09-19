@@ -17,6 +17,8 @@ export class Materials {
   readonly rock: THREE.MeshStandardMaterial;
   readonly grass: THREE.MeshStandardMaterial;
   readonly foliage: THREE.MeshStandardMaterial;
+  /** A lighter crown for the rounded species, so a treeline has depth. */
+  readonly foliageLight: THREE.MeshStandardMaterial;
   readonly metal: THREE.MeshStandardMaterial;
   readonly metalDark: THREE.MeshStandardMaterial;
   readonly glass: THREE.MeshStandardMaterial;
@@ -56,6 +58,14 @@ export class Materials {
     this.rock = standard(theme.stoneDeep, 0.96, 0.01, { flatShading: true });
     this.grass = standard(theme.grass, 0.95, 0);
     this.foliage = standard(theme.grass, 0.9, 0, { flatShading: true });
+    /* Lifted toward the sky colour so a mixed treeline separates into shape
+       instead of collapsing into one dark mass at island distance. */
+    this.foliageLight = standard(
+      new THREE.Color(theme.grass).lerp(new THREE.Color(theme.skyHorizon), 0.24).getHex(),
+      0.88,
+      0,
+      { flatShading: true },
+    );
 
     /* Deep navy metal for structure and instruments. */
     this.metal = standard(theme.metal, 0.34, 0.62);
@@ -127,6 +137,9 @@ export class Materials {
     this.rock.color.setHex(theme.stoneDeep);
     this.grass.color.setHex(theme.grass);
     this.foliage.color.setHex(theme.grass);
+    this.foliageLight.color
+      .setHex(theme.grass)
+      .lerp(new THREE.Color(theme.skyHorizon), 0.24);
     this.metal.color.setHex(theme.metal);
     this.hill.color.setHex(0xffffff);
     this.mist.color.setHex(theme.mist);

@@ -1,0 +1,139 @@
+---
+/**
+ * Subscribe.
+ *
+ * The newsletter sign-up as a document of its own, so the subscription is a
+ * place you can stand in front of in the world — the handbill post beside the
+ * library opens this — rather than only a form buried at the foot of an
+ * article. The same `NewsletterSignup` component is used, so there is one
+ * form and one provider integration across the whole site.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import NewsletterSignup from '../components/NewsletterSignup.astro';
+import ArticleCard from '../components/ArticleCard.astro';
+import Icon from '../components/Icon.astro';
+import { newsletter, social, rootUrl } from '../site.config';
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('writing'))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const title = `Subscribe to ${newsletter.name}`;
+const description = `Subscribe to ${newsletter.name} — ${newsletter.tagline}`;
+
+const reasons = [
+  {
+    label: 'One issue at a time',
+    copy: 'Short, practical notes on agents, retrieval, evaluation and the delivery work around them.',
+  },
+  {
+    label: 'What actually shipped',
+    copy: 'Written from production work, not from demos — including the parts that did not survive contact with users.',
+  },
+  {
+    label: 'No hype, no vendor spin',
+    copy: 'If something is not ready for enterprise use, the issue says so plainly.',
+  },
+];
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  destination="library"
+  surface="newsletter"
+  backHref="/writing/"
+>
+  <section class="page-head">
+    <div class="wrap">
+      <span class="kicker">Newsletter — {newsletter.name}</span>
+      <h1 class="display display--page" style="margin-top: 0.9rem;">Subscribe</h1>
+      <p class="lede">{newsletter.tagline}</p>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="what-you-get">
+    <div class="wrap">
+      <h2 class="section-title" id="what-you-get" style="margin-bottom: 1.4rem;">What you get</h2>
+      <ul class="subscribe-reasons">
+        {
+          reasons.map((reason) => (
+            <li class="card subscribe-reason">
+              <span class="kicker kicker--plain">{reason.label}</span>
+              <p>{reason.copy}</p>
+            </li>
+          ))
+        }
+      </ul>
+
+      <div class="subscribe-actions">
+        <a class="btn btn--ghost" href={newsletter.rssPath}>
+          <Icon name="rss" size={15} />
+          RSS feed
+        </a>
+        <a
+          class="btn btn--ghost"
+          href={social.linkedin}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Icon name="linkedin" size={15} />
+          Follow on LinkedIn
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <NewsletterSignup />
+  </div>
+
+  <section class="section section--rule" aria-labelledby="recent-issues">
+    <div class="wrap">
+      <div class="section-head-row">
+        <div>
+          <span class="kicker">Archive</span>
+          <h2 class="section-title" id="recent-issues" style="margin-top: 0.7rem;">
+            Recent issues
+          </h2>
+        </div>
+        <a class="link-arrow" href={rootUrl('/writing/')}>
+          All {posts.length} issues
+          <Icon name="arrow-right" size={15} />
+        </a>
+      </div>
+      <div class="issue-list">
+        {posts.slice(0, 4).map((post, i) => <ArticleCard article={post} delay={i * 60} />)}
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .subscribe-reasons {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .subscribe-reason {
+    padding: 1.1rem 1.2rem 1.2rem;
+  }
+
+  .subscribe-reason p {
+    margin: 0.6rem 0 0;
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+  .subscribe-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.4rem;
+  }
+</style>

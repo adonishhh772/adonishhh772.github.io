@@ -210,6 +210,8 @@ export function surfaceLabel(surface: SurfaceKind): string {
       return 'All issues';
     case 'article':
       return 'Issue';
+    case 'newsletter':
+      return 'Subscribe';
     case 'repos':
       return 'Public repositories';
     case 'contact':

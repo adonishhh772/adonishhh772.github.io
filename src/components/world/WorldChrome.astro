@@ -23,7 +23,37 @@ const isCurrent = (href: string) => {
   const here = currentPath.length > 1 ? currentPath.replace(/\/+$/, '') : currentPath;
   return here === target;
 };
+
+/*
+ * The caption icons.
+ *
+ * Rendered once as inert <template> elements and cloned by the world shell for
+ * every caption it projects, so the world's captions and the pages draw their
+ * icons from one component instead of two sets that drift apart.
+ */
+const captionIcons = [
+  'compass',
+  'document',
+  'grid',
+  'graph',
+  'github',
+  'mail',
+  'user',
+  'sun',
+  'moon',
+  'rss',
+] as const;
 ---
+
+<div class="world-icon-bank" data-world-icon-bank aria-hidden="true">
+  {
+    captionIcons.map((name) => (
+      <template data-world-icon={name}>
+        <Icon name={name} size={14} />
+      </template>
+    ))
+  }
+</div>
 
 <div class="world-chrome" data-world-chrome transition:persist="world-chrome">
   <h2 class="visually-hidden">World controls</h2>

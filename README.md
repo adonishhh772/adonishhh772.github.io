@@ -50,8 +50,13 @@ everything else follows from what you select.
   because you have looked around — you have not opened anything.
 - **An object caption opens its document.** Once you are at a place its
   objects appear: the CV and the biography at the studio, each project in the
-  workshop, each article on the library shelves, each repository on the
-  workbench. Those are real links with real URLs.
+  workshop, each article and the **subscribe** handbill on the library shelves,
+  each repository on the workbench, and the **message hatch** at the contact
+  station. Those are real links with real URLs — and the repositories, being
+  off-site, open in a new tab while everything of the portfolio's own stays in
+  the world.
+- **Every caption carries an icon**, so the caption layer reads as a map key
+  rather than a row of blank circles.
 - **Every place also has an index caption** — *All writing*, *All projects*,
   *All repositories*, *Contact* — so the archive pages stay reachable from
   the world alone.
@@ -71,10 +76,10 @@ everything else follows from what you select.
   open and starts again when it closes.
 - **Tapping the world works too.** A tap that never became a drag resolves
   against the scene: a caption under the finger is activated, otherwise the
-  object itself answers - a destination travels, the light switch throws.
+  object itself answers - a destination travels, the sun turns into the moon.
 - **The chrome is always there.** A compact bar holds the location readout,
   the **Map** (a labelled list of every place and document, as real links),
-  **Home**, the **sun/moon light switch** and **pause motion**. It takes the
+  **Home**, the **sun/moon switch** and **pause motion**. It takes the
   edge opposite the reading surface on a desktop and the top strip on a phone,
   so it stays reachable from the CV, an article, a case study or the contact
   card. No destination can be lost behind a building or a panel.
@@ -91,15 +96,17 @@ The light is one authoritative state, held as `data-theme` on `<html>` and
 remembered in `localStorage` once the visitor makes an explicit choice. Until
 then the system preference is honoured.
 
-- **Both controls, one state.** A physical lever on the campus plateau throws
-  as the light changes, and a compact sun/moon switch in the chrome is visible
-  whatever is open. Either drives the same value, as do the keyboard and the
-  caption anchored to the post.
-- **It changes the scene, not a filter.** Sky gradient, fog colour and
-  density, hemisphere and key lights, practical lamps, lamp and window
-  emissives, the environment probe, exposure and the shadow tuning all take
-  part in one coordinated ~700ms blend. There is no dark overlay over the
-  canvas.
+- **Both controls, one state.** An actual sun stands on the campus plateau:
+  choosing night turns it into the moon — the rays fold away, the core cools
+  and the craters come up — and the sky's own body, the starfield, the lamps
+  and the compact sun/moon switch in the chrome all follow the same value. The
+  keyboard works the same caption, which is a labelled toggle button.
+- **The sky changes, not a filter.** Sky gradient, fog colour and density,
+  hemisphere and key lights, practical lamps, lamp and window emissives, the
+  environment probe, exposure and the shadow tuning all take part in one
+  coordinated ~700ms blend, and the sky body is repainted from a rayed sun to
+  a cratered moon as it goes. Stars come out for the night. There is no dark
+  overlay over the canvas.
 - **The page changes with it.** Reading panels, forms, captions and the chrome
   cross-fade over the same period. Under `prefers-reduced-motion` the state
   applies immediately.
@@ -297,7 +304,7 @@ new article to the Buttondown list using the `BUTTONDOWN_API_KEY` secret.
 - Skip link, one `h1` per page, visible focus rings, and the chrome is a
   labelled set of real controls — the map is a navigation of real links.
 - Every caption is a real control: place captions are buttons that travel the
-  camera, object captions are links, the light switch is a button announced as
+  camera, object captions are links, the sun is a labelled toggle button, and
   a switch with its current state. All are reachable by Tab and activated by
   Enter.
 - Captions that the reading surface covers, or that a building hides, are
@@ -311,7 +318,7 @@ new article to the Buttondown list using the `BUTTONDOWN_API_KEY` secret.
   control does the same on demand.
 - Text contrast meets WCAG AA in both themes (ratios above).
 - Touch targets are at least 44x44 CSS pixels, safe areas are respected, and
-  the reading sheet keeps its close, Home/Map and light switch reachable.
+  the reading sheet keeps its close, Home/Map and sun/moon switch reachable.
 - Every destination is reachable with no JavaScript, with no WebGL, and from
   the map menu alone.
 

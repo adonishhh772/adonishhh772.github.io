@@ -425,16 +425,83 @@ export function distantHills(
 
 export interface ConiferGeometry {
   trunk: THREE.CylinderGeometry;
-  lower: THREE.ConeGeometry;
-  upper: THREE.ConeGeometry;
+  /** Stacked canopy tiers. Each is rotated differently so the silhouette
+      never reads as one cone sitting on another. */
+  tiers: THREE.ConeGeometry[];
 }
 
+/**
+ * A conifer with four staggered tiers instead of two.
+ *
+ * The old two-cone tree read as a plain triangle from the island's camera
+ * distance. Tiers at decreasing radius, each turned on its own axis, give the
+ * stepped silhouette a fir actually has, and the taper is wider at the base
+ * so the trees anchor to the ground instead of hovering over it.
+ */
 export function coniferGeometry(): ConiferGeometry {
-  const lower = new THREE.ConeGeometry(0.44, 1.15, 7, 1);
-  lower.translate(0, 0.92, 0);
-  const upper = new THREE.ConeGeometry(0.31, 0.95, 7, 1);
-  upper.translate(0, 1.62, 0);
-  return { trunk: new THREE.CylinderGeometry(0.06, 0.09, 0.8, 5), lower, upper };
+  const specs: { radius: number; height: number; y: number; yaw: number }[] = [
+    { radius: 0.54, height: 0.96, y: 0.72, yaw: 0 },
+    { radius: 0.45, height: 0.9, y: 1.12, yaw: Math.PI / 5 },
+    { radius: 0.34, height: 0.84, y: 1.52, yaw: (Math.PI * 2) / 5 },
+    { radius: 0.21, height: 0.78, y: 1.92, yaw: (Math.PI * 3) / 5 },
+  ];
+  const tiers = specs.map((spec) => {
+    /* Nine radial segments with a slight squash: faceted enough to catch the
+       key light, round enough not to look cut out. */
+    const cone = new THREE.ConeGeometry(spec.radius, spec.height, 9, 1, false);
+    cone.scale(1, 1, 0.92);
+    cone.rotateY(spec.yaw);
+    cone.translate(0, spec.y, 0);
+    return cone;
+  });
+  const trunk = new THREE.CylinderGeometry(0.055, 0.095, 0.86, 6);
+  trunk.translate(0, 0.4, 0);
+  return { trunk, tiers };
+}
+
+export interface BroadleafGeometry {
+  trunk: THREE.CylinderGeometry;
+  canopy: THREE.IcosahedronGeometry;
+}
+
+/**
+ * A second species. A treeline of identical conifers reads as a texture
+ * rather than as planting; a rounded crown beside them makes it a wood.
+ */
+export function broadleafGeometry(): BroadleafGeometry {
+  const trunk = new THREE.CylinderGeometry(0.06, 0.1, 1.05, 6);
+  trunk.translate(0, 0.5, 0);
+  const canopy = new THREE.IcosahedronGeometry(0.62, 1);
+  canopy.scale(1.06, 0.92, 1.02);
+  canopy.translate(0, 1.42, 0);
+  return { trunk, canopy };
+}
+
+/*
+ * A chiselled boulder.
+ *
+ * Displacement is keyed on the vertex position rather than the vertex index,
+ * so faces that share a corner move together and the shell stays closed. The
+ * result is a faceted lump with one flat-ish face — a rock, not a crystal.
+ */
+export function boulderGeometry(seed: number, squash = 0.78): THREE.BufferGeometry {
+  const geometry = new THREE.IcosahedronGeometry(1, 1);
+  const position = geometry.attributes.position as THREE.BufferAttribute;
+  const vector = new THREE.Vector3();
+  for (let i = 0; i < position.count; i++) {
+    vector.set(position.getX(i), position.getY(i), position.getZ(i));
+    /* A cheap deterministic hash of the rounded corner. */
+    const key = `${vector.x.toFixed(3)}:${vector.y.toFixed(3)}:${vector.z.toFixed(3)}`;
+    let hash = seed >>> 0;
+    for (let c = 0; c < key.length; c++) {
+      hash = (Math.imul(hash ^ key.charCodeAt(c), 16777619) >>> 0) % 100003;
+    }
+    const scale = 0.66 + (hash % 1000) / 1000 * 0.55;
+    const lift = 1 + (vector.y > 0 ? 0.08 : 0);
+    position.setXYZ(i, vector.x * scale, vector.y * scale * squash * lift, vector.z * scale);
+  }
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 /* ── Textures ────────────────────────────────────────────────────────── */

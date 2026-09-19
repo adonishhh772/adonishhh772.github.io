@@ -26,6 +26,7 @@ export type SurfaceKind =
   | 'project'
   | 'articles'
   | 'article'
+  | 'newsletter'
   | 'repos'
   | 'contact'
   | 'thanks'
@@ -185,6 +186,14 @@ export const WORLD_NAV: WorldNavEntry[] = [
     detail: 'Every article and the newsletter',
     name: 'Reliable AI library',
     href: '/writing/',
+    destination: 'library',
+  },
+  {
+    id: 'subscribe',
+    label: 'Subscribe',
+    detail: 'The Reliable AI newsletter',
+    name: 'Reliable AI library',
+    href: '/subscribe/',
     destination: 'library',
   },
   {

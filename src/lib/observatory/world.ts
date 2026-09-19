@@ -16,6 +16,8 @@ import type { DestinationId } from '../world/destinations';
 import type { WorldIndex } from '../world/state';
 import type { Materials } from './materials';
 import {
+  boulderGeometry,
+  broadleafGeometry,
   buildDroneGeometry,
   coniferGeometry,
   crystalGeometry,
@@ -101,7 +103,7 @@ export interface Shot {
 /** A pickable object in the world that stands for a piece of content. */
 export interface ObjectMarker {
   id: string;
-  kind: 'article' | 'project' | 'repo' | 'cv' | 'about';
+  kind: 'article' | 'project' | 'repo' | 'cv' | 'about' | 'newsletter' | 'contact';
   place: DestinationId;
   label: string;
   meta: string;
@@ -153,17 +155,22 @@ export interface WorldStats {
 }
 
 /**
- * The physical light switch: a control post on the campus plateau whose lever
- * throws with the day/night state. It is part of the scene, not an overlay —
- * the environment change is driven from the same authoritative theme, so the
- * lever, the sky and the interface can never disagree.
+ * The sun control.
+ *
+ * Not a switch on a post: the thing standing on the plinth *is* the sun, and
+ * choosing day or night turns it into the moon — warm core with rays at one
+ * end, pale cratered body at the other — while the light in the scene changes
+ * with it. The transformation is driven from the same blended `dayness` the
+ * rest of the world uses, so it is exactly as smooth as the light change.
  */
-export interface LightSwitchNode {
+export interface SunControlNode {
   /** Where the DOM caption attaches. */
   anchor: THREE.Vector3;
-  /** Raycast target for a direct tap on the switch. */
+  /** Raycast target for a direct tap on the sun itself. */
   pick: THREE.Mesh;
   group: THREE.Group;
+  /** The orb, so the shell can report where it is on screen. */
+  orb: THREE.Group;
 }
 
 /** Distance at which a sphere of `radius` fits the current viewport. */
@@ -179,8 +186,8 @@ export class ObservatoryWorld {
   readonly exhibits = new Map<string, ExhibitNode>();
   /** Pickable objects for articles, repositories and projects. */
   readonly objectMarkers: ObjectMarker[] = [];
-  /** The in-world day/night control post. */
-  lightSwitch!: LightSwitchNode;
+  /** The in-world day/night control: an actual sun that becomes the moon. */
+  sunControl!: SunControlNode;
 
   private readonly materials: Materials;
   private readonly atmosphere: Atmosphere;
@@ -202,8 +209,15 @@ export class ObservatoryWorld {
   private beaconCore!: THREE.Mesh;
   private beaconLantern!: THREE.Mesh;
   private islandLanterns: THREE.Mesh[] = [];
-  private switchLever: THREE.Group | null = null;
-  private switchIndicator: THREE.MeshStandardMaterial | null = null;
+  private sunOrb: THREE.Group | null = null;
+  private sunRays: THREE.Group | null = null;
+  private sunRayMaterial: THREE.MeshStandardMaterial | null = null;
+  private sunCoreMaterial: THREE.MeshStandardMaterial | null = null;
+  private sunCraterMaterial: THREE.MeshStandardMaterial | null = null;
+  private sunSpin = 0;
+  private lastDayness = 1;
+  private sunGlowMaterial: THREE.SpriteMaterial | null = null;
+  private billMaterial: THREE.MeshStandardMaterial | null = null;
   private mistGroup = new THREE.Group();
   private mistLayers: THREE.Mesh[] = [];
   private drone = new THREE.Group();
@@ -247,7 +261,8 @@ export class ObservatoryWorld {
     this.buildLibrary();
     this.buildWorkbench();
     this.buildContactStation();
-    this.buildLightSwitch();
+    this.buildSubscribePost();
+    this.buildSunControl();
     this.buildDrone();
     this.buildSignals();
     this.wirePracticalLights();
@@ -484,74 +499,167 @@ export class ObservatoryWorld {
     });
     island.frustumCulled = false;
 
-    /* Faceted rock along the cliff ? strata, not rubble. */
+    /*
+     * The cliff is built as strata, not scattered rubble: three sizes of
+     * chiselled boulder, each band set deeper than the last and sunk into the
+     * rock face so the island reads as broken stone rather than an object
+     * with pebbles floating beside it.
+     */
     if (this.quality.detail) {
       const random = mulberry32(31);
+      const matrix = new THREE.Matrix4();
+      const bands = [
+        { count: 9, geometry: boulderGeometry(7, 0.72), radius: [10.0, 11.4], y: [-1.35, -2.5], scale: [0.85, 0.5] },
+        { count: 8, geometry: boulderGeometry(19, 0.66), radius: [11.0, 12.6], y: [-2.6, -4.2], scale: [1.2, 0.7] },
+        { count: 7, geometry: boulderGeometry(41, 0.8), radius: [11.6, 13.2], y: [-4.0, -5.8], scale: [1.5, 0.9] },
+      ];
+      for (const band of bands) {
+        const matrices: THREE.Matrix4[] = [];
+        for (let i = 0; i < band.count; i++) {
+          const angle = (i / band.count) * Math.PI * 2 + random() * 0.7;
+          const radius = THREE.MathUtils.lerp(band.radius[0], band.radius[1], random());
+          const y = THREE.MathUtils.lerp(band.y[0], band.y[1], random());
+          /* Sunk by most of its own height, so only the top face shows. */
+          const scale = THREE.MathUtils.lerp(band.scale[0], band.scale[1], random());
+          matrix.compose(
+            new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius),
+            new THREE.Quaternion().setFromEuler(
+              new THREE.Euler(random() * 0.7 - 0.35, random() * Math.PI * 2, random() * 0.7 - 0.35),
+            ),
+            new THREE.Vector3(scale, scale * 0.85, scale * 1.15),
+          );
+          matrices.push(matrix.clone());
+        }
+        const mesh = instancedMesh(band.geometry, this.materials.rock, matrices, 'cliff-strata');
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+        this.group.add(mesh);
+        this.track(band.geometry);
+      }
+    }
+
+    /*
+     * Outcrops on the plateau itself. A few half-buried boulders near the rim
+     * give the ground some geology; the island used to be a smooth disc
+     * wherever the buildings stopped.
+     */
+    {
+      const random = mulberry32(77);
+      const geometry = this.track(boulderGeometry(53, 0.62));
       const matrices: THREE.Matrix4[] = [];
       const matrix = new THREE.Matrix4();
-      for (let i = 0; i < 22; i++) {
+      for (let i = 0; i < 26; i++) {
         const angle = random() * Math.PI * 2;
-        const depth = random();
-        const radius = 10.2 + depth * 2.2;
-        const y = GROUND - 1.6 - depth * 4.6;
-        const scale = 0.45 + random() * 0.6;
+        const radius = 5.6 + random() * 5.4;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        if (this.nearStation(x, z, 2.6)) continue;
+        const scale = 0.24 + random() * 0.5;
         matrix.compose(
-          new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius),
+          new THREE.Vector3(x, GROUND - 0.05 - scale * 0.45, z),
           new THREE.Quaternion().setFromEuler(
-            new THREE.Euler(random() * 3, random() * 3, random() * 3),
+            new THREE.Euler(random() * 0.4 - 0.2, random() * Math.PI * 2, random() * 0.4 - 0.2),
           ),
-          new THREE.Vector3(scale, scale * 0.8, scale),
+          new THREE.Vector3(scale * 1.25, scale * 0.7, scale),
         );
         matrices.push(matrix.clone());
       }
-      const rockGeometry = this.track(new THREE.DodecahedronGeometry(0.8, 0));
-      this.group.add(instancedMesh(rockGeometry, this.materials.rock, matrices, 'cliff-rocks'));
+      const outcrops = instancedMesh(geometry, this.materials.rock, matrices, 'outcrops');
+      outcrops.castShadow = this.quality.shadows;
+      outcrops.receiveShadow = true;
+      this.group.add(outcrops);
     }
 
-    /* Grass and planting, arranged in rings from the rim inward. */
+    /*
+     * Planting: two species, arranged in rings from the rim inward, each
+     * turned and scaled on its own so the treeline reads as a wood rather
+     * than one repeated silhouette.
+     */
     const random = mulberry32(5);
     const rings = this.quality.treeRings;
     const conifer = coniferGeometry();
+    const broadleaf = broadleafGeometry();
     this.track(conifer.trunk);
-    this.track(conifer.lower);
-    this.track(conifer.upper);
+    for (const tier of conifer.tiers) this.track(tier);
+    this.track(broadleaf.trunk);
+    this.track(broadleaf.canopy);
 
-    const trunks: THREE.Matrix4[] = [];
-    const lowers: THREE.Matrix4[] = [];
-    const uppers: THREE.Matrix4[] = [];
+    const coniferMatrices: THREE.Matrix4[][] = conifer.tiers.map(() => []);
+    const coniferTrunks: THREE.Matrix4[] = [];
+    const broadleafTrunks: THREE.Matrix4[] = [];
+    const broadleafCanopies: THREE.Matrix4[] = [];
     const matrix = new THREE.Matrix4();
+    const lean = new THREE.Quaternion();
+    const yawOnly = new THREE.Quaternion();
     for (let ring = 0; ring < rings; ring++) {
-      const radius = 12.4 - ring * 1.6;
-      const count = 18 - ring * 3;
+      const radius = 12.6 - ring * 1.7;
+      const count = 20 - ring * 3;
       for (let i = 0; i < count; i++) {
-        const angle = (i / count) * Math.PI * 2 + random() * 0.28 + ring;
-        const jitter = 0.85 + random() * 0.4;
+        const angle = (i / count) * Math.PI * 2 + random() * 0.3 + ring * 0.9;
+        const jitter = 0.84 + random() * 0.42;
         const x = Math.cos(angle) * radius * jitter;
         const z = Math.sin(angle) * radius * jitter;
         /* Keep the built terraces clear of planting. */
-        if (this.nearStation(x, z, 4.4)) continue;
-        const scale = 0.5 + random() * 0.6;
-        const yaw = random() * Math.PI;
-        const quaternion = new THREE.Quaternion().setFromAxisAngle(
-          new THREE.Vector3(0, 1, 0),
-          yaw,
+        if (this.nearStation(x, z, 4.2)) continue;
+        const scale = 0.46 + random() * 0.62;
+        yawOnly.setFromAxisAngle(new THREE.Vector3(0, 1, 0), random() * Math.PI * 2);
+        /* A slight lean, so the treeline is not a row of plumb lines. */
+        lean.setFromAxisAngle(
+          new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)),
+          (random() - 0.5) * 0.14,
         );
-        const base = new THREE.Vector3(x, GROUND - 0.06, z);
-        matrix.compose(base, quaternion, new THREE.Vector3(scale, scale, scale));
-        trunks.push(matrix.clone());
-        lowers.push(matrix.clone());
-        uppers.push(matrix.clone());
+        const quaternion = lean.clone().multiply(yawOnly);
+        const base = new THREE.Vector3(x, GROUND - 0.08, z);
+        const uniform = new THREE.Vector3(scale, scale * (0.92 + random() * 0.24), scale);
+        matrix.compose(base, quaternion, uniform);
+
+        /* Roughly one tree in three is the rounded species. */
+        if (random() < 0.34) {
+          broadleafTrunks.push(matrix.clone());
+          broadleafCanopies.push(matrix.clone());
+          continue;
+        }
+        coniferTrunks.push(matrix.clone());
+        for (const band of coniferMatrices) band.push(matrix.clone());
       }
     }
-    if (trunks.length) {
-      const treeTrunk = instancedMesh(conifer.trunk, this.materials.rock, trunks, 'tree-trunks');
-      const treeLower = instancedMesh(conifer.lower, this.materials.foliage, lowers, 'tree-lower');
-      const treeUpper = instancedMesh(conifer.upper, this.materials.foliage, uppers, 'tree-upper');
-      for (const mesh of [treeTrunk, treeLower, treeUpper]) {
-        mesh.castShadow = this.quality.shadows;
-        mesh.receiveShadow = true;
-        this.group.add(mesh);
-      }
+
+    const addTree = (
+      mesh: THREE.InstancedMesh,
+      shadows: boolean,
+    ): THREE.InstancedMesh => {
+      mesh.castShadow = shadows;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+      return mesh;
+    };
+
+    if (coniferTrunks.length) {
+      addTree(
+        instancedMesh(conifer.trunk, this.materials.rock, coniferTrunks, 'conifer-trunks'),
+        this.quality.shadows,
+      );
+      coniferMatrices.forEach((band, index) => {
+        addTree(
+          instancedMesh(conifer.tiers[index], this.materials.foliage, band, `conifer-tier-${index}`),
+          this.quality.shadows,
+        );
+      });
+    }
+    if (broadleafTrunks.length) {
+      addTree(
+        instancedMesh(broadleaf.trunk, this.materials.rock, broadleafTrunks, 'broadleaf-trunks'),
+        this.quality.shadows,
+      );
+      addTree(
+        instancedMesh(
+          broadleaf.canopy,
+          this.materials.foliageLight,
+          broadleafCanopies,
+          'broadleaf-canopies',
+        ),
+        this.quality.shadows,
+      );
     }
 
     /* Restrained shrubs close to the architecture. */
@@ -977,7 +1085,6 @@ export class ObservatoryWorld {
   /* ── Station: work pavilion ────────────────────────────────────────── */
 
   /* ── Destination: personal studio (CV + biography) ─────────────────── */
-
   private buildStudio(): void {
     const node = this.registerPlace(
       'studio',
@@ -1155,6 +1262,60 @@ export class ObservatoryWorld {
     );
 
     this.attachDiscovery(node, new THREE.Vector3(2.1, GROUND + 0.6, -1.6));
+  }
+
+  /**
+   * The subscription point.
+   *
+   * The newsletter is content, so it stands in the world beside the library
+   * as a handbill post: a lit sheet on a stem, with its own caption. Selecting
+   * it opens the subscribe document in the reading surface — no leaving the
+   * world, and no hunting for a form in a page footer.
+   */
+  private buildSubscribePost(): void {
+    const node = this.places.get('library');
+    if (!node) return;
+    const y = this.placeLayout('library').surface;
+
+    const post = this.mesh(
+      new THREE.CylinderGeometry(0.045, 0.06, 1.05, 8),
+      this.materials.metalDark,
+      node.group,
+      'subscribe-post',
+      { position: new THREE.Vector3(1.85, y + 0.52, 1.5) },
+    );
+    post.castShadow = this.quality.shadows;
+
+    /* A lit handbill, angled toward the camera side of the terrace. */
+    this.billMaterial ??= this.track(
+      new THREE.MeshStandardMaterial({
+        color: 0x1a1206,
+        roughness: 0.5,
+        metalness: 0.05,
+        emissive: new THREE.Color(this.theme.signal),
+        emissiveIntensity: 1.1,
+      }),
+    );
+    const sheet = this.mesh(
+      roundedBox(0.5, 0.34, 0.03, 0.015),
+      this.billMaterial,
+      node.group,
+      'subscribe-sheet',
+      { position: new THREE.Vector3(1.85, y + 1.16, 1.52), cast: false, receive: false },
+    );
+    sheet.rotation.x = -0.38;
+    sheet.userData.objectId = 'subscribe';
+
+    this.objectMarkers.push({
+      id: 'subscribe',
+      kind: 'newsletter',
+      place: 'library',
+      label: 'Subscribe',
+      meta: 'Reliable AI · every issue',
+      href: '/subscribe/',
+      anchor: localToWorld(LAYOUT.library, 1.85, y + 1.72, 1.52),
+      pick: sheet,
+    });
   }
 
   /* ── Destination: project workshop ─────────────────────────────────── */
@@ -1651,8 +1812,7 @@ export class ObservatoryWorld {
   }
 
   private buildContactStation(): void {
-    this.registerPlace('contact', ({ group, surface, glow }) => {
-      this.mesh(terrace(2.5, 0.45, 0.12), this.materials.stone, group, 'beacon-terrace', {
+    this.registerPlace('contact', ({ group, surface, glow }) => {      this.mesh(terrace(2.5, 0.45, 0.12), this.materials.stone, group, 'beacon-terrace', {
         position: new THREE.Vector3(0, GROUND - 0.05, 0),
       });
       this.mesh(rimRing(2.4, 0.04, 36), this.materials.stoneDark, group, 'beacon-rim', {
@@ -1716,6 +1876,47 @@ export class ObservatoryWorld {
         posts.push(new THREE.Matrix4().makeTranslation(-1.35, surface + 1.1, z));
       }
       group.add(instancedMesh(postGeometry, this.materials.ceramic, posts, 'beacon-posts'));
+
+      /*
+       * The message hatch: a slot in a brass pillar beside the gateway, which
+       * is what "contact" looks like as an object rather than as a place. It
+       * opens the contact document — form, email, social and booking — in the
+       * reading surface.
+       */
+      const hatchPost = this.mesh(
+        new THREE.CylinderGeometry(0.16, 0.2, 1.15, 10),
+        this.materials.ceramic,
+        group,
+        'contact-hatch-post',
+        { position: new THREE.Vector3(1.65, surface + 0.57, 0.85) },
+      );
+      hatchPost.castShadow = this.quality.shadows;
+      const hatch = this.mesh(
+        roundedBox(0.34, 0.4, 0.16, 0.03),
+        this.materials.metalDark,
+        group,
+        'contact-hatch',
+        { position: new THREE.Vector3(1.65, surface + 1.32, 0.85) },
+      );
+      /* The slot itself, dark against the brass. */
+      this.mesh(
+        new THREE.BoxGeometry(0.22, 0.045, 0.04),
+        this.materials.metalDark,
+        group,
+        'contact-slot',
+        { position: new THREE.Vector3(1.65, surface + 1.4, 0.94), cast: false },
+      );
+      hatch.userData.objectId = 'contact';
+      this.objectMarkers.push({
+        id: 'contact',
+        kind: 'contact',
+        place: 'contact',
+        label: 'Send a message',
+        meta: 'Form · email · booking',
+        href: '/contact/',
+        anchor: localToWorld(LAYOUT.contact, 1.65, surface + 1.95, 0.85),
+        pick: hatch,
+      });
 
       return { anchorY: 3.3, pickRadius: 2.5, pickHeight: 3.6 };
     });
@@ -1937,22 +2138,64 @@ export class ObservatoryWorld {
       this.searchlightMaterial.color.setHex(theme.signal);
       this.searchlightMaterial.opacity = 0.09 - theme.dayness * 0.05;
     }
+    if (this.billMaterial) {
+      /* A lit handbill is a lamp: on at night, subdued by day. */
+      this.billMaterial.emissive.setHex(theme.signal);
+      this.billMaterial.emissiveIntensity = 1.35 - theme.dayness * 0.95;
+    }
     if (this.flight) {
       (this.flight.mesh.material as THREE.MeshStandardMaterial).emissive.setHex(theme.signal);
     }
 
     /*
-     * The physical switch throws with the light. Because the theme arrives
-     * already blended during a transition, the lever follows the change
-     * frame by frame with no extra animation state to keep in step.
+     * The sun becomes the moon, exactly in step with the light.
+     *
+     * Because the theme arrives already blended during a transition, every
+     * value below is a continuous function of `dayness` — there is no second
+     * animation to keep in sync, and an interrupted change simply follows the
+     * light from wherever it had got to.
      */
-    if (this.switchLever) {
-      this.switchLever.rotation.x = THREE.MathUtils.lerp(0.62, -0.62, theme.dayness);
+    const day = THREE.MathUtils.clamp(theme.dayness, 0, 1);
+    const night = 1 - day;
+    if (this.sunRays) {
+      this.sunRays.scale.setScalar(0.25 + day * 0.85);
+      const rayScaleY = 1 - night * 0.55;
+      this.sunRays.scale.y = (0.25 + day * 0.85) * rayScaleY;
     }
-    if (this.switchIndicator) {
-      this.switchIndicator.emissive.setHex(theme.practical);
-      this.switchIndicator.emissiveIntensity = 0.4 + (1 - theme.dayness) * 1.5;
+    if (this.sunRayMaterial) {
+      this.sunRayMaterial.emissive.setHex(theme.practical);
+      this.sunRayMaterial.emissiveIntensity = 0.4 + day * 1.1;
+      this.sunRayMaterial.opacity = 0.15 + day * 0.85;
     }
+    if (this.sunCoreMaterial) {
+      /* Gold at noon, cool stone-pale at midnight. */
+      this.sunCoreMaterial.emissive
+        .setHex(theme.practical)
+        .lerp(new THREE.Color(theme.skyHorizon), night * 0.82);
+      this.sunCoreMaterial.emissiveIntensity = 0.5 + day * 1.5;
+      this.sunCoreMaterial.color
+        .setHex(0x2a1c06)
+        .lerp(new THREE.Color(0x1b2436), night);
+    }
+    if (this.sunCraterMaterial) {
+      this.sunCraterMaterial.opacity = night * 0.5;
+    }
+    if (this.sunGlowMaterial) {
+      /* Gold and warm by day, a tight cool nimbus at night. */
+      this.sunGlowMaterial.color
+        .setHex(theme.practical)
+        .lerp(new THREE.Color(theme.skyHorizon), night * 0.7);
+      this.sunGlowMaterial.opacity = 0.12 + day * 0.24;
+    }
+    if (this.sunOrb) {
+      /* It turns as it changes: the rotation is the integral of the change,
+         so a flip spins and then stops rather than spinning forever. */
+      this.sunSpin += Math.abs(day - this.lastDayness) * 7;
+      this.sunOrb.rotation.z = THREE.MathUtils.lerp(-0.16, 0.16, day);
+      if (this.sunRays) this.sunRays.rotation.z = this.sunSpin;
+      this.sunOrb.rotation.y = this.sunSpin * 0.35;
+    }
+    this.lastDayness = day;
   }
 
   setQuality(quality: QualitySettings): void {
@@ -1981,103 +2224,172 @@ export class ObservatoryWorld {
     });
   }
 
-  /* ── The day / night switch ────────────────────────────────────────── */
+  /* ── The sun, which becomes the moon ───────────────────────────────── */
 
   /**
-   * A control post standing on the plateau between the observatory and the
-   * workshop, on the side the overview camera looks in from. Its lever and
-   * pilot lamp are driven from `theme.dayness`, so throwing the switch and
-   * the light changing are the same movement rather than two things that
-   * happen to agree.
+   * A sun standing on a plinth on the plateau between the observatory and the
+   * workshop, on the side the overview camera looks in from.
+   *
+   * Every part of it is driven by `dayness`: the rays fold away and the core
+   * cools from gold to pale as the light goes down, the craters come up, and
+   * the whole orb turns as it changes. Nothing here keeps its own day/night
+   * state, so the sky, the scene and this object can never disagree.
    */
-  private buildLightSwitch(): void {
+  private buildSunControl(): void {
     const angle = (25 * Math.PI) / 180;
     const radius = 5.05;
     const x = Math.sin(angle) * radius;
     const z = Math.cos(angle) * radius;
+    const orbY = GROUND + 2.55;
 
     const group = new THREE.Group();
-    group.name = 'light-switch';
+    group.name = 'sun-control';
     group.position.set(x, GROUND, z);
-    /* Turn the face plate toward the island centre, where the camera sits. */
+    /* Face the plinth's inscription toward the island centre. */
     group.rotation.y = Math.atan2(-x, -z);
     this.group.add(group);
 
-    this.mesh(terrace(0.6, 0.2, 0.06), this.materials.stone, group, 'switch-base', {
-      position: new THREE.Vector3(0, 0.1, 0),
+    this.mesh(terrace(0.72, 0.24, 0.06), this.materials.stone, group, 'sun-base', {
+      position: new THREE.Vector3(0, 0.12, 0),
     });
     const column = this.mesh(
-      new THREE.CylinderGeometry(0.072, 0.092, 1.02, 10),
+      new THREE.CylinderGeometry(0.075, 0.11, 1.9, 10),
       this.materials.metal,
       group,
-      'switch-column',
-      { position: new THREE.Vector3(0, 0.71, 0) },
+      'sun-column',
+      { position: new THREE.Vector3(0, 1.15, 0) },
     );
     column.castShadow = this.quality.shadows;
-
-    this.mesh(roundedBox(0.54, 0.44, 0.24, 0.055), this.materials.metalDark, group, 'switch-housing', {
-      position: new THREE.Vector3(0, 1.42, 0),
-    });
+    /* A cradle the orb appears to sit in. */
     this.mesh(
-      new THREE.BoxGeometry(0.38, 0.3, 0.035),
+      new THREE.TorusGeometry(0.42, 0.04, 6, 22, Math.PI * 1.2),
       this.materials.ceramic,
       group,
-      'switch-plate',
-      { position: new THREE.Vector3(0, 1.42, 0.13), cast: false },
-    );
+      'sun-cradle',
+      { position: new THREE.Vector3(0, 2.1, 0), cast: false },
+    ).rotation.x = Math.PI / 2;
 
-    const indicator = this.track(
+    /* The orb ------------------------------------------------------- */
+    const orb = new THREE.Group();
+    orb.name = 'sun-orb';
+    orb.position.set(0, orbY - GROUND, 0);
+    group.add(orb);
+    this.sunOrb = orb;
+
+    /*
+     * A camera-facing glow, so the orb reads as a light source rather than a
+     * painted ball. Sprites always face the camera, which is what a sun needs
+     * from every angle the visitor can orbit to. It is kept close to the orb:
+     * a big additive wash over the island flattens the whole scene.
+     */
+    this.sunGlowMaterial = new THREE.SpriteMaterial({
+      map: radialFalloffTexture(96),
+      color: new THREE.Color(this.theme.practical),
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    });
+    const glow = new THREE.Sprite(this.sunGlowMaterial);
+    glow.name = 'sun-glow';
+    glow.scale.setScalar(1.35);
+    orb.add(glow);
+
+    this.sunCoreMaterial = this.track(
       new THREE.MeshStandardMaterial({
-        color: 0x14100a,
-        roughness: 0.3,
-        metalness: 0.1,
+        color: 0x2a1c06,
+        roughness: 0.28,
+        metalness: 0.05,
         emissive: new THREE.Color(this.theme.practical),
-        emissiveIntensity: 0.5,
+        emissiveIntensity: 1.6,
       }),
     );
-    this.switchIndicator = indicator;
-    const lamp = this.mesh(
-      new THREE.CylinderGeometry(0.05, 0.05, 0.035, 14),
-      indicator,
-      group,
-      'switch-lamp',
-      { position: new THREE.Vector3(0, 1.3, 0.15), cast: false, receive: false },
+    const core = this.mesh(
+      new THREE.SphereGeometry(0.55, 28, 20),
+      this.sunCoreMaterial,
+      orb,
+      'sun-core',
+      { cast: false, receive: false },
     );
-    lamp.rotation.x = Math.PI / 2;
+    core.userData.spin = false;
 
-    /* The lever: a group pivoting at the housing, arm offset so it swings. */
-    const lever = new THREE.Group();
-    lever.name = 'switch-lever';
-    lever.position.set(0, 1.44, 0.16);
-    group.add(lever);
-    const arm = this.mesh(
-      new THREE.BoxGeometry(0.055, 0.5, 0.055),
-      this.materials.metal,
-      lever,
-      'switch-arm',
-      { position: new THREE.Vector3(0, 0.25, 0), cast: false },
+    /*
+     * Spikes, distributed over the sphere rather than in one flat ring: a sun
+     * has to look like a sun from wherever the camera happens to be standing.
+     */
+    this.sunRayMaterial = this.track(
+      new THREE.MeshStandardMaterial({
+        color: 0x2a1c06,
+        roughness: 0.4,
+        metalness: 0.1,
+        emissive: new THREE.Color(this.theme.practical),
+        emissiveIntensity: 1.2,
+        transparent: true,
+        opacity: 1,
+      }),
     );
-    arm.castShadow = false;
-    this.mesh(
-      new THREE.IcosahedronGeometry(0.075, 1),
-      this.materials.practical,
-      lever,
-      'switch-knob',
-      { position: new THREE.Vector3(0, 0.52, 0), cast: false, receive: false },
-    );
-    this.switchLever = lever;
+    const rays = new THREE.Group();
+    rays.name = 'sun-rays';
+    orb.add(rays);
+    this.sunRays = rays;
+    const spikeGeometry = this.track(new THREE.ConeGeometry(0.085, 0.58, 5, 1));
+    const gold = Math.PI * (3 - Math.sqrt(5));
+    const spikes = 22;
+    const outward = new THREE.Vector3();
+    for (let i = 0; i < spikes; i++) {
+      const y = 1 - (i / (spikes - 1)) * 2;
+      const ringRadius = Math.sqrt(Math.max(0, 1 - y * y));
+      const theta = gold * i;
+      outward.set(Math.cos(theta) * ringRadius, y, Math.sin(theta) * ringRadius).normalize();
+      const spike = new THREE.Mesh(spikeGeometry, this.sunRayMaterial);
+      spike.position.copy(outward).multiplyScalar(0.7);
+      spike.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), outward);
+      spike.castShadow = false;
+      spike.receiveShadow = false;
+      rays.add(spike);
+    }
 
-    /* A generous, invisible hit volume so a tap on the post always lands. */
-    const pickGeometry = this.track(new THREE.CylinderGeometry(0.56, 0.56, 2.05, 8));
+    /* Craters: shallow dark dishes that only read once it is a moon. */
+    this.sunCraterMaterial = this.track(
+      new THREE.MeshStandardMaterial({
+        color: 0x1b2436,
+        roughness: 0.85,
+        metalness: 0,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      }),
+    );
+    const craters: [number, number, number][] = [
+      [-0.46, 0.38, 0.16],
+      [0.26, 0.48, 0.11],
+      [0.48, -0.2, 0.14],
+      [-0.2, -0.44, 0.1],
+      [0.04, 0.04, 0.08],
+    ];
+    for (const [cx, cy, r] of craters) {
+      const dish = new THREE.Mesh(new THREE.CircleGeometry(r, 16), this.sunCraterMaterial);
+      const cz = Math.sqrt(Math.max(0, 0.5 * 0.5 - cx * cx - cy * cy)) + 0.005;
+      dish.position.set(cx, cy, cz);
+      dish.lookAt(cx * 3, cy * 3, cz * 3);
+      orb.add(dish);
+    }
+
+    /* A generous hit volume, so a tap on the sun always lands. */
+    const pickGeometry = this.track(new THREE.CylinderGeometry(0.85, 0.85, 3.1, 8));
     const pick = new THREE.Mesh(pickGeometry, this.pickMaterial);
-    pick.name = 'pick-light-switch';
-    pick.position.set(x, GROUND + 1.02, z);
+    pick.name = 'pick-sun-control';
+    pick.position.set(x, GROUND + 1.5, z);
     this.group.add(pick);
 
-    this.lightSwitch = {
-      anchor: new THREE.Vector3(x, GROUND + 1.95, z),
+    this.sunControl = {
+      /* Clear of the spikes and the glow, so the caption pill never sits on
+         top of the thing it names. */
+      anchor: new THREE.Vector3(x, orbY + 1.9, z),
       pick,
       group,
+      orb,
     };
   }
 
@@ -2215,7 +2527,7 @@ export class ObservatoryWorld {
   /** All objects the pointer may hit: place volumes plus discovery markers. */
   pickTargets(): THREE.Object3D[] {
     const targets: THREE.Object3D[] = [];
-    if (this.lightSwitch) targets.push(this.lightSwitch.pick);
+    if (this.sunControl) targets.push(this.sunControl.pick);
     for (const node of this.places.values()) {
       targets.push(node.pick);
       if (node.discovery && !node.discovery.found) targets.push(node.discovery.mesh);

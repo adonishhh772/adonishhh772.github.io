@@ -82,11 +82,14 @@ export interface ShellHandle {
 const DRAG_THRESHOLD = 6;
 
 /**
- * Screen-space tap radius for the light switch. It is a small physical
- * control among large buildings, so it is given a fair target of its own
- * rather than competing with a whole destination's hit volume.
+ * Screen-space tap radius for the sun. It is a small object among large
+ * buildings, so it is given a fair target of its own rather than competing
+ * with a whole destination's hit volume.
  */
-const SWITCH_TAP_RADIUS = 26;
+const CELESTIAL_TAP_RADIUS = 26;
+
+/** The caption key for the in-world sun/moon control. */
+const CELESTIAL_KEY = 'celestial:sun';
 
 /** Selectors whose gestures belong to the control, never to the camera. */
 const INTERACTIVE_SELECTOR = [
@@ -305,7 +308,6 @@ export function mountShell(root: WorldHost): ShellHandle {
   let contextLost = false;
   /** The caption that opened the open document, so focus can go back to it. */
   let lastOpenedKey: string | null = null;
-  let openedByKeyboard = false;
 
   const hotspots = new Map<string, HTMLElement>();
   const occluded = new Map<string, boolean>();
@@ -364,6 +366,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   let themeFrom: WorldTheme | null = null;
   let themeTo: WorldTheme | null = null;
   let themeT = 0;
+  let themeBlending = false;
   let envClock = 0;
   const themeScratch = {} as WorldTheme;
 
@@ -388,6 +391,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (!animate || reducedMotion) {
       themeFrom = null;
       themeTo = null;
+      themeBlending = false;
       liveTheme = next;
       applyTheme(next, true);
       if (!running) renderOnce();
@@ -396,10 +400,19 @@ export function mountShell(root: WorldHost): ShellHandle {
     themeFrom = { ...liveTheme };
     themeTo = next;
     themeT = 0;
+    themeBlending = true;
     envClock = 0;
   }
 
-  /** Step the blend. Returns true while a transition is in flight. */
+  /**
+   * Step the blend. Returns true while a transition is in flight.
+   *
+   * Note that this advances on the frame delta, which is clamped for stability,
+   * so on a slow renderer the blend takes longer in wall-clock time than the
+   * nominal duration. That is deliberate — the alternative is a jump — but it
+   * is why anything measuring the settled world waits on `themeBlending`
+   * rather than on a timer.
+   */
   function advanceTheme(delta: number): boolean {
     if (!themeFrom || !themeTo) return false;
     themeT = Math.min(1, themeT + (delta * 1000) / THEME_TRANSITION_MS);
@@ -413,6 +426,7 @@ export function mountShell(root: WorldHost): ShellHandle {
       const settled = themeTo;
       themeFrom = null;
       themeTo = null;
+      themeBlending = false;
       liveTheme = settled;
       applyTheme(settled, true);
     }
@@ -421,7 +435,7 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   const stopThemes = subscribeTheme((detail) => {
     startThemeTransition(readWorldTheme(detail.theme), detail.animate);
-    updateSwitchHotspot();
+    updateCelestialHotspot();
     if (!running) renderOnce();
   });
 
@@ -434,24 +448,93 @@ export function mountShell(root: WorldHost): ShellHandle {
   });
 
   /* ── Captions ────────────────────────────────────────────────────── */
+
+  /**
+   * The icon that belongs in a caption's circle.
+   *
+   * The shapes are rendered once by the server into `<template>` elements and
+   * cloned here, so the world's captions and the pages use one icon set
+   * instead of two that drift.
+   */
+  function iconFor(key: string): string {
+    if (key === CELESTIAL_KEY) return currentTheme() === 'light' ? 'sun' : 'moon';
+    if (key.startsWith('place:')) {
+      const id = key.slice(6);
+      if (id === 'campus') return 'compass';
+      if (id === 'studio') return 'document';
+      if (id === 'workshop') return 'grid';
+      if (id === 'library') return 'graph';
+      if (id === 'workbench') return 'github';
+      if (id === 'contact') return 'mail';
+      return 'compass';
+    }
+    const parts = key.split(':');
+    if (parts[0] === 'object') {
+      if (parts[1] === 'index') return iconFor(`place:${parts[2]}`);
+      if (parts[1] === 'article') return 'document';
+      if (parts[1] === 'project') return 'grid';
+      if (parts[1] === 'repo') return 'github';
+      if (parts[1] === 'cv') return 'document';
+      if (parts[1] === 'about') return 'user';
+      if (parts[1] === 'newsletter') return 'rss';
+      if (parts[1] === 'contact') return 'mail';
+    }
+    return 'compass';
+  }
+
+  /** The server-rendered SVG for a name, ready to place inside a mark. */
+  function iconTemplate(name: string): SVGElement | null {
+    const template = document.querySelector<HTMLTemplateElement>(
+      `template[data-world-icon="${name}"]`,
+    );
+    const node = template?.content?.firstElementChild;
+    return node instanceof SVGElement ? (node.cloneNode(true) as SVGElement) : null;
+  }
+
+  function paintMark(mark: HTMLElement, name: string): void {
+    const icon = iconTemplate(name);
+    mark.replaceChildren();
+    if (icon) mark.append(icon);
+    mark.dataset.worldIcon = name;
+  }
+
+  /** A link to somewhere outside the site is a link to a new tab. */
+  function isExternal(href: string): boolean {
+    if (!href || href.startsWith('#')) return false;
+    try {
+      return new URL(href, location.href).origin !== location.origin;
+    } catch {
+      return false;
+    }
+  }
+
   function makeHotspot(
     key: string,
     href: string,
     label: string,
     meta: string,
-    kind: 'place' | 'object' | 'switch',
+    kind: 'place' | 'object' | 'celestial',
   ): HTMLElement {
     /*
      * A place caption moves the camera, so it is a button; an object caption
-     * opens a document, so it is a link with a real URL; the light switch is
-     * a button that throws the same shared state as the interface control.
-     * That keeps history, deep links and middle-click working for content
-     * while the world itself stays the way you get around.
+     * opens a document, so it is a link with a real URL; the sun is a button
+     * that drives the same shared state as the interface control. That keeps
+     * history, deep links and middle-click working for content while the world
+     * itself stays the way you get around.
      */
     const link: HTMLElement =
       kind === 'object' ? document.createElement('a') : document.createElement('button');
-    if (kind === 'object') (link as HTMLAnchorElement).href = href;
-    else (link as HTMLButtonElement).type = 'button';
+    if (kind === 'object') {
+      const anchor = link as HTMLAnchorElement;
+      anchor.href = href;
+      /* GitHub, LinkedIn and any other off-site destination opens separately;
+         everything inside the portfolio stays inside the world. */
+      if (isExternal(href)) {
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        link.dataset.worldExternal = 'true';
+      }
+    } else (link as HTMLButtonElement).type = 'button';
     link.className = `world-hotspot world-hotspot--${kind}`;
     link.dataset.worldHotspot = key;
     link.dataset.visible = 'false';
@@ -460,6 +543,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     const mark = document.createElement('span');
     mark.className = 'world-hotspot-mark';
     mark.setAttribute('aria-hidden', 'true');
+    paintMark(mark, iconFor(key));
     const name = document.createElement('span');
     name.className = 'world-hotspot-name';
     name.textContent = label;
@@ -478,15 +562,13 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (kind === 'place') {
       const id = key.startsWith('place:') ? (key.slice(6) as DestinationId) : 'campus';
       link.addEventListener('click', () => travelTo(id));
-    } else if (kind === 'switch') {
+    } else if (kind === 'celestial') {
       link.addEventListener('click', () => toggleTheme({ animate: true }));
-      link.setAttribute('role', 'switch');
     } else {
       /* Remembered so closing the document can hand focus back to the caption
          the visitor opened it from. */
       link.addEventListener('click', () => {
         lastOpenedKey = key;
-        openedByKeyboard = link.matches(':focus-visible');
       });
     }
     return link;
@@ -498,6 +580,8 @@ export function mountShell(root: WorldHost): ShellHandle {
     anchor: THREE.Vector3;
     priority: number;
     occluded: boolean;
+    /** Vertical nudge applied when the caption had to step around the sun. */
+    offsetY: number;
   }
 
   /**
@@ -535,10 +619,10 @@ export function mountShell(root: WorldHost): ShellHandle {
     const place = world.places.get(focusPlace);
     const atPlace = focusPlace !== 'campus' && Boolean(place);
 
-    /* The light switch belongs to the campus, but it stays a live caption
-       whenever it is on screen: it is how the environment is controlled. */
-    const lightSwitch = makeHotspot('switch:lights', '#', 'Light switch', '', 'switch');
-    hotspots.set('switch:lights', lightSwitch);
+    /* The sun belongs to the campus, but it stays a live caption whenever it
+       is on screen: it is how the environment is controlled. */
+    const celestial = makeHotspot(CELESTIAL_KEY, '#', 'Sun', '', 'celestial');
+    hotspots.set(CELESTIAL_KEY, celestial);
 
     if (!atPlace) {
       for (const destination of DESTINATIONS) {
@@ -587,27 +671,35 @@ export function mountShell(root: WorldHost): ShellHandle {
       }
     }
 
-    updateSwitchHotspot();
+    updateCelestialHotspot();
 
     if (activeKey) {
       hotspots.get(activeKey)?.focus({ preventScroll: true });
     }
   }
 
-  /** Keep the physical switch's caption showing the live environment. */
-  function updateSwitchHotspot(): void {
-    const link = hotspots.get('switch:lights');
+  /**
+   * The sun's caption is the live environment: its icon, its name and its
+   * accessible label all follow the shared state, so the caption and the
+   * object it points at always say the same thing.
+   */
+  function updateCelestialHotspot(): void {
+    const link = hotspots.get(CELESTIAL_KEY);
     if (!link) return;
     const day = currentTheme() === 'light';
     link.setAttribute('aria-pressed', day ? 'true' : 'false');
-    link.setAttribute('aria-label', `Day and night light switch — currently ${day ? 'daylight' : 'night'}`);
+    link.setAttribute('aria-label', `Sun and moon — currently ${day ? 'daylight' : 'night'}; activate for ${day ? 'night' : 'daylight'}`);
+    const name = link.querySelector<HTMLElement>('.world-hotspot-name');
+    if (name) name.textContent = day ? 'Sun' : 'Moon';
     const meta = link.querySelector<HTMLElement>('.world-hotspot-meta');
     if (meta) meta.textContent = day ? 'Daylight' : 'Night';
+    const mark = link.querySelector<HTMLElement>('.world-hotspot-mark');
+    if (mark) paintMark(mark, day ? 'sun' : 'moon');
   }
 
   function anchorFor(key: string): THREE.Vector3 | null {
-    if (key === 'switch:lights') {
-      return world.lightSwitch ? world.lightSwitch.anchor.clone() : null;
+    if (key === CELESTIAL_KEY) {
+      return world.sunControl ? world.sunControl.anchor.clone() : null;
     }
     if (key.startsWith('place:')) {
       const id = key.slice(6) as DestinationId;
@@ -697,41 +789,95 @@ export function mountShell(root: WorldHost): ShellHandle {
           /*
            * The place's own index page is the only route to its archive, so
            * it outranks the individual objects when the label budget bites;
-           * destinations outrank the light switch, which is also in the
-           * interface and always reachable there.
+           * destinations outrank the sun, which is also in the interface and
+           * always reachable there.
            */
           (key.startsWith('object:index:') ? 300 : 0) +
           (key.startsWith('object:') ? 200 : 0) +
           (key.startsWith('place:') ? 150 : 0) +
-          (key === 'switch:lights' ? 40 : 0) +
+          (key === CELESTIAL_KEY ? 40 : 0) +
           Math.max(0, 60 - distance),
         occluded: isOccluded || offscreen || underPanel,
+        offsetY: 0,
       });
     }
 
     candidates.sort((a, b) => b.priority - a.priority);
+
+    /*
+     * The sun's own footprint is reserved.
+     *
+     * Captions float over the scene and may overlap buildings harmlessly, but
+     * a caption sitting on the sun makes the control unreachable: the visitor
+     * would be pressing a label while aiming at the sun. So the caption layer
+     * has to keep clear of it, exactly as it keeps clear of the reading
+     * surface.
+     */
+    const reserved: { x: number; y: number; w: number; h: number }[] = [];
+    if (world.sunControl) {
+      const p = world.sunControl.pick.position.clone().project(rig.camera);
+      if (p.z < 1) {
+        const size = CELESTIAL_TAP_RADIUS * 2;
+        reserved.push({
+          x: (p.x * 0.5 + 0.5) * width - size / 2,
+          y: (-p.y * 0.5 + 0.5) * height - size / 2,
+          w: size,
+          h: size,
+        });
+      }
+    }
 
     for (const candidate of candidates) {
       const isFocused = focused === candidate.link;
       const w = candidate.link.offsetWidth || 120;
       const h = candidate.link.offsetHeight || 40;
       let show = !candidate.occluded;
+      candidate.offsetY = 0;
+
+      const intersects = (
+        a: { x: number; y: number; w: number; h: number },
+        b: { x: number; y: number; w: number; h: number },
+      ) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+      /** Free space, ignoring the sun's reservation for the sun's own caption. */
+      const collides = (test: { x: number; y: number; w: number; h: number }, withSun: boolean) =>
+        placed.some((other) => intersects(test, other)) ||
+        (withSun && reserved.some((other) => intersects(test, other)));
+
       if (show) {
         const box = { x: 0, y: 0, w, h };
         const p = candidate.anchor.clone().project(rig.camera);
         box.x = (p.x * 0.5 + 0.5) * width - w / 2;
         box.y = (-p.y * 0.5 + 0.5) * height - h / 2;
-        const overlaps = placed.some(
-          (o) =>
-            box.x < o.x + o.w && box.x + box.w > o.x && box.y < o.y + o.h && box.y + box.h > o.y,
-        );
-        if (!isFocused && (overlaps || placed.length >= labelLimit)) show = false;
+
+        const isCelestial = candidate.key === CELESTIAL_KEY;
+        const overlaps = collides(box, false);
+        const coversSun = !isCelestial && collides(box, true) && !overlaps;
+
+        if (coversSun) {
+          /*
+           * A destination label blocked only by the sun steps out of its way
+           * rather than disappearing: the visitor needs both the control and
+           * the way to that place.
+           */
+          for (const step of [-1, 1]) {
+            const shifted = { x: box.x, y: box.y + step * (h + 12), w, h };
+            if (!collides(shifted, true)) {
+              candidate.offsetY = step * (h + 12);
+              box.y = shifted.y;
+              break;
+            }
+          }
+        }
+
+        const stillBlocked = collides(box, !isCelestial);
+        if (!isFocused && (stillBlocked || placed.length >= labelLimit)) show = false;
         else placed.push(box);
       }
 
       if (show) {
         const p = candidate.anchor.clone().project(rig.camera);
-        const y = (-p.y * 0.5 + 0.5) * height;
+        const y = (-p.y * 0.5 + 0.5) * height + candidate.offsetY;
         /* Keep the whole pill on screen: its own width decides the margin. */
         const margin = 8;
         const x = THREE.MathUtils.clamp(
@@ -869,6 +1015,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   function describeHref(href: string): string {
     if (href === '/' || href === '') return 'the campus overview';
     if (href.startsWith('/writing')) return 'the article archive';
+    if (href.startsWith('/subscribe')) return 'the subscribe page';
     if (href.startsWith('/work')) return 'the project list';
     if (href.startsWith('/open-source')) return 'the repository list';
     if (href.startsWith('/about')) return 'the biography';
@@ -961,7 +1108,6 @@ export function mountShell(root: WorldHost): ShellHandle {
       } else {
         document.querySelector<HTMLElement>('[data-surface-close]')?.focus({ preventScroll: true });
       }
-      openedByKeyboard = false;
     } else if (closedDocument) {
       const caption = lastOpenedKey ? hotspots.get(lastOpenedKey) : null;
       if (caption) caption.focus({ preventScroll: true });
@@ -970,7 +1116,6 @@ export function mountShell(root: WorldHost): ShellHandle {
           .querySelector<HTMLElement>('[data-world-chrome] [data-world-map]')
           ?.focus({ preventScroll: true });
       }
-      openedByKeyboard = false;
     }
 
     currentHref = typeof location === 'undefined' ? '/' : location.pathname;
@@ -1222,14 +1367,14 @@ export function mountShell(root: WorldHost): ShellHandle {
   function handleTap(x: number, y: number): void {
     if (currentMode() !== 'world') return;
 
-    if (world.lightSwitch && occluded.get('switch:lights') !== true) {
-      const projected = world.lightSwitch.pick.position.clone().project(rig.camera);
+    if (world.sunControl && occluded.get(CELESTIAL_KEY) !== true) {
+      const projected = world.sunControl.pick.position.clone().project(rig.camera);
       if (projected.z < 1) {
         const width = stageEl.clientWidth;
         const height = stageEl.clientHeight;
         const sx = (projected.x * 0.5 + 0.5) * width;
         const sy = (-projected.y * 0.5 + 0.5) * height;
-        if (Math.hypot(x - sx, y - sy) <= SWITCH_TAP_RADIUS) {
+        if (Math.hypot(x - sx, y - sy) <= CELESTIAL_TAP_RADIUS) {
           toggleTheme({ animate: true });
           return;
         }
@@ -1244,7 +1389,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     const hit = pickAt(x, y);
     if (!hit) return;
 
-    if (world.lightSwitch && hit === world.lightSwitch.pick) {
+    if (world.sunControl && hit === world.sunControl.pick) {
       toggleTheme({ animate: true });
       return;
     }
@@ -1458,8 +1603,8 @@ export function mountShell(root: WorldHost): ShellHandle {
    * for support ("where is the camera?"), and it never mutates anything.
    */
   (window as unknown as { __worldDebug?: () => unknown }).__worldDebug = () => {
-    const anchor = world.lightSwitch?.anchor;
-    const pick = world.lightSwitch?.pick;
+    const anchor = world.sunControl?.anchor;
+    const pick = world.sunControl?.pick;
     const projected = anchor ? anchor.clone().project(rig.camera) : null;
     const pickProjected = pick ? pick.position.clone().project(rig.camera) : null;
     const width = stageEl.clientWidth;
@@ -1477,14 +1622,22 @@ export function mountShell(root: WorldHost): ShellHandle {
       surface: state.surface,
       reading,
       theme: theme.name,
+      /**
+       * True while the day/night blend is still running. The blend advances on
+       * clamped frame deltas, so on a slow device it takes longer in wall time
+       * than the nominal duration — anything measuring the settled world has
+       * to wait for this rather than for a timeout.
+       */
+      transitioning: themeBlending,
+      themeProgress: themeT,
       ambient: ambientAllowed,
       orbit: rig.orbitState,
       /** Which caption opened the current document, if any. */
       openedFrom: lastOpenedKey,
-      /** Where the switch's caption sits. */
-      switchScreen: toScreen(projected),
-      /** Where the switch's body is — the point a tap resolves against. */
-      switchPick: toScreen(pickProjected),
+      /** Where the sun's caption sits. */
+      sunScreen: toScreen(projected),
+      /** Where the sun itself is — the point a tap resolves against. */
+      sunPick: toScreen(pickProjected),
     };
   };
 
@@ -1495,7 +1648,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   ) => {
     const hit = pickAt(x, y);
     if (!hit) return null;
-    if (world.lightSwitch && hit === world.lightSwitch.pick) return 'light-switch';
+    if (world.sunControl && hit === world.sunControl.pick) return 'sun-control';
     for (const [id, node] of world.places) if (hit === node.pick) return `place:${id}`;
     for (const marker of world.objectMarkers) {
       if (hit === marker.pick) return `object:${marker.kind}:${marker.id}`;

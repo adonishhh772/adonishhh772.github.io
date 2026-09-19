@@ -4,7 +4,7 @@
  * Drives a real WebGL-capable browser over CDP and walks the journeys the
  * experience promises: navigation by caption, tap versus drag, theme changes
  * that survive routes, document open/close with camera restoration, the
- * physical switch, forms, filters, print, reduced motion, context loss and
+ * sun and moon, forms, filters, print, reduced motion, context loss and
  * direct deep links. Screenshots are captured after transitions settle.
  *
  * Usage:  node tools/worldcheck/run.mjs [baseUrl]
@@ -13,6 +13,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { launchBrowser, Page, sleep } from './cdp.mjs';
+import { luminanceOf } from './png.mjs';
 
 const BASE = process.argv[2] ?? 'http://localhost:4321';
 const OUT = '.screenshots/world';
@@ -34,6 +35,22 @@ async function check(name, fn) {
   }
 }
 
+/**
+ * Wait for the day/night blend to finish.
+ *
+ * It advances on clamped frame deltas, so on a slow renderer it takes longer in
+ * wall time than the nominal duration. Anything that measures or photographs
+ * the settled world waits on this rather than on a sleep — the first version of
+ * this harness slept, and measured a half-finished blend as if it were night.
+ */
+async function settleTheme(page) {
+  await page.waitFor(
+    `!!window.__worldDebug && window.__worldDebug().transitioning === false`,
+    { timeout: 40000, label: 'theme settled' },
+  );
+  await sleep(600);
+}
+
 /** Wait until the renderer is up and the first frame has been drawn. */
 async function ready(page) {
   await page.waitFor(
@@ -47,7 +64,7 @@ async function ready(page) {
   await sleep(700);
 }
 
-const state = (page) => `(() => {
+const state = () => `(() => {
   const world = document.querySelector('[data-world]');
   const body = document.body;
   return {
@@ -147,7 +164,7 @@ const main = async () => {
 
     /* ── 1. The world starts, one renderer, chrome present ─────────── */
     await check('World starts and exposes its controls', async () => {
-      const info = await page.evaluate(state(page));
+      const info = await page.evaluate(state());
       if (info.worldState !== 'ready') throw new Error(`state ${info.worldState}`);
       if (info.mode !== 'world') throw new Error(`mode ${info.mode}`);
       if (!info.themeToggle) throw new Error('no interface theme toggle');
@@ -171,8 +188,8 @@ const main = async () => {
     /* ── 2. Night → day through the interface control ─────────────── */
     await check('Interface toggle switches to daylight', async () => {
       await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-      await sleep(1100);
-      const info = await page.evaluate(state(page));
+      await settleTheme(page);
+      const info = await page.evaluate(state());
       if (info.theme !== 'light') throw new Error(`theme is ${info.theme}`);
       const stored = await page.evaluate(`localStorage.getItem('theme')`);
       if (stored !== 'light') throw new Error(`stored ${stored}`);
@@ -183,10 +200,47 @@ const main = async () => {
 
     await check('Interface toggle switches back to night', async () => {
       await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-      await sleep(1100);
-      const info = await page.evaluate(state(page));
+      await settleTheme(page);
+      const info = await page.evaluate(state());
       if (info.theme !== 'dark') throw new Error(`theme is ${info.theme}`);
       return 'theme=dark';
+    });
+
+    /*
+     * The look of the two states is a claim like any other, and it is one that
+     * a half-finished blend silently breaks. Measured from the frames rather
+     * than trusted: the day overview has to be far brighter than the night one,
+     * and the night one has to still be dark.
+     */
+    await check('Day is bright and night is dark, measured from the frames', async () => {
+      const day = luminanceOf(join(OUT, '02-overview-day.png')).mean;
+      const night = luminanceOf(join(OUT, '01-overview-night.png')).mean;
+      if (night > 70) throw new Error(`night measures ${night.toFixed(1)} — too washed out`);
+      if (day < 140) throw new Error(`day measures ${day.toFixed(1)} — too dark`);
+      if (day - night < 90) {
+        throw new Error(`day ${day.toFixed(1)} vs night ${night.toFixed(1)} — too little contrast`);
+      }
+      return `day ${day.toFixed(1)} vs night ${night.toFixed(1)}`;
+    });
+
+    await check('Stars appear at night, and the night sky is dark', async () => {
+      /* The upper sky band: a gradient cannot exceed its own top stop, so
+         bright specks there can only be the starfield. */
+      const band = { top: 0.02, bottom: 0.18, left: 0.25, right: 0.75 };
+      const nightSky = luminanceOf(join(OUT, '01-overview-night.png'), band);
+      const daySky = luminanceOf(join(OUT, '02-overview-day.png'), band);
+      if (nightSky.mean >= daySky.mean) {
+        throw new Error(
+          `night sky ${nightSky.mean.toFixed(1)} is not darker than day ${daySky.mean.toFixed(1)}`,
+        );
+      }
+      if (nightSky.max < 140) {
+        throw new Error(`no stars: brightest night-sky pixel is ${nightSky.max.toFixed(0)}`);
+      }
+      if (nightSky.max >= daySky.max - 2) {
+        throw new Error('the night sky is as bright as the day sky');
+      }
+      return `night sky mean ${nightSky.mean.toFixed(1)}, brightest ${nightSky.max.toFixed(0)}; day brightest ${daySky.max.toFixed(0)}`;
     });
 
     /* ── 3. A caption click travels; a document opens once ────────── */
@@ -195,7 +249,7 @@ const main = async () => {
       if (!studioBox) throw new Error('studio caption not visible');
       await page.click(studioBox.x + studioBox.width / 2, studioBox.y + studioBox.height / 2);
       await sleep(1400);
-      const info = await page.evaluate(state(page));
+      const info = await page.evaluate(state());
       if (info.focus !== 'studio') throw new Error(`focus is ${info.focus}`);
       const hasCv = info.hotspots.some((hotspot) => hotspot.key.startsWith('object:cv'));
       if (!hasCv) throw new Error('studio did not reveal its objects');
@@ -212,7 +266,7 @@ const main = async () => {
       await page.waitFor(`document.body.dataset.surface === 'cv'`, { label: 'CV open' });
       await sleep(900);
       const after = await page.evaluate(`performance.getEntriesByType('navigation').length`);
-      const info = await page.evaluate(state(page));
+      const info = await page.evaluate(state());
       if (after !== before) throw new Error('the page reloaded to open the document');
       if (!info.panelVisible) throw new Error('panel is not visible');
       return `surface=${info.surface}, no reload`;
@@ -238,7 +292,7 @@ const main = async () => {
       );
       await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
       await sleep(1000);
-      const info = await page.evaluate(state(page));
+      const info = await page.evaluate(state());
       if (info.theme !== 'light') throw new Error(`theme is ${info.theme}`);
       if (info.surface !== 'cv') throw new Error('document was lost');
       const scrollAfter = await page.evaluate(
@@ -254,7 +308,7 @@ const main = async () => {
       const navs = await page.evaluate(`performance.getEntriesByType('navigation').length`);
       await page.clickSelector('[data-surface-close]');
       await sleep(1400);
-      const info = await page.evaluate(state(page));
+      const info = await page.evaluate(state());
       const navsAfter = await page.evaluate(`performance.getEntriesByType('navigation').length`);
       if (navsAfter !== navs) throw new Error('closing reloaded the page');
       if (info.surface !== 'none') throw new Error(`still reading ${info.surface}`);
@@ -265,29 +319,29 @@ const main = async () => {
     await page.screenshot(join(OUT, '06-cv-closed.png'));
 
     /* ── 5. The physical light switch ─────────────────────────────── */
-    await check('The light switch exists as a physical object in the scene', async () => {
+    await check('The sun exists as a physical object in the scene', async () => {
       const debug = await page.evaluate(`window.__worldDebug()`);
-      if (!debug.switchScreen) throw new Error('the world has no light switch');
-      if (!debug.switchScreen.onScreen) throw new Error('the switch is behind the camera');
-      return `lever projected at ${Math.round(debug.switchScreen.x)},${Math.round(debug.switchScreen.y)}`;
+      if (!debug.sunScreen) throw new Error('the world has no sun');
+      if (!debug.sunScreen.onScreen) throw new Error('the sun is behind the camera');
+      return `lever projected at ${Math.round(debug.sunScreen.x)},${Math.round(debug.sunScreen.y)}`;
     });
 
-    await check('Tapping the physical switch in the scene changes the light', async () => {
+    await check('Tapping the sun in the scene changes the light', async () => {
       /* A direct tap on the post itself, resolved by the scene rather than by
          a caption: this is the physical control, not the interface one. */
       const before = await page.evaluate(`document.documentElement.dataset.theme`);
-      const point = await page.evaluate(`window.__worldDebug().switchPick`);
+      const point = await page.evaluate(`window.__worldDebug().sunPick`);
       const blocked = await page.evaluate(`(() => {
         const node = document.elementFromPoint(${point.x}, ${point.y});
         return node ? (node.className || node.tagName) : null;
       })()`);
       if (blocked !== 'world-canvas') {
-        throw new Error(`the switch body is covered by ${blocked}`);
+        throw new Error(`the sun is covered by ${blocked}`);
       }
       await page.click(point.x, point.y);
       await page.waitFor(`document.documentElement.dataset.theme !== ${JSON.stringify(before)}`, {
         timeout: 6000,
-        label: 'switch throw',
+        label: 'sun activation',
       });
       await sleep(900);
       const after = await page.evaluate(`document.documentElement.dataset.theme`);
@@ -295,38 +349,44 @@ const main = async () => {
         `document.querySelector('[data-world-chrome] [data-theme-toggle]').getAttribute('aria-pressed')`,
       );
       const expected = after === 'light' ? 'true' : 'false';
-      if (toggle !== expected) throw new Error('the interface toggle disagrees with the switch');
+      if (toggle !== expected) throw new Error('the interface toggle disagrees with the sun');
       const stored = await page.evaluate(`localStorage.getItem('theme')`);
-      if (stored !== after) throw new Error('the switch did not persist the shared state');
+      if (stored !== after) throw new Error('the sun did not persist the shared state');
       return `scene tap: ${before} → ${after}; both controls and storage agree`;
     });
 
-    await check('The switch caption is a labelled, keyboard-operable control', async () => {
+    await check('The sun caption is a labelled, keyboard-operable control', async () => {
       const info = await page.evaluate(`(() => {
-        const node = document.querySelector('.world-hotspot[data-world-hotspot="switch:lights"]');
+        const node = document.querySelector('.world-hotspot[data-world-hotspot="celestial:sun"]');
         if (!node) return null;
         return {
-          role: node.getAttribute('role'),
-          label: node.getAttribute('aria-label'),
           pressed: node.getAttribute('aria-pressed'),
+          label: node.getAttribute('aria-label'),
+          name: node.querySelector('.world-hotspot-name')?.textContent?.trim(),
+          icon: node.querySelector('.world-hotspot-mark')?.dataset.worldIcon,
           tag: node.tagName,
         };
       })()`);
-      if (!info) throw new Error('no switch caption');
+      if (!info) throw new Error('no sun caption');
       if (info.tag !== 'BUTTON') throw new Error(`caption is a ${info.tag}`);
-      if (info.role !== 'switch') throw new Error('caption is not announced as a switch');
-      if (!/currently (daylight|night)/.test(info.label ?? '')) {
+      if (info.pressed !== 'true' && info.pressed !== 'false') {
+        throw new Error('the caption does not expose its state');
+      }
+      if (!/sun and moon/i.test(info.label ?? '')) {
         throw new Error(`unhelpful label: ${info.label}`);
       }
-      return info.label;
+      if (info.icon !== 'sun' && info.icon !== 'moon') {
+        throw new Error(`the circle shows "${info.icon}" rather than a sun or moon`);
+      }
+      return `"${info.name}" / ${info.icon} / pressed=${info.pressed}`;
     });
 
     /* ── 6. Click versus drag ─────────────────────────────────────── */
     await check('Dragging the background moves the camera and opens nothing', async () => {
-      const info0 = await page.evaluate(state(page));
+      const info0 = await page.evaluate(state());
       await page.drag({ x: 1100, y: 620 }, { x: 780, y: 560 }, 14);
       await sleep(600);
-      const info1 = await page.evaluate(state(page));
+      const info1 = await page.evaluate(state());
       if (info1.surface !== 'none') throw new Error('a drag opened a document');
       if (info1.focus !== info0.focus) throw new Error('a drag travelled');
       return 'no document opened, no travel';
@@ -348,7 +408,7 @@ const main = async () => {
     await check('Map menu navigates with the theme preserved', async () => {
       const themeBefore = await page.evaluate(`document.documentElement.dataset.theme`);
       await travel(page, '/writing/', 'library');
-      const info = await page.evaluate(state(page));
+      const info = await page.evaluate(state());
       if (info.theme !== themeBefore) throw new Error('theme changed across navigation');
       return `destination=${info.destination}, theme=${info.theme}`;
     });
@@ -387,7 +447,7 @@ const main = async () => {
         const path = new URL(slug).pathname;
         await page.navigate(`${BASE}${path}`);
         await ready(page);
-        const info = await page.evaluate(state(page));
+        const info = await page.evaluate(state());
         if (info.surface !== 'article') throw new Error(`${path}: surface ${info.surface}`);
         if (!info.panelTitle) throw new Error(`${path}: no document title`);
       }
@@ -401,7 +461,7 @@ const main = async () => {
       for (const path of paths) {
         await page.navigate(`${BASE}${path}`);
         await ready(page);
-        const info = await page.evaluate(state(page));
+        const info = await page.evaluate(state());
         if (info.surface !== 'project') throw new Error(`${path}: surface ${info.surface}`);
         if (!info.panelTitle) throw new Error(`${path}: no title`);
         await page.clickSelector('[data-surface-close]');
@@ -410,7 +470,7 @@ const main = async () => {
           label: `${path} closed`,
         });
         await sleep(400);
-        const after = await page.evaluate(state(page));
+        const after = await page.evaluate(state());
         if (after.surface === 'project') throw new Error(`${path}: did not close`);
         if (after.destination !== 'workshop') throw new Error(`${path}: landed on ${after.destination}`);
       }
@@ -424,13 +484,13 @@ const main = async () => {
       const target = `${BASE}/writing/from-demo-to-dependable/`;
       await page.navigate(target);
       await ready(page);
-      let info = await page.evaluate(state(page));
+      let info = await page.evaluate(state());
       if (info.surface !== 'article' || info.destination !== 'library') {
         throw new Error(`direct load landed on ${info.surface}/${info.destination}`);
       }
       await page.send('Page.reload');
       await ready(page);
-      info = await page.evaluate(state(page));
+      info = await page.evaluate(state());
       if (info.surface !== 'article') throw new Error('refresh lost the document');
       await page.navigate(`${BASE}/writing/`);
       await ready(page);
@@ -438,12 +498,12 @@ const main = async () => {
       await page.evaluate(`history.back()`);
       await sleep(1500);
       await ready(page);
-      info = await page.evaluate(state(page));
+      info = await page.evaluate(state());
       if (info.surface !== 'article') throw new Error(`Back landed on ${info.surface}`);
       await page.evaluate(`history.forward()`);
       await sleep(1500);
       await ready(page);
-      info = await page.evaluate(state(page));
+      info = await page.evaluate(state());
       if (info.destination !== 'library') throw new Error(`Forward landed on ${info.destination}`);
       return 'direct load, refresh, Back and Forward all consistent';
     });
@@ -620,7 +680,7 @@ const main = async () => {
       if (!alertHidden) throw new Error('the failure screen stayed up after retry');
       const theme = await page.evaluate(`document.documentElement.dataset.theme`);
       if (!theme) throw new Error('theme lost across the rebuild');
-      const info = await page.evaluate(state(page));
+      const info = await page.evaluate(state());
       if (info.worldState !== 'ready') throw new Error('the world is not usable after retry');
       return 'explicit retry ends in one working renderer';
     });
@@ -740,7 +800,7 @@ const main = async () => {
     await check('Mobile swipe moves the camera and opens nothing', async () => {
       await page.swipe({ x: 300, y: 640 }, { x: 90, y: 600 }, 14);
       await sleep(600);
-      const info = await page.evaluate(state(page));
+      const info = await page.evaluate(state());
       if (info.surface !== 'none') throw new Error('a swipe opened a document');
       return 'swipe is a camera gesture only';
     });
