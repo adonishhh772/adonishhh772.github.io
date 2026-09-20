@@ -126,6 +126,16 @@ const CAPTION_HIDE_DELAY = 260;
 const CAPTION_STAY = 2;
 
 /**
+ * The box a caption's marker occupies, in CSS pixels.
+ *
+ * The stylesheet fixes it: a compact caption is a 44px circle with no padding
+ * and no gap whatever its name is. Naming it here means the placement can ask
+ * for the marker's box without measuring the element — which, while the
+ * caption is showing its name, would answer with the name's size instead.
+ */
+const MARKER_SIZE = 44;
+
+/**
  * The order the campus menu is placed in — Home first, then the ring.
  *
  * It is deliberately not the captions' distance from the camera. Distance is a
@@ -537,6 +547,16 @@ export function mountShell(root: WorldHost): ShellHandle {
   const lastSpot = new Map<string, { dy: number; compact: boolean }>();
   const wasVisible = new Map<string, boolean>();
   const hideWanted = new Map<string, number>();
+  /**
+   * The measured size of each caption's name-pill.
+   *
+   * `offsetWidth` on a caption answers for the weight it is showing right now,
+   * and a marker is 44px wide whatever its name is — so the pill's size has to
+   * be asked for separately and remembered, or a marker tested for growth is
+   * measured against its own marker box, decides it fits, grows into a pill
+   * that does not, shrinks, and repeats. That is the flicker.
+   */
+  const pillSizes = new Map<string, { w: number; h: number }>();
   const raycaster = new THREE.Raycaster();
   const occluders: THREE.Object3D[] = [];
   let occlusionClock = 0;
@@ -899,6 +919,9 @@ export function mountShell(root: WorldHost): ShellHandle {
     lastSpot.clear();
     wasVisible.clear();
     hideWanted.clear();
+    /* Captions are new elements with their own labels: nothing measured about
+       the last set of them applies to this one. */
+    pillSizes.clear();
 
     const place = world.places.get(focusPlace);
     const atPlace = focusPlace !== 'campus' && Boolean(place);
@@ -1285,19 +1308,54 @@ export function mountShell(root: WorldHost): ShellHandle {
 
     candidates.sort((a, b) => b.priority - a.priority);
 
-    /** Where a caption would sit at its current size, in stage pixels. */
-    const boxFor = (link: HTMLElement) => {
-      const anchor = candidateAnchor(link);
-      if (!anchor) return null;
+    /**
+     * The size of a caption's name-pill, measured once and remembered.
+     *
+     * Asking the element is the only way to know, and it has to be asked for
+     * the pill's weight explicitly: see `pillSizes`.
+     */
+    const pillSize = (key: string, link: HTMLElement) => {
+      const cached = pillSizes.get(key);
+      if (cached) return cached;
+      const previous = link.dataset.compact;
+      link.dataset.compact = 'false';
+      const size = { w: link.offsetWidth || 44, h: link.offsetHeight || 44 };
+      if (previous === undefined) delete link.dataset.compact;
+      else link.dataset.compact = previous;
+      pillSizes.set(key, size);
+      return size;
+    };
+
+    /** Where a caption of a given size would sit, projected. */
+    const boxOfSize = (anchor: THREE.Vector3, w: number, h: number) => {
       const p = anchor.clone().project(rig.camera);
-      const w = link.offsetWidth || 44;
-      const h = link.offsetHeight || 44;
       return {
         x: (p.x * 0.5 + 0.5) * width - w / 2,
         y: (-p.y * 0.5 + 0.5) * height - h / 2,
         w,
         h,
       };
+    };
+
+    /** The box the caption's name-pill occupies. */
+    const pillBoxFor = (key: string, link: HTMLElement) => {
+      const anchor = candidateAnchor(link);
+      if (!anchor) return null;
+      const size = pillSize(key, link);
+      return boxOfSize(anchor, size.w, size.h);
+    };
+
+    /**
+     * The box the caption's marker occupies.
+     *
+     * A marker is a 44px circle by construction — the stylesheet says so — so
+     * this needs no measurement, and, unlike a measurement, it is right even
+     * while the caption is showing its name.
+     */
+    const markerBoxFor = (link: HTMLElement) => {
+      const anchor = candidateAnchor(link);
+      if (!anchor) return null;
+      return boxOfSize(anchor, MARKER_SIZE, MARKER_SIZE);
     };
 
     const overlapsAny = (
@@ -1460,14 +1518,17 @@ export function mountShell(root: WorldHost): ShellHandle {
          next frame can offer it the same place first. */
       let spotDy = 0;
       /*
-       * Where the caption sits at its anchor, and where it sat last frame —
-       * both lifted to the menu floor (see above), once, so that every path
-       * below answers to it: the anchor itself, the position it held, the pill
-       * it grows back into, and its marker.
+       * Where the caption sits as a name-pill, and where it sits as a marker —
+       * both lifted to the menu floor (see above). Asking for the right box
+       * for the weight being considered is the whole point: that answer is
+       * what decides whether it fits.
        */
-      const anchorBox = lift(boxFor(link));
+      const pillAnchor = lift(pillBoxFor(candidate.key, link));
+      const markerAnchor = lift(markerBoxFor(link));
+      /* Where it stood last frame, in the weight it stood there as. */
+      const heldBase = before?.compact ? markerAnchor : pillAnchor;
       const heldBox =
-        anchorBox && before ? lift({ ...anchorBox, y: anchorBox.y + before.dy }) : null;
+        before && heldBase ? lift({ ...heldBase, y: heldBase.y + before.dy }) : null;
       /*
        * A caption the visitor is on shows its name — and stays where it is.
        *
@@ -1480,10 +1541,10 @@ export function mountShell(root: WorldHost): ShellHandle {
        * Home would leap back to its building and back again.
        */
       let box: { x: number; y: number; w: number; h: number } | null =
-        isFocused || isRevealed ? heldBox ?? anchorBox : null;
+        isFocused || isRevealed ? heldBox ?? pillAnchor : null;
 
       if (!isFocused && !isRevealed) {
-        const full = compactAll ? null : anchorBox;
+        const full = compactAll ? null : pillAnchor;
         /* A menu caption answers to the bar as well as to the card. */
         const solid = guaranteed ? menuBlocked : blocked;
         /*
@@ -1541,7 +1602,7 @@ export function mountShell(root: WorldHost): ShellHandle {
             spotDy = moved.y - full.y;
           } else {
             compact = true;
-            const marker = anchorBox;
+            const marker = markerAnchor;
             const keptMarker: { x: number; y: number; w: number; h: number } | null = marker
               ? clearSpot(marker, placed, [], solid, kept, floor) ?? marker
               : null;
@@ -1550,7 +1611,7 @@ export function mountShell(root: WorldHost): ShellHandle {
           }
         } else if (placed.length + markers.length < labelLimit + 4) {
           compact = true;
-          const marker = anchorBox;
+          const marker = markerAnchor;
           /*
            * A marker may share space with another marker — two circles that
            * overlap still read as two circles — but never with a named pill
