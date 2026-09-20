@@ -74,7 +74,7 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
           </div>
 
           <p class="loader-meta mono">
-            <span data-world-progress-value>0</span>% · {hero.stage.loadingLabel}
+            <span data-world-progress-value>0</span>%
           </p>
         </div>
       </div>
@@ -145,9 +145,21 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
    * applies to the build: the bar can hold a conversation during it, and only
    * the shell — which is the one thing that knows the scene is up — takes it
    * to 100.
+   *
+   * How long the screen is given is a separate matter, and it is what stops
+   * the whole thing reading as a glitch. A warm cache builds the campus in a
+   * few hundred milliseconds: without a floor, the visitor gets a dark flash
+   * with a rule that snaps to 100% and vanishes. If the world is ready before
+   * `MIN_VISIBLE_MS`, the handover waits for it, so the rule visibly completes
+   * and the canvas then dissolves in. A slow load is never delayed by any of
+   * it — the floor only ever applies to time the loader has already had.
    */
+  const MIN_VISIBLE_MS = 900;
+  const startedAt = performance.now();
   let shown = 0;
   let ceiling = 8;
+  let handedOver = false;
+  let creep = 0;
 
   const paint = () => {
     const rounded = Math.round(shown);
@@ -156,7 +168,63 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
     if (valueEl) valueEl.textContent = String(rounded);
   };
 
+  /**
+   * Let the canvas take over.
+   *
+   * The poster and the canvas cross-fade exactly as they always did; the hold
+   * attribute only decides *when* that starts.
+   */
+  const handOver = () => {
+    if (handedOver) return;
+    handedOver = true;
+    window.clearInterval(creep);
+    delete document.documentElement.dataset.worldHold;
+  };
+
+  /**
+   * The campus is built: finish the rule, then hand the screen over.
+   *
+   * The remaining time is spent easing `shown` to 100% rather than assigning
+   * it, so the last thing the visitor sees is the rule completing instead of a
+   * jump — and the canvas is held back until it has.
+   */
+  const complete = () => {
+    if (handedOver) return;
+    const from = shown;
+    const left = MIN_VISIBLE_MS - (performance.now() - startedAt);
+    /*
+     * Enough time left to be worth watching: hold the handover and finish the
+     * rule in front of the visitor. Too little to be anything but a blink:
+     * hand straight over rather than adding a delay nobody asked for, which is
+     * the case on every genuinely slow load.
+     */
+    if (left < 220) {
+      shown = 100;
+      paint();
+      handOver();
+      return;
+    }
+    document.documentElement.dataset.worldHold = 'true';
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / left);
+      shown = from + (100 - from) * (1 - Math.pow(1 - t, 3));
+      paint();
+      if (t < 1) window.requestAnimationFrame(step);
+      else handOver();
+    };
+    window.requestAnimationFrame(step);
+  };
+
   const report: ProgressReport = (value, label) => {
+    /*
+     * 100 is not a progress reading — it is the shell saying the campus is
+     * built, and the completion above is the only thing allowed to say that.
+     */
+    if (value >= 100) {
+      complete();
+      return;
+    }
     shown = Math.max(shown, value);
     ceiling = Math.max(ceiling, shown);
     if (label && stepEl) stepEl.textContent = label;
@@ -173,22 +241,28 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
    * thread is building the island, which is exactly when a main-thread timer
    * cannot fire.
    */
-  const creep = window.setInterval(() => {
+  const creepStep = () => {
     const state = worldState();
     if (state === 'ready') {
-      report(100);
-      window.clearInterval(creep);
+      complete();
       return;
     }
     if (state === 'error' || state === 'degraded') {
       loader?.setAttribute('data-stalled', 'true');
       window.clearInterval(creep);
+      delete document.documentElement.dataset.worldHold;
       return;
     }
     shown += (ceiling - shown) * 0.09;
     paint();
-  }, 110);
+  };
 
+  const startCreep = () => {
+    window.clearInterval(creep);
+    creep = window.setInterval(creepStep, 110);
+  };
+
+  startCreep();
   report(4, STEP_ENGINE);
   ceiling = 46;
 
@@ -241,6 +315,13 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
      has, the shell owns the rebuild so the canvas is replaced properly. */
   document.addEventListener('world:retry', () => {
     loader?.removeAttribute('data-stalled');
+    /* A second attempt gets a second loading screen, not the tail of the
+       first one's progress. */
+    handedOver = false;
+    shown = Math.min(shown, 60);
+    ceiling = 92;
+    delete document.documentElement.dataset.worldHold;
+    startCreep();
     if (shellLoaded) return;
     void boot();
   });

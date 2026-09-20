@@ -1191,7 +1191,10 @@ html[data-mode='world'] body {
   inset: 0;
   margin: auto;
   border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--world-signal) 45%, transparent);
+  /* Legible on the night sky rather than a rumour of an edge: this is the
+     whole picture while the campus is being built. */
+  border: 1.5px solid color-mix(in srgb, var(--world-signal) 62%, transparent);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--world-signal) 12%, transparent);
 }
 
 /* The armillary: one ring around the equator, one over the poles, one far out
@@ -1215,7 +1218,7 @@ html[data-mode='world'] body {
   width: 124%;
   height: 124%;
   border-style: dashed;
-  border-color: color-mix(in srgb, var(--world-metal) 90%, transparent);
+  border-color: color-mix(in srgb, var(--world-signal) 38%, transparent);
   animation: loader-spin 34s linear infinite reverse;
 }
 
@@ -1444,6 +1447,39 @@ html[data-mode='world'] body {
   }
 }
 
+/*
+  A short window — a phone held sideways, or a laptop with a shallow viewport —
+  has less room than this screen wants, and `overflow: hidden` would quietly
+  cut the wordmark off the bottom. The mechanism and the type give way
+  together instead, so the whole thing stays on screen and complete.
+*/
+@media (max-height: 660px) {
+  .world-loader {
+    gap: 1.1rem;
+    padding: 1.1rem;
+  }
+
+  .loader-orbit {
+    --orbit: clamp(5.5rem, 26vh, 9rem);
+  }
+
+  .loader-eyebrow {
+    display: none;
+  }
+
+  .loader-name {
+    font-size: clamp(1.35rem, 3.4vw, 1.8rem);
+  }
+
+  .loader-step {
+    font-size: 0.82rem;
+  }
+
+  .loader-rule {
+    margin-top: 0.45rem;
+  }
+}
+
 .world-canvas {
   z-index: 2;
   opacity: 0;
@@ -1457,6 +1493,23 @@ html[data-mode='world'] body {
 
 .world[data-world-state='ready'] .world-canvas {
   opacity: 1;
+}
+
+/*
+  The handover, held back.
+
+  The boot script raises this while the rule is still finishing, so a warm
+  cache cannot turn the loading experience into a flash: the canvas waits
+  until the loading screen has had its moment, and then the two cross-fade
+  exactly as they do on a slow connection.
+*/
+html[data-world-hold='true'] .world[data-world-state='ready'] .world-canvas {
+  opacity: 0;
+}
+
+html[data-world-hold='true'] .world[data-world-state='ready'] .world-poster {
+  opacity: 1;
+  pointer-events: none;
 }
 
 /*
