@@ -99,7 +99,9 @@ async function settleTheme(page) {
  *
  * The campus turns itself by default, so a screenshot taken a few seconds
  * after load has already drifted a few degrees — which makes two runs
- * impossible to compare. This is the same reset the control performs.
+ * impossible to compare. This poses the campus the way the Reset view control
+ * does and holds it there: the hook leaves the turn off, so a frame is
+ * captured of a still world rather than of one that is between two of them.
  */
 async function resetTurn(page) {
   await page.evaluate(`window.__worldResetTurn && window.__worldResetTurn()`);

@@ -121,9 +121,12 @@ const LIGHT_SWITCH_KEY = 'switch:lights';
  * around rather than a picture they have to work out. The rate is deliberately
  * under a degree a second — a full turn takes about five minutes — so it reads
  * as the scene breathing rather than as a carousel.
+ *
+ * It is also the one motion on the site the visitor cannot stop by waiting, so
+ * it yields for good the moment they touch the world: see `takeControl`.
  */
 const AUTO_TURN_RATE = 0.021;
-/** How long the visitor must leave the camera alone before it resumes. */
+/** How long the world settles before the turn eases in for the first time. */
 const AUTO_TURN_RESUME_MS = 3500;
 
 /** Selectors whose gestures belong to the control, never to the camera. */
@@ -445,10 +448,34 @@ export function mountShell(root: WorldHost): ShellHandle {
   let revealedKey: string | null = null;
   /**
    * When the visitor last did something to the camera. The automatic turn
-   * waits a moment after this before picking up again, so a visitor who is
-   * exploring is never fighting the scene for the controls.
+   * waits a moment after this before picking up, so the world settles into
+   * motion on arrival instead of jerking into it.
    */
   let lastInteraction = typeof performance === 'undefined' ? 0 : performance.now();
+  /**
+   * Whether the campus may still turn itself.
+   *
+   * The turn is the default and it is the one motion here that nobody can
+   * stop by waiting, so it stops for good the first time the visitor takes
+   * hold of the world — a press anywhere on the stage, a wheel, or travelling
+   * to a place. Coming back a few seconds later, once the hand that stopped it
+   * has gone still, is a scene fighting for the controls; nothing the visitor
+   * did asked for it to start again. Only the Reset view control turns it
+   * back on, because putting the view back the way it was composed is the one
+   * act that means "put it back the way it was".
+   */
+  let autoTurnAllowed = true;
+
+  /**
+   * The visitor has touched the world: it stops performing for them.
+   *
+   * Called from a press anywhere on the stage — the canvas, a caption, the
+   * sun — and from the wheel, which arrives without a press of its own.
+   */
+  function takeControl(): void {
+    autoTurnAllowed = false;
+    lastInteraction = performance.now();
+  }
 
   const hotspots = new Map<string, HTMLElement>();
   const occluded = new Map<string, boolean>();
@@ -775,7 +802,7 @@ export function mountShell(root: WorldHost): ShellHandle {
    */
   function travelTo(id: DestinationId, immediate = false): void {
     if (disposed) return;
-    lastInteraction = performance.now();
+    takeControl();
     focusPlace = id;
     root.dataset.focus = id;
     world.setPlaceState(id === 'campus' ? null : id);
@@ -1671,6 +1698,7 @@ export function mountShell(root: WorldHost): ShellHandle {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
       if (isInteractiveTarget(event.target)) return;
       if (currentMode() !== 'world') return;
+      takeControl();
 
       pointers.set(event.pointerId, {
         id: event.pointerId,
@@ -1787,7 +1815,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     const onWheel = (event: WheelEvent) => {
       if (currentMode() !== 'world') return;
       if (isInteractiveTarget(event.target)) return;
-      lastInteraction = performance.now();
+      takeControl();
       /* Line and page deltas normalise to roughly one notch. */
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
       rig.zoomBy(THREE.MathUtils.clamp((event.deltaY * unit) / 600, -0.4, 0.4));
@@ -1807,7 +1835,17 @@ export function mountShell(root: WorldHost): ShellHandle {
     canvasEl.addEventListener('click', onClickCapture, true);
     canvasEl.addEventListener('wheel', onWheel, { passive: true });
     canvasEl.addEventListener('dblclick', onDoubleClick);
+    /*
+     * Everything inside the stage is the world, so a press anywhere in it is
+     * the visitor taking hold — including the press that starts on a caption,
+     * which the canvas handler deliberately leaves to the control. The
+     * interface around the stage (the chrome, the identity card, an open
+     * document) is not the world, and pressing it says nothing about the
+     * camera.
+     */
+    stageEl.addEventListener('pointerdown', takeControl, { passive: true });
     cleanups.push(() => {
+      stageEl.removeEventListener('pointerdown', takeControl);
       canvasEl.removeEventListener('pointerdown', onPointerDown);
       canvasEl.removeEventListener('pointermove', onPointerMove);
       canvasEl.removeEventListener('pointerup', endPointer);
@@ -1943,9 +1981,16 @@ export function mountShell(root: WorldHost): ShellHandle {
    * owner of the camera and the control cannot drift out of step with it. It
    * puts the composition back exactly where the current place composed it:
    * orbit, zoom and any panning at once, without travelling anywhere.
+   *
+   * It is also the one press that starts the automatic turn again. It is the
+   * only control whose whole meaning is "put the view back the way it was",
+   * and the way it was is the world turning itself — so a visitor who wants
+   * the motion back has a way to ask for it, and the turn still waits out the
+   * same settling pause before it eases in.
    */
   const onResetView = () => {
     if (disposed) return;
+    autoTurnAllowed = true;
     lastInteraction = performance.now();
     rig.resetOrbit();
     compose(true);
@@ -2004,12 +2049,11 @@ export function mountShell(root: WorldHost): ShellHandle {
 
     /*
      * The campus turns itself while the visitor is only looking. It yields the
-     * moment they take the camera — a finger on the scene, a wheel, or any
-     * travel — and picks up again once they have stopped, which is what makes
-     * it feel like a display case rather than a fight over the controls.
+     * moment they take the camera — a press on the scene, a wheel, or any
+     * travel — and stays stopped: see `autoTurnAllowed`.
      */
     const idling = performance.now() - lastInteraction > AUTO_TURN_RESUME_MS;
-    rig.setAutoTurn(animate && idling ? AUTO_TURN_RATE : 0);
+    rig.setAutoTurn(animate && autoTurnAllowed && idling ? AUTO_TURN_RATE : 0);
 
     rig.update(delta, realDelta);
     world.update(clock, step);
@@ -2211,6 +2255,15 @@ export function mountShell(root: WorldHost): ShellHandle {
        * a verification run can prove that rather than trust it.
        */
       camera: rig.debug(),
+      /** The solid volumes the camera's clearance rule tests against. */
+      solids: world.cameraSolids().map((solid) => ({ ...solid })),
+      /**
+       * Whether the campus may still turn itself. False from the first press
+       * on the world onwards, and true again only after the Reset view
+       * control — so a verification run can tell "stopped" from "between
+       * frames".
+       */
+      autoTurn: autoTurnAllowed,
       /** True while the camera is still travelling between composed shots. */
       travelling: rig.travelling,
       /**
@@ -2266,10 +2319,13 @@ export function mountShell(root: WorldHost): ShellHandle {
    *
    * The world turns itself by default, so a screenshot taken a few seconds
    * after load has already drifted. This is for photography and for the
-   * verification suite: it is the same reset the control performs, without
-   * travelling anywhere.
+   * verification suite: it poses the campus exactly as the Reset view control
+   * does, and holds it there — the automatic turn stays off until the control
+   * itself is used. A hook for measuring things has to leave the scene still,
+   * which is the one difference from the control it mirrors.
    */
   (window as unknown as { __worldResetTurn?: () => void }).__worldResetTurn = () => {
+    autoTurnAllowed = false;
     rig.resetOrbit();
     lastInteraction = performance.now();
     compose(true);

@@ -106,6 +106,8 @@ export class CameraRig {
   private base: Shot;
   private from: Shot;
   private to: Shot;
+  /** The last shot as composed, before the clearance pass corrected it. */
+  private wanted: Shot | null = null;
   private travel = 1;
   private duration: number;
   private orbitAzimuth = 0;
@@ -118,7 +120,6 @@ export class CameraRig {
   private readonly offset = new THREE.Vector3();
   private readonly spherical = new THREE.Spherical();
   private readonly position = new THREE.Vector3();
-  private readonly scratch = new THREE.Vector3();
   /** Solid volumes the camera must not enter; filled by the world. */
   private solids: SolidVolume[] = [];
   private reducedMotion: boolean;
@@ -162,6 +163,7 @@ export class CameraRig {
 
   /** Travel to a composed viewpoint, along a path that stays above ground. */
   goTo(shot: Shot, options: TravelOptions = {}): void {
+    this.wanted = cloneShot(shot);
     const safe = this.safeShot(shot);
     const duration = this.reducedMotion || options.immediate ? 0 : this.travelDuration(safe);
     this.from = this.currentShot();
@@ -210,10 +212,19 @@ export class CameraRig {
     const distance = target.distanceTo(wanted);
     if (distance < 0.001) return this.clearance(wanted);
     const steps = Math.max(6, Math.min(40, Math.ceil(distance * 3)));
-    let lastClear = target.clone().addScaledVector(
-      this.scratch.subVectors(wanted, target).normalize(),
-      Math.min(1.2, distance),
-    );
+    /*
+     * What to keep when the walk finds no clear air at all: the composed
+     * position, not a point just off the target.
+     *
+     * The target is a framing anchor, not a place, and `readingShot` is free to
+     * slide it below the plateau or into a building — that is how the subject
+     * is lifted in a short frame. A walk that starts there can legitimately
+     * find nothing clear, and answering that by collapsing the camera to the
+     * near end of the line buries it in the island the target was slid under.
+     * The composed position is what the composition asked for; `clearance`
+     * below still lifts it out of the ground and out of every building.
+     */
+    let lastClear = this.clearance(wanted);
     /* The near end of the line is inside the building; start from the first
        clear sample and keep the furthest one after that. */
     let started = false;
@@ -461,6 +472,7 @@ export class CameraRig {
   debug(): {
     position: [number, number, number];
     target: [number, number, number];
+    wanted: [number, number, number] | null;
     above: number;
     radius: number;
     polar: number;
@@ -469,6 +481,9 @@ export class CameraRig {
     return {
       position: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
       target: [this.base.target.x, this.base.target.y, this.base.target.z],
+      wanted: this.wanted
+        ? [this.wanted.position.x, this.wanted.position.y, this.wanted.position.z]
+        : null,
       above: this.camera.position.y - terrainFloorAt(this.camera.position.x, this.camera.position.z),
       radius: this.camera.position.distanceTo(this.base.target),
       polar: this.spherical.phi,

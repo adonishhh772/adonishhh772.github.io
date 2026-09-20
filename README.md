@@ -76,8 +76,10 @@ everything else follows from what you select.
   arrives, at a little under a degree a second, so the first thing it says is
   that it is a place rather than a picture. The turn is wall-clock motion, not
   frame-counted, so it takes the same time on a slow device as on a fast one.
-  It yields the moment the visitor takes the camera — a drag, a scroll, a press
-  on the sun — and picks up again a few seconds after they stop. Under
+  It yields the moment the visitor takes the world — a press anywhere in it, a
+  scroll, travelling to a place — and stays stopped: motion that starts again
+  once the hand that stopped it has gone still is the one thing a visitor
+  cannot answer. **Reset view** is how they ask for it back. Under
   `prefers-reduced-motion`, or with ambient movement paused, it does not run at
   all.
 - **Every destination is on screen by default.** The ring of places is turned

@@ -157,16 +157,29 @@ export const ISLAND_BANDS: IslandBand[] = [
   { name: 'keel', from: [3.4, -8.5], to: [0, -9.4] },
 ];
 
-/** How far the island reaches at a given height, for camera clearance. */
+/**
+ * How far the island reaches at a given height, for camera clearance.
+ *
+ * The profile runs from the foot of the keel up to the crown of the plateau,
+ * so it exists only between those two heights and each segment rises in `y`.
+ * Reading either end the other way round — as this did — makes the answer zero
+ * for every height, which is not a visible failure of its own: nothing draws
+ * from it. What it silently switches off is the camera's floor, so the rig
+ * stops treating the island as ground and a shot whose look-at point was slid
+ * below the plateau collapses into the rock; it also takes the plateau and
+ * cliff radii with it, which is what the treeline and the cliff stone are
+ * placed from.
+ */
 export function islandEnvelopeAt(y: number): number {
   const profile = ISLAND_PROFILE;
-  if (y >= profile[0][1]) return 0;
-  if (y <= profile[profile.length - 1][1]) return 0;
+  const foot = profile[0][1];
+  const crown = profile[profile.length - 1][1];
+  if (y <= foot || y >= crown) return 0;
   for (let i = 0; i < profile.length - 1; i++) {
     const [r0, y0] = profile[i];
     const [r1, y1] = profile[i + 1];
-    if (y <= y0 && y >= y1) {
-      const t = y0 === y1 ? 0 : (y0 - y) / (y0 - y1);
+    if (y >= y0 && y <= y1) {
+      const t = y1 === y0 ? 0 : (y - y0) / (y1 - y0);
       return r0 + (r1 - r0) * t;
     }
   }
