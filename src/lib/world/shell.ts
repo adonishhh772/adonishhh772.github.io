@@ -1187,6 +1187,17 @@ export function mountShell(root: WorldHost): ShellHandle {
     const menu = focusPlace === 'campus' && !reading;
     /** Named pills placed so far — the label budget counts words, not icons. */
     let placedLabels = 0;
+    /**
+     * The foot of Home's caption, which is the head of the campus menu.
+     *
+     * The workbench stands at the back of the island — from the overview it is
+     * almost exactly opposite the camera, behind the observatory — so its
+     * anchor projects to the very top of the frame, above the landmark it is
+     * named after and above Home itself. The menu is read from Home downwards,
+     * so no other destination caption is allowed above it: it is lifted to sit
+     * under Home, and the rest of the ring follows in `PLACE_RANK` order.
+     */
+    let menuHeadBottom: number | null = null;
 
     /*
      * What the overview's own menu has to keep off: the identity card, and the
@@ -1350,10 +1361,21 @@ export function mountShell(root: WorldHost): ShellHandle {
        * it is placed even when the island is standing in front of it. Every
        * other caption keeps the old rule: behind something is not on screen.
        */
+      const menu = focusPlace === 'campus' && !reading;
+      const isHead = candidate.key === 'place:campus';
       const guaranteed = menu && candidate.key.startsWith('place:');
       /* The sun and the light switch are icon-only: they are placed like
          captions but they are not words, so they do not spend the budget. */
       const named = candidate.key !== CELESTIAL_KEY && candidate.key !== LIGHT_SWITCH_KEY;
+      /* Nothing in the menu sits above Home. */
+      const floor: number | null =
+        menuHeadBottom !== null && guaranteed && !isHead
+          ? menuHeadBottom + CAPTION_GAP + 4
+          : null;
+      const lift = (
+        b: { x: number; y: number; w: number; h: number } | null,
+      ): { x: number; y: number; w: number; h: number } | null =>
+        b && floor !== null && b.y < floor ? { ...b, y: floor } : b;
       const before = lastSpot.get(candidate.key);
       const visibleBefore = wasVisible.get(candidate.key) === true;
 
@@ -1420,7 +1442,7 @@ export function mountShell(root: WorldHost): ShellHandle {
       let box = isFocused || isRevealed ? boxFor(link) : null;
 
       if (!isFocused && !isRevealed) {
-        const full = compactAll ? null : boxFor(link);
+        const full = lift(compactAll ? null : boxFor(link));
         /* A menu caption answers to the bar as well as to the card. */
         const solid = guaranteed ? menuBlocked : blocked;
         /*
@@ -1433,7 +1455,7 @@ export function mountShell(root: WorldHost): ShellHandle {
          * the moment the anchor is clear again and steps aside again the next
          * frame, which is a flicker at the frame rate of the island's turn.
          */
-        const held = full && before ? { ...full, y: full.y + before.dy } : null;
+        const held = lift(full && before ? { ...full, y: full.y + before.dy } : null);
         const heldFits =
           held !== null &&
           !overlapsAny(held, placed) &&
@@ -1476,14 +1498,14 @@ export function mountShell(root: WorldHost): ShellHandle {
             spotDy = moved.y - full.y;
           } else {
             compact = true;
-            const marker = boxFor(link);
+            const marker = lift(boxFor(link));
             const keptMarker = marker ? clearSpot(marker, placed, [], solid, kept) ?? marker : null;
             box = keptMarker;
             spotDy = marker && keptMarker ? keptMarker.y - marker.y : 0;
           }
         } else if (placed.length + markers.length < labelLimit + 4) {
           compact = true;
-          const marker = boxFor(link);
+          const marker = lift(boxFor(link));
           /*
            * A marker may share space with another marker — two circles that
            * overlap still read as two circles — but never with a named pill
@@ -1535,6 +1557,12 @@ export function mountShell(root: WorldHost): ShellHandle {
         halfH + margin,
         Math.max(halfH + margin, height - halfH - margin),
       );
+      /*
+       * Where the menu starts. Home is placed first (`PLACE_RANK`), so its
+       * foot is known before any other destination is placed and the floor
+       * above can be applied to them.
+       */
+      if (menu && isHead) menuHeadBottom = y + halfH;
       link.dataset.visible = 'true';
       link.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
       link.setAttribute('aria-hidden', 'false');
