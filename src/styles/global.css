@@ -1270,6 +1270,18 @@ html[data-mode='world'] body {
   pointer-events: auto;
 }
 
+/*
+  A destination the island is standing in front of.
+
+  On the campus overview every destination keeps its caption, because that
+  caption is the menu — so the ones the observatory or a workshop is in front
+  of step back instead of disappearing. The name stays legible; the dimming is
+  what says the place itself is behind something.
+*/
+.world-hotspot--place[data-visible='true'][data-behind='true'] {
+  opacity: 0.66;
+}
+
 .world-hotspot:hover,
 .world-hotspot:focus-visible {
   border-color: var(--accent-line);

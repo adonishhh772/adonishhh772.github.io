@@ -1098,6 +1098,40 @@ export function mountShell(root: WorldHost): ShellHandle {
       blocked.push({ x: card.left, y: card.top, w: card.right - card.left, h: card.bottom - card.top });
     }
 
+    /*
+     * The campus overview is the menu.
+     *
+     * Its destination captions are the site's navigation, and the automatic
+     * turn swings them around the island: which of them the observatory is
+     * standing in front of, and how much room each one has, changes from moment
+     * to moment. A caption that drops out under those conditions takes the
+     * destination with it, which is what made the campus read as a menu with
+     * pieces missing. On the overview every destination is therefore placed
+     * whatever happens — never hidden for being behind something, never dropped
+     * for want of a slot, and moved rather than lost when it would collide. The
+     * circle still carries the name on hover, on tap and on focus, and the
+     * caption steps back rather than away while the island is in front of it.
+     */
+    const menu = focusPlace === 'campus' && !reading;
+    /** Named pills placed so far — the label budget counts words, not icons. */
+    let placedLabels = 0;
+
+    /*
+     * What the overview's own menu has to keep off: the identity card, and the
+     * control bar above it. The bar is kept out of `blocked` so that captions
+     * which are not part of the menu — the sun, an object at a destination —
+     * keep exactly the placement they had; a destination moved out of the
+     * bar's way is one a visitor can still press.
+     */
+    const menuBlocked = [...blocked];
+    const bar = document.querySelector<HTMLElement>('[data-world-chrome] .world-chrome-bar');
+    if (bar) {
+      const rect = bar.getBoundingClientRect();
+      if (rect.width > 8 && rect.height > 8) {
+        menuBlocked.push({ x: rect.left, y: rect.top, w: rect.width, h: rect.height });
+      }
+    }
+
     const candidates: Candidate[] = [];
     for (const [key, link] of hotspots) {
       const anchor = anchorFor(key);
@@ -1108,6 +1142,9 @@ export function mountShell(root: WorldHost): ShellHandle {
       const offscreen = projected.z > 1 || x < -40 || x > width + 40 || y < -20 || y > height + 20;
       const isFocused = focused === link;
       const isOccluded = occluded.get(key) === true && !isFocused;
+      /* Read by the caption itself: a destination the island is standing in
+         front of stays up and steps back, rather than vanishing. */
+      link.dataset.behind = occluded.get(key) === true ? 'true' : 'false';
       /* Skip captions the open document is sitting on top of. */
       const underPanel =
         panelRect !== null &&
@@ -1185,15 +1222,53 @@ export function mountShell(root: WorldHost): ShellHandle {
       }
     }
 
+    /**
+     * A caption that has to be shown is moved, not dropped.
+     *
+     * The search walks outwards from the anchor — a little above, a little
+     * below, then further — and takes the first position that clears the named
+     * pills, the sun's core and the interface. Markers are allowed to share
+     * space with each other, so the caller decides which of the two lists they
+     * must also avoid.
+     */
+    const clearSpot = (
+      box: { x: number; y: number; w: number; h: number },
+      solid: typeof placed,
+      marked: typeof placed,
+      avoid: typeof placed,
+    ): { x: number; y: number; w: number; h: number } | null => {
+      for (const dy of [0, -18, 18, -36, 36, -56, 56, -78, 78]) {
+        const moved = { ...box, y: box.y + dy };
+        if (
+          !overlapsAny(moved, solid) &&
+          !overlapsAny(moved, marked) &&
+          !overlapsAny(moved, sunCore) &&
+          !overlapsAny(moved, avoid)
+        ) {
+          return moved;
+        }
+      }
+      return null;
+    };
+
     for (const candidate of candidates) {
       const link = candidate.link;
       const isFocused = focused === link;
       /* A caption the visitor is on shows its name, even where a pill would
          not fit — that is what makes a marker a label on hover or focus. */
       const isRevealed = revealedKey === candidate.key;
+      /*
+       * A destination caption on the campus overview belongs to the menu, so
+       * it is placed even when the island is standing in front of it. Every
+       * other caption keeps the old rule: behind something is not on screen.
+       */
+      const guaranteed = menu && candidate.key.startsWith('place:');
+      /* The sun and the light switch are icon-only: they are placed like
+         captions but they are not words, so they do not spend the budget. */
+      const named = candidate.key !== CELESTIAL_KEY && candidate.key !== LIGHT_SWITCH_KEY;
       link.dataset.compact = 'false';
 
-      if (candidate.occluded && !isFocused && !isRevealed) {
+      if (candidate.occluded && !isFocused && !isRevealed && !guaranteed) {
         link.dataset.visible = 'false';
         link.setAttribute('aria-hidden', 'true');
         link.tabIndex = -1;
@@ -1212,7 +1287,9 @@ export function mountShell(root: WorldHost): ShellHandle {
        *
        * The budget is deliberately small. A caption is a key to the map, not
        * the map: six names at once over the island covered more of the view
-       * than the buildings they were naming.
+       * than the buildings they were naming. A destination on the overview is
+       * the exception: it is the menu, so it is nudged into the first clear
+       * space rather than dropped when the slot it wants is taken.
        */
       const compactAll = rig.zoomLevel > 1.24;
       let compact = false;
@@ -1220,15 +1297,27 @@ export function mountShell(root: WorldHost): ShellHandle {
 
       if (!isFocused && !isRevealed) {
         const full = compactAll ? null : boxFor(link);
+        /* A menu caption answers to the bar as well as to the card. */
+        const solid = guaranteed ? menuBlocked : blocked;
         const fitsFull =
           full !== null &&
           !overlapsAny(full, placed) &&
           !overlapsAny(full, markers) &&
           !overlapsAny(full, sunCore) &&
-          !overlapsAny(full, blocked) &&
-          placed.length < labelLimit;
+          !overlapsAny(full, solid) &&
+          (guaranteed || placedLabels < labelLimit);
         if (fitsFull) {
           box = full;
+        } else if (guaranteed) {
+          /* The name if it can be moved clear, its marker if it cannot. */
+          const moved = full ? clearSpot(full, placed, markers, solid) : null;
+          if (moved) {
+            box = moved;
+          } else {
+            compact = true;
+            const marker = boxFor(link);
+            box = marker ? clearSpot(marker, placed, [], solid) ?? marker : null;
+          }
         } else if (placed.length + markers.length < labelLimit + 4) {
           compact = true;
           const marker = boxFor(link);
@@ -1256,6 +1345,7 @@ export function mountShell(root: WorldHost): ShellHandle {
 
       placed.push(box);
       if (compact) markers.push(box);
+      if (!compact && named) placedLabels += 1;
       /*
        * Keep the whole caption on screen, on both axes. Its own width decides
        * the horizontal margin, and the vertical clamp is what stops a caption

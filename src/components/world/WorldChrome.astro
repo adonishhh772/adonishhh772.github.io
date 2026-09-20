@@ -743,7 +743,16 @@ const captionIcons = [
     top: calc(4.3rem + env(safe-area-inset-top, 0px));
     left: calc(0.85rem + env(safe-area-inset-left, 0px));
     width: min(23rem, calc(100vw - 1.7rem));
-    max-height: min(70vh, 34rem);
+    /*
+      Every destination, not a slice of them. The panel is measured against the
+      room the viewport actually has below the bar rather than against a
+      fraction of it, so the whole menu is on screen at once; the scroll
+      survives only as the last resort for a window too short for the list.
+    */
+    max-height: calc(100vh - 5.3rem - env(safe-area-inset-top, 0px));
+    /* The dynamic viewport follows a phone's browser chrome as it comes and
+       goes, so the panel never ends below the edge the visitor can see. */
+    max-height: calc(100dvh - 5.3rem - env(safe-area-inset-top, 0px));
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 0.9rem 0.95rem 1rem;
@@ -1013,7 +1022,8 @@ const captionIcons = [
       right: calc(0.6rem + env(safe-area-inset-right, 0px));
       width: auto;
       top: calc(3.9rem + env(safe-area-inset-top, 0px));
-      max-height: min(60vh, 30rem);
+      max-height: calc(100vh - 4.9rem - env(safe-area-inset-top, 0px));
+      max-height: calc(100dvh - 4.9rem - env(safe-area-inset-top, 0px));
     }
 
     :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-map {
@@ -1053,6 +1063,66 @@ const captionIcons = [
 
     .world-control--map {
       padding: 0 0.75rem;
+    }
+  }
+
+  /*
+    A window that is short rather than narrow — a laptop with a shallow
+    viewport, or a phone held sideways — tightens the list instead of cutting
+    it off. Only the padding and the secondary line give way: every row keeps
+    its 44px target.
+  */
+  @media (max-height: 720px) {
+    .world-map {
+      padding: 0.7rem 0.8rem 0.8rem;
+    }
+
+    .world-map-title {
+      margin-bottom: 0.5rem;
+      padding-bottom: 0.45rem;
+    }
+
+    .world-map-link {
+      padding: 0.35rem 0.55rem;
+    }
+
+    .world-map-detail {
+      font-size: 0.72rem;
+    }
+
+    .world-map-settings {
+      margin-top: 0.5rem;
+      padding-top: 0.5rem;
+    }
+
+    .world-map-hint {
+      display: none;
+    }
+  }
+
+  /*
+    Short and wide: a phone in landscape has no vertical room for eight rows,
+    but it does have the width for two columns — so the whole menu stays on
+    screen at a full 44px target, with the descriptions giving way to the names.
+  */
+  @media (max-height: 620px) and (min-width: 520px) {
+    .world-map {
+      width: min(38rem, calc(100vw - 1.7rem));
+    }
+
+    .world-map-title,
+    .world-map-detail,
+    .world-map-hint {
+      display: none;
+    }
+
+    .world-map ul {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.15rem 0.6rem;
+    }
+
+    .world-map-setting-state {
+      display: none;
     }
   }
 
