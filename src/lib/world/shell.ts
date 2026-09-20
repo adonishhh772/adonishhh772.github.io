@@ -113,6 +113,19 @@ const CAPTION_GAP = 10;
 const CAPTION_HIDE_DELAY = 260;
 
 /**
+ * How much of an overlap a caption will tolerate before it moves.
+ *
+ * `CAPTION_GAP` is the clearance a caption asks for when it is being *placed*:
+ * it should not come to rest touching anything. Once it is there, though, the
+ * standard has to be looser, or the smallest drift in a neighbour — the moon's
+ * core box a pixel wider, another caption leaning in by two — evicts it, the
+ * search finds it a new home, the neighbour moves back, and it returns. That
+ * trade is what a menu hopping between positions looks like, so a caption
+ * already on screen is asked only to avoid a *real* overlap before it is moved.
+ */
+const CAPTION_STAY = 2;
+
+/**
  * The order the campus menu is placed in — Home first, then the ring.
  *
  * It is deliberately not the captions' distance from the camera. Distance is a
@@ -1287,13 +1300,17 @@ export function mountShell(root: WorldHost): ShellHandle {
       };
     };
 
-    const overlapsAny = (box: { x: number; y: number; w: number; h: number }, list: typeof placed) =>
+    const overlapsAny = (
+      box: { x: number; y: number; w: number; h: number },
+      list: typeof placed,
+      gap = CAPTION_GAP,
+    ) =>
       list.some(
         (o) =>
-          box.x < o.x + o.w + CAPTION_GAP &&
-          box.x + box.w + CAPTION_GAP > o.x &&
-          box.y < o.y + o.h + CAPTION_GAP &&
-          box.y + box.h + CAPTION_GAP > o.y,
+          box.x < o.x + o.w + gap &&
+          box.x + box.w + gap > o.x &&
+          box.y < o.y + o.h + gap &&
+          box.y + box.h + gap > o.y,
       );
 
     /*
@@ -1335,9 +1352,12 @@ export function mountShell(root: WorldHost): ShellHandle {
       marked: typeof placed,
       avoid: typeof placed,
       preferred = 0,
+      least: number | null = null,
     ): { x: number; y: number; w: number; h: number } | null => {
       for (const dy of [preferred, 0, 18, -18, 36, -36, 56, -56, 78, -78]) {
         const moved = { ...box, y: box.y + dy };
+        /* The floor is a floor: a caption may not be nudged back above it. */
+        if (least !== null && moved.y < least) continue;
         if (
           !overlapsAny(moved, solid) &&
           !overlapsAny(moved, marked) &&
@@ -1439,10 +1459,31 @@ export function mountShell(root: WorldHost): ShellHandle {
       /* How far the chosen position sits from the caption's own anchor, so the
          next frame can offer it the same place first. */
       let spotDy = 0;
-      let box = isFocused || isRevealed ? boxFor(link) : null;
+      /*
+       * Where the caption sits at its anchor, and where it sat last frame —
+       * both lifted to the menu floor (see above), once, so that every path
+       * below answers to it: the anchor itself, the position it held, the pill
+       * it grows back into, and its marker.
+       */
+      const anchorBox = lift(boxFor(link));
+      const heldBox =
+        anchorBox && before ? lift({ ...anchorBox, y: anchorBox.y + before.dy }) : null;
+      /*
+       * A caption the visitor is on shows its name — and stays where it is.
+       *
+       * Putting it back onto its anchor while it is hovered, focused or held
+       * under a finger is what made this flicker: the pointer that revealed it
+       * is on the caption, the caption jumps out from under the pointer, the
+       * pointer leaves, the caption comes back — for as long as the visitor
+       * holds still. It is worst exactly where the two positions are furthest
+       * apart, which is the menu: a destination that has been lifted under
+       * Home would leap back to its building and back again.
+       */
+      let box: { x: number; y: number; w: number; h: number } | null =
+        isFocused || isRevealed ? heldBox ?? anchorBox : null;
 
       if (!isFocused && !isRevealed) {
-        const full = lift(compactAll ? null : boxFor(link));
+        const full = compactAll ? null : anchorBox;
         /* A menu caption answers to the bar as well as to the card. */
         const solid = guaranteed ? menuBlocked : blocked;
         /*
@@ -1455,13 +1496,13 @@ export function mountShell(root: WorldHost): ShellHandle {
          * the moment the anchor is clear again and steps aside again the next
          * frame, which is a flicker at the frame rate of the island's turn.
          */
-        const held = lift(full && before ? { ...full, y: full.y + before.dy } : null);
+        const held = heldBox;
         const heldFits =
           held !== null &&
-          !overlapsAny(held, placed) &&
-          !overlapsAny(held, markers) &&
-          !overlapsAny(held, sunCore) &&
-          !overlapsAny(held, solid);
+          !overlapsAny(held, placed, CAPTION_STAY) &&
+          !overlapsAny(held, markers, CAPTION_STAY) &&
+          !overlapsAny(held, sunCore, CAPTION_STAY) &&
+          !overlapsAny(held, solid, CAPTION_STAY);
         /*
          * Growing back from a marker is the one decision worth asking for more
          * room than it needs: a pill that only just fits this frame will not
@@ -1492,20 +1533,24 @@ export function mountShell(root: WorldHost): ShellHandle {
         } else if (mustPlace) {
           /* The name if it can be moved clear, its marker if it cannot. */
           const kept = before?.dy ?? 0;
-          const moved = full ? clearSpot(full, placed, markers, solid, kept) : null;
+          const moved: { x: number; y: number; w: number; h: number } | null = full
+            ? clearSpot(full, placed, markers, solid, kept, floor)
+            : null;
           if (moved && full) {
             box = moved;
             spotDy = moved.y - full.y;
           } else {
             compact = true;
-            const marker = lift(boxFor(link));
-            const keptMarker = marker ? clearSpot(marker, placed, [], solid, kept) ?? marker : null;
+            const marker = anchorBox;
+            const keptMarker: { x: number; y: number; w: number; h: number } | null = marker
+              ? clearSpot(marker, placed, [], solid, kept, floor) ?? marker
+              : null;
             box = keptMarker;
             spotDy = marker && keptMarker ? keptMarker.y - marker.y : 0;
           }
         } else if (placed.length + markers.length < labelLimit + 4) {
           compact = true;
-          const marker = lift(boxFor(link));
+          const marker = anchorBox;
           /*
            * A marker may share space with another marker — two circles that
            * overlap still read as two circles — but never with a named pill
@@ -1545,8 +1590,8 @@ export function mountShell(root: WorldHost): ShellHandle {
        * unreachable.
        */
       const margin = 8;
-      const halfW = box.w / 2;
-      const halfH = box.h / 2;
+      const halfW: number = box.w / 2;
+      const halfH: number = box.h / 2;
       const x = THREE.MathUtils.clamp(
         box.x + halfW,
         halfW + margin,
