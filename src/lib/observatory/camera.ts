@@ -350,9 +350,22 @@ export class CameraRig {
    * limits, the reset and the return-view restore all keep working in the same
    * coordinates — the turn is a baseline the visitor's own movement is added
    * on top of.
+   *
+   * Starting is eased and stopping is not, and that asymmetry is deliberate.
+   * The ease-in is what keeps the campus from jerking into motion the moment
+   * the page settles. Easing *out*, on the other hand, means the world keeps
+   * drifting for a second and a half after the visitor has taken the camera,
+   * opened a document or arrived somewhere — which is exactly when the scene
+   * should be still. It also drags the captions with it: they are re-placed
+   * every frame against a camera that has not finished stopping, so a
+   * destination with a dozen labels to fit churns through them while it
+   * coasts, and reads as a glitch rather than as movement. Zero therefore
+   * means zero, now.
    */
   setAutoTurn(rate: number): void {
-    this.turnTarget = this.reducedMotion ? 0 : rate;
+    const target = this.reducedMotion ? 0 : rate;
+    this.turnTarget = target;
+    if (target === 0) this.turnRate = 0;
   }
 
   /** True while the campus is turning itself. */
