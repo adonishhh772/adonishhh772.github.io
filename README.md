@@ -61,8 +61,17 @@ everything else follows from what you select.
   *All repositories*, *Contact* — so the archive pages stay reachable from
   the world alone.
 - **The camera is yours.** Drag to orbit, scroll or pinch to zoom,
-  double-click to recentre. Both are available everywhere, not in a special
-  mode, and are bounded so the island can never be lost.
+  double-click or press **Reset view** to recentre. Both are available
+  everywhere, not in a special mode.
+- **The camera cannot get under the island.** Bounds alone are not enough for
+  that, because how far back a shot is framed depends on the viewport, so every
+  candidate position — the composed shots, the orbit the visitor drives, and
+  every intermediate frame of a transition — is tested against the island's own
+  lathe profile plus a list of solid volumes the world registers for its
+  buildings, and is pulled in to the last point on its approach line that
+  clears them. The verification suite drags past every stop and zooms fully in
+  and out at every destination, and fails if the camera is ever below the
+  ground.
 - **URLs are still real.** A deep link (`/cv/`, `/writing/<slug>/`) opens the
   world at that place with that document already open; refresh works; Back
   and Forward work.
@@ -70,16 +79,26 @@ everything else follows from what you select.
   persisted canvas, so moving between destinations keeps one WebGL context,
   one scene and one camera. Only the reading surface is replaced.
 - **The camera composes for what is visible.** The reading surface is a side
-  panel on desktop and a bottom sheet on a phone; the camera frames the
-  destination in the region the document leaves free, on both axes.
+  panel on desktop and a bottom sheet on a phone, and the identity card stands
+  in the corner of the campus overview; the camera frames its subject in the
+  region those leave free, on both axes, and the overview's distance is fitted
+  to the island's real extent rather than picked by eye.
+- **Captions are placed, not merely projected.** A caption that would collide
+  with another, with the sun, with the identity card or with the open document
+  becomes a marker — a 44px icon on the same anchor — and one that cannot fit
+  even as a marker is dropped rather than piled on top of something. Markers
+  show their name on hover, on focus, and on the way down under a finger, so a
+  touch device never has to guess what a circle stands for.
 - **Reading settles the scenery.** Ambient motion stops while a document is
   open and starts again when it closes.
 - **Tapping the world works too.** A tap that never became a drag resolves
   against the scene: a caption under the finger is activated, otherwise the
-  object itself answers - a destination travels, the sun turns into the moon.
+  object itself answers - a destination travels, the observatory's light
+  switch turns the lamps over.
 - **The chrome is always there.** A compact bar holds the location readout,
   the **Map** (a labelled list of every place and document, as real links),
-  **Home** and the **sun/moon switch**. It takes the
+  **Home**, **Reset view**, the labelled **Day/Night** control and the
+  **sound** controls. It takes the
   edge opposite the reading surface on a desktop and the top strip on a phone,
   so it stays reachable from the CV, an article, a case study or the contact
   card. No destination can be lost behind a building or a panel.
@@ -89,6 +108,12 @@ everything else follows from what you select.
 - **Closing puts you back.** *Close* (and `Escape`) returns to the view the
   document was opened from, orbit and zoom included; the bar's other control
   goes to that place's list. Focus follows the document in and back out again.
+- **The scenery is a solid body.** The island is one closed lathe profile —
+  plateau, cliff, keel and both caps as a single watertight surface, with the
+  ground's four bands painted per vertex and repainted when the light changes.
+  Nothing relies on a double-sided material to hide a hole, because there are
+  none: dragging to a low angle shows a finished underside rather than the back
+  of the ground.
 
 ### Day and night
 
@@ -96,23 +121,53 @@ The light is one authoritative state, held as `data-theme` on `<html>` and
 remembered in `localStorage` once the visitor makes an explicit choice. Until
 then the system preference is honoured.
 
-- **Both controls, one state.** A real sun hangs in the sky at the top centre
-  of the view. Choosing night runs it down its arc while the moon rises from
-  the other end and the starfield comes up with it; the sun's rays, the moon's
-  craters and the compact sun/moon switch in the chrome all follow the same
-  value. The keyboard works the same caption, which is a labelled toggle
-  button. The bodies are a sky layer rather than scenery, so they are never
-  lost behind a building.
+- **Two controls, one state, and both are visible.** A real sun hangs in the
+  sky; choosing night runs it down its arc while the moon rises from the other
+  end and the starfield comes up with it. The same value is driven by the
+  brass **light switch standing on the observatory terrace** — a post with a
+  lever and a glazed lamp, which a visitor can simply press — and by the
+  control in the bar, which is labelled with the current state rather than
+  being an icon to guess at. The sun's rays, the moon's craters and the
+  switch's own lever all follow it.
 - **The sky changes, not a filter.** Sky gradient, fog colour and density,
-  hemisphere and key lights, practical lamps, lamp and window emissives, the
-  environment probe, exposure and the shadow tuning all take part in one
-  coordinated ~700ms blend, and the sun and moon travel their arc as it goes.
-  Stars come out for the night. There is no dark overlay over the canvas.
+  hemisphere and key lights, the rim light, practical lamps, window and lamp
+  emissives, the environment probe, exposure and the shadow tuning all take
+  part in one coordinated **800ms** blend, and the sun and moon travel their
+  arc as it goes. Stars come out for the night. There is no dark overlay over
+  the canvas.
+- **The bodies behave like sky.** They are a layer drawn in front of the
+  scene, because a physically placed sky body is buried inside an island the
+  camera looks down at — so they also fade out as they pass behind the island,
+  which is what stops the moon landing on a roof like a decal.
 - **The page changes with it.** Reading panels, forms, captions and the chrome
   cross-fade over the same period. Under `prefers-reduced-motion` the state
   applies immediately.
 - **Nothing else moves.** Changing the light preserves the camera, the
   destination, the open document, the reading position and any form input.
+
+### Music
+
+There is no track. The score is synthesised in the browser — see
+[Third-party assets](#third-party-assets) for why — and it is optional at
+every step.
+
+- **A welcome card, once.** A visitor who has never been here and has never
+  made a choice is offered *Enter with sound* and *Enter silently*. The card is
+  not a gate: its scrim takes no pointer events, and pressing the world
+  dismisses it, so nobody is ever stuck behind it.
+- **Nothing plays until asked.** Browsers refuse to start audio without a
+  gesture and they are right to. The context is created on the visitor's press
+  and never before, the fade-in is about 2.6 seconds, and the starting volume
+  is conservative.
+- **One engine, and it survives navigation.** The engine is a module-level
+  singleton, so the router swapping the page around it cannot create a second
+  one — the same rule the renderer follows.
+- **Controls in the bar, at every destination.** Mute, unmute and a volume
+  slider live in one popover that stays reachable while the CV, an article or a
+  case study is open. Volume and mute are remembered; playback is not assumed.
+- **Honest about refusals.** A browser that blocks the context is reported in
+  the panel rather than papered over, and a hidden tab pauses the music and
+  resumes it only because the visitor had already asked for it.
 
 ### Architecture
 
@@ -123,8 +178,11 @@ src/lib/world/
 │                      and the view to return to
 ├── document-state.ts  the pre-paint capability and theme decisions, carried
 │                      across Astro's route swaps
-├── theme-state.ts     the one day/night state, its storage and its events
-├── chrome.ts          the persistent controls (map, Home, light, pause)
+├── theme-state.ts     the one day/night state, its storage, its events and
+│                      the camera requests the interface is allowed to make
+├── chrome.ts          the persistent controls (map, Home, reset, light, pause)
+├── sound-controls.ts  mute, unmute and volume, wired to the one audio engine
+├── audio.ts           the ambient score, synthesised with the Web Audio API
 ├── page-controls.ts   idempotent delegated page behaviour: forms, filters,
 │                      contents rails, print, counters, scroll reveal
 └── shell.ts           renderer lifecycle, camera composition, captions,
@@ -135,15 +193,19 @@ src/lib/observatory/  the world itself
 │                      blends two themes for the transition
 ├── quality.ts        tiers, device detection, frame-time monitor
 ├── materials.ts      one material library, recoloured in place
-├── parts.ts          procedural geometry (island, dome, lattice, books, drone)
-├── lighting.ts       sky dome, key/fill/practical lights, PMREM environment
+├── parts.ts          procedural geometry: the island (one closed lathe
+│                      profile), its band painting, clouds, vegetation
+├── lighting.ts       sky dome, key/fill/rim/practical lights, the sky bodies
+│                      and their arc, the PMREM environment
 ├── world.ts          the campus: six destinations, walkways, objects, the
-│                      light switch, animation
-└── camera.ts         shot-to-shot travel, bounded orbit, restorable state
+│                      light switch, the cloud field, animation
+└── camera.ts         shot-to-shot travel, bounded orbit, restorable state,
+                      and the clearance test that keeps it above the island
 
 src/components/world/
 ├── WorldShell.astro  the persisted canvas + captions + status
 ├── WorldChrome.astro the persisted controls + the branded failure screen
+├── WorldWelcome.astro the once-per-visitor welcome: sound or silence
 └── Identity.astro    the campus heading: a corner caption in the world,
                       the opening of the page in the fallback
 ```
@@ -336,12 +398,38 @@ npm run preview                                  # http://localhost:4321
 npm run verify:world   -- http://localhost:4321  # the full journey suite
 npm run verify:a11y    -- http://localhost:4321  # focus, print, scrolling
 npm run verify:content -- http://localhost:4321  # a new Markdown file appears
+npm run verify:music   -- http://localhost:4321  # the audio journey on its own
+npm run inspect:world  -- http://localhost:4321  # screenshots + a JSON report
 ```
 
 Screenshots land in `.screenshots/world/`. The suite checks navigation by
 caption, tap-versus-drag, theme persistence across routes, document open and
 close with camera and focus restoration, the physical switch, filters, forms,
 deep links, Back/Forward, context loss and recovery, and five viewport widths.
+It also drives the camera to every extreme it permits — past the azimuth stop,
+to the shallowest elevation the control allows, and fully zoomed in and out at
+every destination — and fails if the camera is ever below the ground.
+
+Two smaller tools answer questions that come up while working on the world
+rather than gating a release:
+
+```bash
+node tools/worldcheck/inspect.mjs http://localhost:4321   # screenshots + JSON report
+node tools/worldcheck/inspect.mjs http://localhost:4321 --only camera
+node tools/worldcheck/frame.mjs .screenshots/inspect/02-campus-day.png
+```
+
+`inspect.mjs` writes day and night frames of the campus and of each
+destination, and reports the camera, the captions, and whether any two captions
+overlap or land under the interface. `frame.mjs` measures where the island
+actually lands in a frame, which is how the overview's framing was calibrated
+rather than eyeballed.
+
+`tools/worldcheck/probe.mjs` reads a named mesh's geometry back out of the
+running world — its normals, its up/down face split, its bounds. That is how
+the island's winding was found to be inside out: the built geometry reported
+that two thirds of its faces pointed downward, which a screenshot can only ever
+show as "dark".
 
 ## Deployment (GitHub Pages)
 
@@ -362,14 +450,28 @@ static files; the custom 404 still covers genuinely unknown paths.
 
 ## Third-party assets
 
-| Asset                                       | Licence     | Use                 |
-| ------------------------------------------- | ----------- | ------------------- |
-| three.js                                    | MIT         | the campus renderer |
+| Asset                                       | Licence     | Use                  |
+| ------------------------------------------- | ----------- | -------------------- |
+| three.js                                    | MIT         | the campus renderer  |
 | Fontsource: Fraunces, Inter, JetBrains Mono | SIL OFL 1.1 | self-hosted webfonts |
 
 No textures, models, audio or paid assets are downloaded at runtime. All
 geometry, the sky gradient, the mist falloff, the environment probe and the
 poster illustration are generated locally.
+
+**The music is generated too.** There is no track. `src/lib/world/audio.ts`
+synthesises the score in the browser with the Web Audio API — slow pad chords,
+a sparse piano figure drawn from the same harmony, a little filtered air and a
+short synthesised room — so there is no third-party recording to license, no
+file to download and no attribution to invent. The loop is seamless by
+construction, because every event is scheduled on the audio clock ahead of
+time rather than played back from a buffer.
+
+It is optional in every sense: nothing is created until the visitor presses
+"Enter with sound", and the sound controls in the bar mute, unmute and set the
+volume from any destination. Volume and mute are remembered; playback is not
+assumed. A browser that refuses to start the context is reported honestly
+rather than papered over.
 
 ## Licence
 

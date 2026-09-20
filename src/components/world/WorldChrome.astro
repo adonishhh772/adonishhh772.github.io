@@ -42,6 +42,7 @@ const captionIcons = [
   'sun',
   'moon',
   'rss',
+  'switch',
 ] as const;
 ---
 
@@ -81,25 +82,113 @@ const captionIcons = [
         <span class="visually-hidden">Home — the whole campus</span>
       </a>
 
+      {/*
+        Reset view. A visitor who has dragged the campus out of frame needs one
+        obvious way back, and double-clicking the background is not a control
+        anybody can see.
+      */}
       <button
-        class="world-control world-control--icon world-control--theme"
+        class="world-control world-control--icon"
+        type="button"
+        data-world-reset
+        aria-label="Reset the view"
+        title="Reset the view"
+      >
+        <Icon name="reset" size={15} />
+      </button>
+
+      {/*
+        The light. It is labelled, not just an icon: which way the world's
+        lights are switched is the one piece of state a visitor should be able
+        to read without pressing anything.
+      */}
+      <button
+        class="world-control world-control--theme"
         type="button"
         data-theme-toggle
         aria-pressed="false"
         aria-label="Switch to daylight"
         title="Daylight"
       >
-        <span class="theme-icon theme-icon--moon" aria-hidden="true"><Icon name="moon" size={15} /></span>
-        <span class="theme-icon theme-icon--sun" aria-hidden="true"><Icon name="sun" size={15} /></span>
+        <span class="world-control-icon" aria-hidden="true">
+          <span class="theme-icon theme-icon--moon"><Icon name="moon" size={15} /></span>
+          <span class="theme-icon theme-icon--sun"><Icon name="sun" size={15} /></span>
+        </span>
+        <span class="world-control-text" data-theme-label>Night</span>
         <span class="visually-hidden" data-theme-state>Night</span>
       </button>
+
+      {/*
+        Sound. Mute, unmute and the volume slider live together in one popover
+        so that the controls are always available without the bar becoming a
+        mixing desk — and so they work identically while a document is open.
+
+        The button itself is the icon alone: like the sun, its state is a
+        picture rather than a word, and the accessible name carries the meaning
+        for anyone who cannot see which of the two icons is showing.
+      */}
+      <div class="world-sound" data-world-sound>
+        <button
+          class="world-control world-control--icon world-control--sound"
+          type="button"
+          data-world-sound-toggle
+          aria-expanded="false"
+          aria-controls="world-sound-panel"
+          aria-pressed="false"
+          aria-label="Sound — off"
+          title="Sound"
+        >
+          <span class="world-control-icon" aria-hidden="true">
+            <span class="sound-icon sound-icon--off"><Icon name="sound-off" size={15} /></span>
+            <span class="sound-icon sound-icon--on"><Icon name="sound-on" size={15} /></span>
+          </span>
+          <span class="visually-hidden" data-sound-label>Sound off</span>
+        </button>
+
+        <div
+          class="world-sound-panel"
+          id="world-sound-panel"
+          data-world-sound-panel
+          hidden
+        >
+          <p class="world-sound-title mono">Ambient score</p>
+          <button
+            class="world-sound-mute"
+            type="button"
+            data-world-sound-mute
+            aria-pressed="false"
+          >
+            <span class="sound-icon sound-icon--off" aria-hidden="true"><Icon name="sound-off" size={16} /></span>
+            <span class="sound-icon sound-icon--on" aria-hidden="true"><Icon name="sound-on" size={16} /></span>
+            <span data-sound-mute-label>Play</span>
+          </button>
+          <label class="world-sound-volume">
+            <span class="mono">
+              <Icon name="volume" size={13} />
+              Volume
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value="30"
+              data-world-volume
+              aria-label="Music volume"
+            />
+          </label>
+          <p class="world-sound-note" data-sound-note>
+            Generated in your browser — no track is downloaded, and nothing
+            plays until you ask.
+          </p>
+        </div>
+      </div>
     </div>
   </div>
 
   <nav class="world-map" id="world-map-menu" data-world-map-menu hidden aria-label="Destinations">
     <p class="world-map-title">
       <span class="mono">Campus map</span>
-      <span class="world-map-env">Lighting: <strong data-world-environment>Night</strong></span>
     </p>
     <ul>
       {
@@ -311,10 +400,11 @@ const captionIcons = [
    * cannot load.
    */
   import { bootstrapChrome } from '../../lib/world/chrome';
-
+  import { watchSoundControls } from '../../lib/world/sound-controls';
   const start = () => {
     try {
       bootstrapChrome();
+      watchSoundControls();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       window.__worldAlert?.(`The world controls could not be started (${message}).`);
@@ -436,14 +526,42 @@ const captionIcons = [
     padding: 0;
   }
 
+  /* The sound control is its icon alone, at every width. */
+  .world-control--sound {
+    padding: 0;
+    width: 44px;
+  }
+
   .world-control[aria-expanded='true'] {
     color: var(--accent);
     border-color: var(--accent-line);
   }
 
-  /* The sun/moon control: one icon is always showing the live state. */
-  .world-control--theme {
+  /* ── The labelled light control ───────────────────────────────────── */
+
+  /*
+    The sun/moon icon and the word beside it. The icon sits in its own slot so
+    the two faces can be cross-faded without either of them intercepting the
+    other, and the word is what makes the control self-describing.
+  */
+  .world-control-icon {
     position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+  }
+
+  .world-control-text {
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+
+  .world-control--theme {
+    padding: 0 0.8rem 0 0.68rem;
   }
 
   /*
@@ -452,7 +570,8 @@ const captionIcons = [
     exactly how a button ends up looking functional while doing nothing.
   */
   .theme-icon,
-  .ambient-icon {
+  .ambient-icon,
+  .sound-icon {
     position: absolute;
     inset: 0;
     display: inline-flex;
@@ -464,7 +583,8 @@ const captionIcons = [
   }
 
   .theme-icon--sun,
-  .ambient-icon--play {
+  .ambient-icon--play,
+  .sound-icon--on {
     opacity: 0;
     transform: rotate(-40deg) scale(0.7);
   }
@@ -482,6 +602,143 @@ const captionIcons = [
   .world-control--theme[aria-pressed='true'] {
     color: var(--signal);
     border-color: var(--signal-line);
+  }
+
+  /* ── Sound ────────────────────────────────────────────────────────── */
+
+  .world-sound {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .world-control--sound[aria-pressed='true'] {
+    color: var(--accent);
+    border-color: var(--accent-line);
+  }
+
+  [data-world-sound-toggle][aria-pressed='true'] .sound-icon--off {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+
+  [data-world-sound-toggle][aria-pressed='true'] .sound-icon--on {
+    opacity: 1;
+    transform: none;
+  }
+
+  .world-sound-panel {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    width: min(17.5rem, calc(100vw - 1.6rem));
+    padding: 0.85rem 0.9rem 0.9rem;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--radius-lg);
+    background: var(--bg-raised);
+    box-shadow: var(--shadow-2);
+    animation: world-map-in var(--dur-3) var(--ease-out) both;
+  }
+
+  .world-sound-panel[hidden] {
+    display: none;
+  }
+
+  .world-sound-title {
+    margin: 0 0 0.6rem;
+    color: var(--faint);
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .world-sound-mute {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--radius-sm);
+    background: var(--chip-bg);
+    color: var(--text-soft);
+    font-size: 0.86rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color var(--dur-2) var(--ease-out),
+      border-color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+  }
+
+  .world-sound-mute:hover,
+  .world-sound-mute:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+  }
+
+  .world-sound-mute .sound-icon {
+    position: relative;
+    inset: auto;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+  }
+
+  .world-sound-mute[aria-pressed='true'] {
+    color: var(--accent);
+    border-color: var(--accent-line);
+  }
+
+  .world-sound-mute[aria-pressed='true'] .sound-icon--off {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+
+  .world-sound-mute[aria-pressed='true'] .sound-icon--on {
+    opacity: 1;
+    transform: none;
+  }
+
+  .world-sound-volume {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-top: 0.8rem;
+  }
+
+  .world-sound-volume .mono {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--faint);
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .world-sound-volume input[type='range'] {
+    width: 100%;
+    height: 28px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .world-sound-volume input[type='range']:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 999px;
+  }
+
+  .world-sound-note {
+    margin: 0.7rem 0 0;
+    color: var(--faint);
+    font-size: 0.72rem;
+    line-height: 1.5;
+  }
+
+  .world-sound-note[data-state='blocked'] {
+    color: var(--signal);
   }
 
   [data-world-ambient][aria-pressed='true'] .ambient-icon--pause {
@@ -786,6 +1043,35 @@ const captionIcons = [
     :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-map {
       left: calc(0.6rem + env(safe-area-inset-left, 0px));
       right: calc(0.6rem + env(safe-area-inset-right, 0px));
+    }
+  }
+
+  @media (max-width: 560px) {
+    /*
+      On a phone the words go and the icons stay: the bar has four controls
+      plus the readout in one strip, and the labels are what would push one of
+      them off the edge. Every control keeps its 44px target and its accessible
+      name, and the light control keeps its state in `aria-pressed`.
+    */
+    .world-control-text {
+      display: none;
+    }
+
+    .world-control--theme {
+      padding: 0;
+      min-width: 44px;
+    }
+
+    .world-control-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    .world-sound-panel {
+      right: auto;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(18rem, calc(100vw - 1.4rem));
     }
   }
 

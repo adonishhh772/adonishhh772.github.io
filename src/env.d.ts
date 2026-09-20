@@ -34,6 +34,13 @@ interface WorldAlertBridge {
   hide?: () => void;
 }
 
+interface AmbientsState {
+  playing: boolean;
+  wanted: boolean;
+  volume: number;
+  blocked: boolean;
+}
+
 interface Window {
   __worldAlert?: WorldAlertBridge;
   /** Set once the delegated theme handler is live. */
@@ -42,4 +49,6 @@ interface Window {
   __abdHeaderScroll?: boolean;
   /** Read-only view of the live world, for verification and support. */
   __worldDebug?: () => unknown;
+  /** Read-only view of the music, for verification and support. */
+  __worldAudio?: () => AmbientsState;
 }

@@ -19,6 +19,14 @@ import { mulberry32, radialFalloffTexture, skyEnvironmentTexture } from './parts
  * shadow so the architecture keeps its form.
  */
 export const KEY_DIRECTION = new THREE.Vector3(0.54, 0.64, 0.55).normalize();
+/**
+ * A second, coloured fill from the far side. One key light leaves every
+ * surface that faces it flat and every surface that does not black, which is
+ * what made the earlier night unreadable; a cool rim from behind separates the
+ * silhouettes from the sky without lifting the shadow side so far that the
+ * lighting loses its direction.
+ */
+export const RIM_DIRECTION = new THREE.Vector3(-0.62, 0.36, -0.7).normalize();
 
 /**
  * Where the sun / moon disc hangs in the sky — behind and to the left of the
@@ -29,16 +37,28 @@ export const SKY_LIGHT_DIRECTION = new THREE.Vector3(-0.46, 0.34, -0.82).normali
 
 const SKY_RADIUS = 420;
 
+/**
+ * How far the sun and moon are swung off the frame's centre, as a fraction of
+ * the view's half-width, and how far up.
+ *
+ * They used to hang dead centre, which put them directly behind the
+ * observatory dome from the overview bearing: at night the moon disappeared
+ * into the roof and by day the sun sat on the dome's face like a decal. Off to
+ * one side they read as sky, and the frame's centre belongs to the building
+ * that is the point of the place.
+ */
+const CELESTIAL_SIDE = -0.3;
+
 /** How far away the sky bodies hang. Distance only sets their scale. */
 const CELESTIAL_DISTANCE = 220;
 /** A body's size, as a fraction of the frame's half-height. */
 const CELESTIAL_ANGULAR_SIZE = 0.1;
 /** Where a body sits at the top of its arc, in half-heights above centre. */
-const CELESTIAL_HIGH = 0.47;
+const CELESTIAL_HIGH = 0.66;
 /** Where it has gone by the time it is the other one's turn. */
-const CELESTIAL_SET = 0.04;
-/** The dayness range over which a body fades in or out at the arc's foot. */
-const CELESTIAL_FADE = 0.24;
+const CELESTIAL_SET = 0.12;
+/** How far apart in `dayness` the two bodies are from each other's peak. */
+const CELESTIAL_FADE = 0.3;
 
 /**
  * The sky is one canvas, repainted in place. Rebuilding a texture per frame
@@ -51,16 +71,35 @@ function paintSky(canvas: HTMLCanvasElement, theme: WorldTheme): void {
   if (!ctx) return;
   const hex = (value: number) => `#${value.toString(16).padStart(6, '0')}`;
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  /* Stops are tuned to the default camera: it looks slightly downward, so
-     the horizon glow belongs just past the mid-point to appear behind the
-     island's silhouette rather than above the frame. */
+  /*
+   * Stops are tuned to the default camera: it looks slightly downward, so the
+   * horizon glow belongs just past the mid-point to appear behind the island's
+   * silhouette rather than above the frame. The band between the zenith and
+   * the horizon is given three stops rather than two, which is what makes the
+   * day sky read as a sky instead of as a flat wash of blue.
+   */
   gradient.addColorStop(0, hex(theme.skyTop));
-  gradient.addColorStop(0.3, hex(theme.skyTop));
-  gradient.addColorStop(0.48, hex(theme.skyHorizon));
-  gradient.addColorStop(0.62, hex(theme.fog));
+  gradient.addColorStop(0.26, hex(theme.skyTop));
+  gradient.addColorStop(0.4, hex(mixHex(theme.skyTop, theme.skyHorizon, 0.55)));
+  gradient.addColorStop(0.5, hex(theme.skyHorizon));
+  gradient.addColorStop(0.63, hex(mixHex(theme.skyHorizon, theme.fog, 0.6)));
   gradient.addColorStop(1, hex(theme.fog));
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, height);
+}
+
+/** Blend two packed 0xRRGGBB colours, for the intermediate sky stops. */
+function mixHex(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff;
+  const ag = (a >> 8) & 0xff;
+  const ab = a & 0xff;
+  const br = (b >> 16) & 0xff;
+  const bg = (b >> 8) & 0xff;
+  const bb = b & 0xff;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | bl;
 }
 
 /**
@@ -322,9 +361,16 @@ export class Atmosphere {
   private celestialEnabled = true;
   /** How visible they are right now, so a faded body is not a tap target. */
   private celestialOpacity = 1;
+  private sunOpacity = 1;
+  private moonOpacity = 0;
+  /** The distance last used to fade them, kept for the diagnostics. */
+  private lastFocusDistance = 1;
   private starOpacity = 0;
   private readonly scratchForward = new THREE.Vector3();
   private readonly scratchUp = new THREE.Vector3();
+  private readonly scratchRight = new THREE.Vector3();
+  private readonly scratchBody = new THREE.Vector3();
+  private readonly scratchAlong = new THREE.Vector3();
   private readonly captionOffset = new THREE.Vector3();
   private quality: QualitySettings;
 
@@ -381,8 +427,9 @@ export class Atmosphere {
     this.moonBody.name = 'moon';
     this.group.add(this.sunBody, this.moonBody);
 
-    /* Stars, dark until the sun goes down. */
-    this.stars = starField(SKY_RADIUS * 0.94, 560);
+    /* Stars, dark until the sun goes down. Enough of them that the night sky
+       has depth without becoming a planetarium. */
+    this.stars = starField(SKY_RADIUS * 0.94, 900);
     this.group.add(this.stars);
 
     /* Lights --------------------------------------------------------- */
@@ -396,10 +443,11 @@ export class Atmosphere {
     this.key.target.position.set(0, 1, 0);
     this.group.add(this.key, this.key.target);
 
-    this.fill = new THREE.DirectionalLight(theme.skyTop, 0.4);
+    this.fill = new THREE.DirectionalLight(theme.skyTop, 0.55);
     this.fill.name = 'fill';
-    this.fill.position.set(14, 9, -16);
-    this.group.add(this.fill);
+    this.fill.position.copy(RIM_DIRECTION).multiplyScalar(34);
+    this.fill.target.position.set(0, 1, 0);
+    this.group.add(this.fill, this.fill.target);
 
     for (const name of ['studio', 'tower', 'beacon', 'drone']) {
       const light = new THREE.PointLight(theme.practical, 0, 9, 2);
@@ -465,7 +513,7 @@ export class Atmosphere {
     this.key.color.setHex(theme.key);
     this.key.intensity = theme.keyIntensity;
     this.fill.color.setHex(theme.skyTop);
-    this.fill.intensity = 0.3 + day * 0.25;
+    this.fill.intensity = 0.32 + day * 0.3;
 
     /* Artificial light: on at night, subdued by day. */
     for (const light of this.practicals) {
@@ -496,16 +544,22 @@ export class Atmosphere {
       const size = quality.shadowMapSize;
       this.key.shadow.mapSize.set(size, size);
       const camera = this.key.shadow.camera;
-      camera.left = -17;
-      camera.right = 17;
-      camera.top = 17;
-      camera.bottom = -17;
+      camera.left = -16;
+      camera.right = 16;
+      camera.top = 16;
+      camera.bottom = -16;
       camera.near = 2;
-      camera.far = 62;
+      camera.far = 64;
       camera.updateProjectionMatrix();
-      this.key.shadow.bias = -0.0006;
-      this.key.shadow.normalBias = 0.022;
-      this.key.shadow.radius = quality.tier === 'high' ? 2.5 : 1.5;
+      /*
+       * A wide, soft shadow rather than a hard one. The island is a miniature,
+       * so a crisp cast shadow reads as a diagram; the bias and radius are
+       * tuned together to keep contact shadows under the buildings while
+       * letting the treeline fall away softly.
+       */
+      this.key.shadow.bias = -0.0004;
+      this.key.shadow.normalBias = 0.03;
+      this.key.shadow.radius = quality.tier === 'high' ? 4 : quality.tier === 'medium' ? 2.5 : 1.5;
     } else if (this.key.shadow.map) {
       this.key.shadow.map.dispose();
       this.key.shadow.map = null;
@@ -534,14 +588,18 @@ export class Atmosphere {
     const halfHeight = Math.tan(THREE.MathUtils.degToRad(perspective.fov ?? 40) / 2);
     const forward = camera.getWorldDirection(this.scratchForward);
     const up = this.scratchUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+    /* The camera's own right axis, so the swing stays on the frame's X. */
+    const right = this.scratchRight.crossVectors(forward, up).normalize();
     const distance = CELESTIAL_DISTANCE;
     const scale = Math.max(0.05, CELESTIAL_ANGULAR_SIZE * distance * halfHeight);
+    const side = CELESTIAL_SIDE * halfHeight * distance * Math.max(perspective.aspect ?? 1, 0.4);
 
     const place = (body: THREE.Group, fraction: number) => {
       body.position
         .copy(camera.position)
         .addScaledVector(forward, distance)
-        .addScaledVector(up, fraction * halfHeight * distance);
+        .addScaledVector(up, fraction * halfHeight * distance)
+        .addScaledVector(right, side);
       body.scale.setScalar(scale);
     };
 
@@ -563,17 +621,30 @@ export class Atmosphere {
      * appears to be inside the building. They belong to a wide, level view.
      */
     const pitchDown = -forward.y;
+    const focusDistance = focus === undefined ? 0 : camera.position.distanceTo(focus);
+    this.lastFocusDistance = focusDistance;
     let range =
       focus === undefined
         ? 1
-        : THREE.MathUtils.clamp((camera.position.distanceTo(focus) - 6.6) / 2.8, 0, 1);
+        : THREE.MathUtils.clamp((focusDistance - 6.6) / 2.8, 0, 1);
     range *= THREE.MathUtils.clamp((0.8 - pitchDown) / 0.24, 0, 1);
 
-    /* Fade at the foot of the arc, so nothing is left sliding across the
-       island when it has effectively set. */
-    const sunFade = THREE.MathUtils.clamp((day - 0.08) / CELESTIAL_FADE, 0, 1) * range;
-    const moonFade = THREE.MathUtils.clamp((0.92 - day) / CELESTIAL_FADE, 0, 1) * range;
+    /*
+     * Fade at the foot of each arc, so nothing is left sliding across the
+     * island once it has effectively set.
+     *
+     * The two fades have to *cross* — that is the whole point of an arc. The
+     * sun fades out across the first third of the night while the moon fades
+     * in over the same band, so by the time the world is fully dark the moon
+     * is at full strength. Getting this wrong is not a subtle error: a moon at
+     * six percent opacity is a moon nobody can see or press, which is exactly
+     * what an earlier version of this shipped.
+     */
+    const sunFade = THREE.MathUtils.clamp(day / CELESTIAL_FADE, 0, 1) * range;
+    const moonFade = THREE.MathUtils.clamp((1 - day) / CELESTIAL_FADE, 0, 1) * range;
     this.celestialOpacity = Math.max(sunFade, moonFade);
+    this.sunOpacity = sunFade;
+    this.moonOpacity = moonFade;
     this.sunMaterials.disc.opacity = sunFade;
     this.sunMaterials.glow.opacity = 0.34 * sunFade * day;
     this.moonMaterials.disc.opacity = moonFade;
@@ -603,8 +674,15 @@ export class Atmosphere {
    * for the direct tap on it. A body that has faded out is not a target.
    */
   activeCelestialPosition(): THREE.Vector3 | null {
-    if (!this.celestialEnabled || this.celestialOpacity < 0.35) return null;
-    const body = this.dayness >= 0.5 ? this.sunBody : this.moonBody;
+    if (!this.celestialEnabled) return null;
+    /*
+     * Which body is the one a visitor would press: the brighter of the two,
+     * not simply the one the theme names. At dusk both are on their way and
+     * the answer has to be whichever is actually more visible.
+     */
+    const useSun = this.sunOpacity >= this.moonOpacity;
+    if (Math.max(this.sunOpacity, this.moonOpacity) < 0.18) return null;
+    const body = useSun ? this.sunBody : this.moonBody;
     if (!body.visible) return null;
     return body.position.clone();
   }
@@ -615,8 +693,35 @@ export class Atmosphere {
     return body ? body.add(this.captionOffset) : null;
   }
 
+  /**
+   * Why a sky body may be missing.
+   *
+   * A body that has set, a body that has been explicitly switched off and a
+   * body that has been moved to the centre of the frame all look the same from
+   * outside — absent. This says which, so a verification run reports a reason
+   * rather than only a symptom.
+   */
+  celestialDiagnostics(): {
+    enabled: boolean;
+    dayness: number;
+    opacity: number;
+    sunVisible: boolean;
+    moonVisible: boolean;
+    distance: number;
+  } {
+    return {
+      enabled: this.celestialEnabled,
+      dayness: this.dayness,
+      opacity: this.celestialOpacity,
+      sunVisible: this.sunBody.visible,
+      moonVisible: this.moonBody.visible,
+      distance: this.lastFocusDistance,
+    };
+  }
+
   /** The on-screen half-size of the active body, for a forgiving tap target. */
-  activeCelestialRadius(camera: THREE.Camera): number {    const body = this.dayness >= 0.5 ? this.sunBody : this.moonBody;
+  activeCelestialRadius(camera: THREE.Camera): number {
+    const body = this.sunOpacity >= this.moonOpacity ? this.sunBody : this.moonBody;
     const perspective = camera as THREE.PerspectiveCamera;
     const distance = Math.max(camera.position.distanceTo(body.position), 1);
     /* The disc sprite is 1.9 units wide before the body's own scale. */

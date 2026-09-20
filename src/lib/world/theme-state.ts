@@ -27,10 +27,14 @@ export const THEME_EVENT = 'world:themechange';
 export const AMBIENT_EVENT = 'world:ambientchange';
 
 /**
- * How long the coordinated environment + interface change takes. Inside the
- * range that reads as one deliberate movement of the light rather than a cut.
+ * How long the coordinated environment + interface change takes.
+ *
+ * 800ms: long enough that the sky, the fog, the ambient light, the key light,
+ * every emissive surface and the page all read as one movement of the light
+ * rather than a cut, and short enough that a visitor who came to read is not
+ * waiting on it.
  */
-export const THEME_TRANSITION_MS = 700;
+export const THEME_TRANSITION_MS = 800;
 
 export interface ThemeChangeDetail {
   theme: ThemeName;
@@ -221,6 +225,24 @@ export function subscribeAmbient(onChange: (paused: boolean) => void): () => voi
 export interface WorldAlertBridge {
   (message?: string): void;
   hide?: () => void;
+}
+
+/* ── Requests that belong to the renderer ────────────────────────────── */
+
+/**
+ * Asking for the camera to go back to its composed view.
+ *
+ * This module deliberately does not import three.js — the interface has to
+ * keep working when the renderer is the thing that failed — so the chrome
+ * raises a request and the shell, which owns the camera, answers it. A request
+ * with no renderer listening is simply a no-op, which is the honest behaviour
+ * for a control that has nothing to move.
+ */
+export const RESET_VIEW_EVENT = 'world:resetview';
+
+export function requestResetView(): void {
+  if (typeof document === 'undefined') return;
+  document.dispatchEvent(new CustomEvent(RESET_VIEW_EVENT));
 }
 
 export function showWorldAlert(message?: string): void {

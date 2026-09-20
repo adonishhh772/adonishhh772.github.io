@@ -16,6 +16,7 @@ import {
   currentTheme,
   hideWorldAlert,
   isAmbientPaused,
+  requestResetView,
   setAmbientPaused,
   subscribeAmbient,
   subscribeTheme,
@@ -55,11 +56,21 @@ export function syncThemeControls(): void {
     );
     button.setAttribute('title', theme === 'light' ? 'Night lighting' : 'Daylight');
     const state = button.querySelector<HTMLElement>('[data-theme-state]');
-    if (state) state.textContent = theme === 'light' ? 'Daylight' : 'Night';
+    if (state) state.textContent = theme === 'light' ? 'Day' : 'Night';
+    /*
+     * The control is labelled, not just an icon: which way the world's lights
+     * are currently switched is the one piece of state a visitor should be
+     * able to read without pressing anything.
+     */
+    const label = button.querySelector<HTMLElement>('[data-theme-label]');
+    if (label) label.textContent = theme === 'light' ? 'Day' : 'Night';
     button.dataset.themeNow = theme;
   }
   for (const readout of document.querySelectorAll<HTMLElement>('[data-world-environment]')) {
     readout.textContent = theme === 'light' ? 'Daylight' : 'Night';
+  }
+  for (const state of document.querySelectorAll<HTMLElement>('[data-world-theme-state]')) {
+    state.textContent = theme === 'light' ? 'Daylight' : 'Night';
   }
 }
 
@@ -122,6 +133,16 @@ function onDocumentClick(event: MouseEvent): void {
   if (ambientButton) {
     setAmbientPaused(!isAmbientPaused());
     syncAmbientControls();
+    return;
+  }
+
+  /*
+   * Reset view. The shell owns the camera, so this is a request rather than a
+   * command: the chrome does not import three.js and keeps working when the
+   * renderer is the thing that failed.
+   */
+  if (target.closest('[data-world-reset]')) {
+    requestResetView();
     return;
   }
 

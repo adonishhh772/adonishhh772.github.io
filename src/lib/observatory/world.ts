@@ -19,22 +19,26 @@ import {
   boulderGeometry,
   broadleafGeometry,
   buildDroneGeometry,
+  cloudGeometry,
   coniferGeometry,
   crystalGeometry,
   curveFrom,
-  distantHills,
+  distantRidges,
   instancedMesh,
-  lathe,
+  islandEnvelopeAt,
+  islandGeometry,
   latticeMast,
   mulberry32,
   offsetPoints,
+  paintCloud,
+  paintIsland,
   radialFalloffTexture,
   ribbon,
   ribGeometry,
   ribbedDome,
+  ridgeGeometry,
   rimRing,
   roundedBox,
-  sculptIsland,
   spanMatrix,
   terrace,
   tubeAlong,
@@ -46,6 +50,29 @@ import type { WorldTheme } from './theme';
 
 /** Height of the island's flat plateau. */
 const GROUND = 1;
+
+/**
+ * How high the camera may sit above the plateau before a caption stops being
+ * worth projecting — the ceiling of the volume the visitor is allowed to fly
+ * through. Shared with the camera rig's clearance tests.
+ */
+export const CAMERA_CEILING = 34;
+
+/**
+ * The horizontal radius of the island at a given height.
+ *
+ * Kept in step with the lathe profile the island is actually built from, so
+ * the boulders bedded into the cliff and the camera's own clearance test agree
+ * with the mesh rather than with a second, drifting copy of the numbers.
+ */
+function cliffRadiusAt(y: number): number {
+  return islandEnvelopeAt(y);
+}
+
+/** The radius of the plateau at the height a prop is bedded into it. */
+function plateauRadius(): number {
+  return islandEnvelopeAt(GROUND - 0.05) - 0.02;
+}
 
 interface PlaceLayout {
   x: number;
@@ -88,12 +115,17 @@ const LAYOUT: Record<DestinationId, PlaceLayout> = {
   workshop: layoutAt(0, RING_RADIUS, 3.2, 0.55),
   library: layoutAt(50, RING_RADIUS, 3, 0.45),
   contact: layoutAt(115, RING_RADIUS, 2.4, 0.45),
-  workbench: layoutAt(195, RING_RADIUS, 3.1, 0.4),
+  /*
+   * The workbench sits in the widest gap left in the ring. Its gantry is tall
+   * and open, so from the overview bearing it reads as a structure beyond the
+   * observatory rather than disappearing behind it — and one small orbit
+   * brings it fully into view.
+   */
+  workbench: layoutAt(212, RING_RADIUS, 3.1, 0.4),
 };
 
 /** Walkway order — the ring, sorted by angle around the island. */
 const RING_ORDER: DestinationId[] = ['studio', 'workshop', 'library', 'contact', 'workbench'];
-
 export interface Shot {
   position: THREE.Vector3;
   target: THREE.Vector3;
@@ -198,6 +230,9 @@ export class ObservatoryWorld {
   private billMaterial: THREE.MeshStandardMaterial | null = null;
   private mistGroup = new THREE.Group();
   private mistLayers: THREE.Mesh[] = [];
+  /** Soft stylised clouds, drifting above the island. */
+  private cloudGroup = new THREE.Group();
+  private clouds: THREE.Mesh[] = [];
   private drone = new THREE.Group();
   private rotorGroup = new THREE.Group();
 
@@ -210,6 +245,18 @@ export class ObservatoryWorld {
   private dronePosition = new THREE.Vector3(0, 9, 12);
 
   private readonly occluderList: THREE.Object3D[] = [];
+  /** The island's mesh and geometry, kept so the bands can be repainted. */
+  private islandGeometry: THREE.BufferGeometry | null = null;
+  /** The light switch standing on the observatory terrace. */
+  private switchPick: THREE.Mesh | null = null;
+  private switchLever: THREE.Mesh | null = null;
+  /** Solid volumes the camera must keep out of, in world space. */
+  private readonly solids: {
+    x: number;
+    z: number;
+    radius: number;
+    top: number;
+  }[] = [];
   private pickMaterial = new THREE.MeshBasicMaterial({
     colorWrite: false,
     depthWrite: false,
@@ -444,78 +491,97 @@ export class ObservatoryWorld {
     }
   }
 
+  /**
+   * A row of lit windows set into a wall.
+   *
+   * Windows are what tell a visitor at night that a building is a building and
+   * not a rock: they give it a scale, a floor line and a reason to be lit.
+   * Separate panes rather than one painted stripe, because the gaps between
+   * them are what make the row read as a wall with windows in it — and they
+   * use the shared window material, so they come on and go off with every
+   * other window in the world as the light changes.
+   *
+   * `axis` is the wall's normal: 'z' faces the side a place is approached from,
+   * 'x' the perpendicular one.
+   */
+  private windowBand(
+    parent: THREE.Object3D,
+    name: string,
+    options: {
+      axis: 'x' | 'z';
+      /** Centre of the row, at the wall's surface. */
+      at: THREE.Vector3;
+      /** Total length of the row and how many panes share it. */
+      length: number;
+      count: number;
+      height: number;
+      /** How far the panes stand proud of the wall. */
+      offset: number;
+      /** Which way along the wall's normal the row faces. */
+      reverse?: boolean;
+    },
+  ): THREE.Group {
+    const { axis, at, length, count, height, offset } = options;
+    const group = new THREE.Group();
+    group.name = name;
+    parent.add(group);
+
+    const step = count > 1 ? length / count : length;
+    const paneWidth = Math.max(0.12, step * 0.56);
+    const geometry = this.track(
+      axis === 'z'
+        ? new THREE.BoxGeometry(paneWidth, height, 0.05)
+        : new THREE.BoxGeometry(0.05, height, paneWidth),
+    );
+    const shift = offset * (options.reverse ? -1 : 1);
+
+    for (let i = 0; i < count; i++) {
+      const along = count > 1 ? (i + 0.5) * step - length / 2 : 0;
+      const position = at.clone();
+      if (axis === 'z') {
+        position.x += along;
+        position.z += shift;
+      } else {
+        position.z += along;
+        position.x += shift;
+      }
+      this.mesh(geometry, this.materials.window, group, `${name}-${i}`, {
+        position,
+        cast: false,
+        receive: false,
+      });
+    }
+    return group;
+  }
+
   /* ── Island ────────────────────────────────────────────────────────── */
 
   /**
-   * The island's silhouette, split at the lip of the cliff.
+   * The island.
    *
-   * Two profiles rather than one, because the island is two materials: a pale
-   * stone plateau and a darker rock keel under it. The seam is the same ring
-   * of vertices in both, and both are cut with the same seed, so they meet
-   * exactly.
+   * One closed body: a single lathe profile traced out along the plateau,
+   * round the cliff lip, down the face and back in under the keel, so the top,
+   * the sides, the underside and both caps are the same watertight surface.
+   * The previous build lathed the plateau and the keel as two separate open
+   * shells with a hole through the middle of the ground; from a low camera the
+   * hole was visible straight through the island, which is what "seeing below
+   * the ground plane" actually was.
+   *
+   * The band colours are baked into a vertex attribute and repainted whenever
+   * the light changes, so grass, bare stone, the dry lip and the dark keel all
+   * move with the theme while remaining one draw call.
    */
-  private static readonly ISLAND_PLATEAU: [number, number][] = [
-    [0, GROUND],
-    [3.6, GROUND],
-    [8, GROUND - 0.002],
-    [11.2, GROUND - 0.012],
-    [12.5, GROUND - 0.1],
-    [13.2, GROUND - 0.38],
-    [13.6, GROUND - 0.8],
-    [13.7, GROUND - 1.5],
-  ];
-
-  private static readonly ISLAND_KEEL: [number, number][] = [
-    [13.7, GROUND - 1.5],
-    [13.3, -2.6],
-    [11.9, -4],
-    [9.9, -5.5],
-    [7.4, -7],
-    [4.6, -8.2],
-    [2.2, -9],
-    [0.5, -9.5],
-    [0, -9.6],
-  ];
-
-  /** The cliff's radius at a given height, interpolated from the profile. */
-  private cliffRadiusAt(y: number): number {
-    const profile = [...ObservatoryWorld.ISLAND_PLATEAU, ...ObservatoryWorld.ISLAND_KEEL];
-    for (let i = 0; i < profile.length - 1; i++) {
-      const [r0, y0] = profile[i];
-      const [r1, y1] = profile[i + 1];
-      if (y <= y0 && y >= y1) {
-        const t = y0 === y1 ? 0 : (y0 - y) / (y0 - y1);
-        return r0 + (r1 - r0) * t;
-      }
-    }
-    return 0;
-  }
-
   private buildIsland(): void {
-    const sculpt = { flatAbove: GROUND - 0.4, strength: 0.18, seed: 11, sectors: 11 };
-
-    const plateauGeometry = lathe(ObservatoryWorld.ISLAND_PLATEAU, 64);
-    sculptIsland(plateauGeometry, sculpt);
-    const plateau = this.mesh(plateauGeometry, this.materials.stone, this.group, 'island', {
+    const geometry = islandGeometry({ seed: 11, sectors: 11, strength: 0.038, segments: 128 });
+    this.track(geometry);
+    paintIsland(geometry, this.islandPalette(this.theme));
+    this.islandGeometry = geometry;
+    const terrain = this.mesh(geometry, this.materials.terrain, this.group, 'island', {
       cast: false,
       receive: true,
       occluder: true,
     });
-    plateau.frustumCulled = false;
-
-    /*
-     * The keel is a darker rock, and it is the whole underside: the earlier
-     * island was one pale material all the way down, so from a low angle the
-     * thing read as a float with stones glued beneath its rim.
-     */
-    const keelGeometry = lathe(ObservatoryWorld.ISLAND_KEEL, 64);
-    sculptIsland(keelGeometry, sculpt);
-    const keel = this.mesh(keelGeometry, this.materials.keel, this.group, 'island-keel', {
-      cast: false,
-      receive: true,
-      occluder: true,
-    });
-    keel.frustumCulled = false;
+    terrain.frustumCulled = false;
 
     /*
      * Broken stone along the lip of the cliff.
@@ -531,12 +597,12 @@ export class ObservatoryWorld {
       const matrix = new THREE.Matrix4();
       const outward = new THREE.Vector3();
       const bands = [
-        { count: 14, geometry: boulderGeometry(7, 0.62), y: -1.05, scale: [0.55, 0.85] },
-        { count: 11, geometry: boulderGeometry(19, 0.58), y: -1.85, scale: [0.75, 1.15] },
+        { count: 15, geometry: boulderGeometry(7, 0.62), y: -1.0, scale: [0.55, 0.85] },
+        { count: 12, geometry: boulderGeometry(19, 0.58), y: -1.9, scale: [0.8, 1.2] },
       ];
       for (const band of bands) {
         const matrices: THREE.Matrix4[] = [];
-        const radius = this.cliffRadiusAt(band.y);
+        const radius = cliffRadiusAt(band.y);
         if (radius <= 0.5) continue;
         for (let i = 0; i < band.count; i++) {
           const angle = (i / band.count) * Math.PI * 2 + random() * 0.5;
@@ -577,10 +643,11 @@ export class ObservatoryWorld {
       const geometry = this.track(boulderGeometry(53, 0.62));
       const matrices: THREE.Matrix4[] = [];
       const matrix = new THREE.Matrix4();
+      const rim = plateauRadius();
       const clusters = 7;
       for (let cluster = 0; cluster < clusters; cluster++) {
         const angle = (cluster / clusters) * Math.PI * 2 + random() * 0.8;
-        const radius = 7.8 + random() * 3.2;
+        const radius = (rim - 5) + random() * 3.2;
         const anchorX = Math.cos(angle) * radius;
         const anchorZ = Math.sin(angle) * radius;
         const stones = 1 + Math.floor(random() * 3);
@@ -627,12 +694,13 @@ export class ObservatoryWorld {
     const matrix = new THREE.Matrix4();
     const lean = new THREE.Quaternion();
     const yawOnly = new THREE.Quaternion();
+    const rim = plateauRadius();
     for (let ring = 0; ring < rings; ring++) {
-      const radius = 12.4 - ring * 1.6;
-      const count = 16 - ring * 3;
+      const radius = (rim - 1.4) - ring * 1.5;
+      const count = 24 - ring * 3;
       for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2 + random() * 0.3 + ring * 0.9;
-        const jitter = 0.84 + random() * 0.42;
+        const jitter = 0.86 + random() * 0.2;
         const x = Math.cos(angle) * radius * jitter;
         const z = Math.sin(angle) * radius * jitter;
         /* Keep the built terraces clear of planting. */
@@ -707,13 +775,13 @@ export class ObservatoryWorld {
     const shrubGeometry = this.track(new THREE.IcosahedronGeometry(0.34, 0));
     shrubGeometry.scale(1, 0.66, 1);
     const shrubs: THREE.Matrix4[] = [];
-    for (let i = 0; i < 34; i++) {
+    for (let i = 0; i < 72; i++) {
       const angle = random() * Math.PI * 2;
-      const radius = 4.6 + random() * 5.6;
+      const radius = 3.6 + random() * 7.4;
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
-      if (this.nearStation(x, z, 3.4)) continue;
-      const scale = 0.6 + random() * 0.7;
+      if (this.nearStation(x, z, 3.2)) continue;
+      const scale = 0.5 + random() * 0.85;
       matrix.compose(
         new THREE.Vector3(x, GROUND - 0.05, z),
         new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), random() * Math.PI),
@@ -726,6 +794,25 @@ export class ObservatoryWorld {
       shrubsMesh.castShadow = this.quality.shadows;
       this.group.add(shrubsMesh);
     }
+  }
+
+  /** The four band colours of the island, read from the live theme. */
+  private islandPalette(theme: WorldTheme): {
+    surface: number;
+    surfaceAlt: number;
+    rim: number;
+    cliff: number;
+    keel: number;
+    bare: number;
+  } {
+    return {
+      surface: theme.grass,
+      surfaceAlt: theme.earth,
+      rim: theme.shore,
+      bare: theme.stoneAlt,
+      cliff: theme.stoneDeep,
+      keel: new THREE.Color(theme.stoneDeep).lerp(new THREE.Color(0x080d18), 0.5).getHex(),
+    };
   }
 
   /**
@@ -742,9 +829,15 @@ export class ObservatoryWorld {
     hills: THREE.InstancedMesh,
   ): void {
     haze.setHex(this.theme.fog);
-    sky.setHex(this.theme.skyTop);
+    sky.setHex(this.theme.skyHorizon);
     for (let i = 0; i < fade.length; i++) {
-      const factor = THREE.MathUtils.lerp(0.45, 0.95, 1 - fade[i]);
+      /*
+       * Nearer ridges keep a little of the sky's own colour; far ones dissolve
+       * into the haze. The range is compressed hard toward the haze end on
+       * purpose: a distant ridge should be a change of tone behind the island,
+       * never a dark band across the frame.
+       */
+      const factor = THREE.MathUtils.lerp(0.8, 0.98, 1 - fade[i]);
       scratch.copy(sky).lerp(haze, factor);
       hills.setColorAt(i, scratch);
     }
@@ -759,16 +852,23 @@ export class ObservatoryWorld {
     return false;
   }
 
-  /* ── Landscape below ───────────────────────────────────────────────── */
+  /* ── Landscape: distance, mist and cloud ───────────────────────────── */
 
   private buildLandscape(): void {
-    /* Distant hills: one instanced mesh, painted darker than the sky so they
-       read as silhouettes against the horizon glow. Fog is disabled and the
-       atmospheric fade is baked into the per-instance colour instead, which
-       keeps them dark instead of dissolving into the fog colour. */
-    const { matrices, colors } = distantHills(17, 34, 420);
-    const hillGeometry = this.track(new THREE.ConeGeometry(1, 1, 5, 1));
-    hillGeometry.translate(0, 0.5, 0);
+    /*
+     * Distant ridges.
+     *
+     * They exist to give the horizon depth and nothing else, so they are
+     * painted rather than lit and pushed a long way down. What made the
+     * earlier ones read as flat black shapes pasted behind the island was that
+     * they were tall, angular, close to the island and out of the fog's reach
+     * all at once. Now they are low, rounded, far below, and inside the fog,
+     * and their per-instance colour is an atmospheric blend between the sky at
+     * the horizon and the haze — so distance is expressed by the colour of the
+     * air rather than by a hard silhouette.
+     */
+    const { matrices, colors } = distantRidges(17, 16, 430);
+    const hillGeometry = this.track(ridgeGeometry(41, 5));
     const hills = instancedMesh(hillGeometry, this.materials.hill, matrices, 'hills');
     const hillColor = new THREE.Color();
     const haze = new THREE.Color();
@@ -816,6 +916,45 @@ export class ObservatoryWorld {
       this.mistGroup.add(layer);
     }
     this.group.add(this.mistGroup);
+
+    /*
+     * Clouds.
+     *
+     * Soft, stylised and few. Each is a low-poly blob whose own light and
+     * shade is baked into a vertex attribute and drawn on an unlit material,
+     * so it never turns into a grey polygon when it passes between the key
+     * light and the camera, and never costs a shadow. They sit high above the
+     * island and drift slowly enough that a visitor notices them only if they
+     * stop to look.
+     */
+    const cloudRandom = mulberry32(97);
+    const count = this.quality.detail ? 5 : this.quality.mistLayers >= 3 ? 3 : 2;
+    for (let i = 0; i < count; i++) {
+      const geometry = this.track(cloudGeometry(300 + i * 17, 6 + Math.floor(cloudRandom() * 3)));
+      paintCloud(geometry, this.theme.snow, this.theme.cloudShade);
+      const material = this.materials.cloud;
+      const cloud = new THREE.Mesh(geometry, material);
+      cloud.name = `cloud-${i}`;
+      const angle = (i / count) * Math.PI * 2 + cloudRandom() * 0.7;
+      const radius = 30 + cloudRandom() * 18;
+      const scale = 2.3 + cloudRandom() * 1.1;
+      cloud.position.set(
+        Math.cos(angle) * radius,
+        17 + cloudRandom() * 5,
+        Math.sin(angle) * radius,
+      );
+      cloud.scale.setScalar(scale);
+      cloud.rotation.y = cloudRandom() * Math.PI;
+      cloud.renderOrder = 1;
+      cloud.userData.angle = angle;
+      cloud.userData.radius = radius;
+      cloud.userData.speed = 0.008 + cloudRandom() * 0.008;
+      cloud.userData.bob = cloudRandom() * Math.PI * 2;
+      cloud.userData.baseY = cloud.position.y;
+      this.clouds.push(cloud);
+      this.cloudGroup.add(cloud);
+    }
+    this.group.add(this.cloudGroup);
   }
 
   /* ── Pathways ──────────────────────────────────────────────────────── */
@@ -1121,6 +1260,140 @@ export class ObservatoryWorld {
 
     /* The hidden marker for this place, tucked behind the colonnade. */
     this.attachDiscovery(node, new THREE.Vector3(3.3, GROUND + 1.2, 2.5));
+
+    this.buildLightSwitch();
+    this.registerSolids();
+  }
+
+  /**
+   * The light switch.
+   *
+   * A real control standing on the observatory terrace: a brass pillar with a
+   * glazed lamp on top and a lever beside it. Selecting it turns the world's
+   * lights over — the same shared state the labelled control in the chrome
+   * drives — so "switching the light" is something a visitor can do to the
+   * scene itself rather than only to a button.
+   *
+   * It is given its own screen-space tap radius in the shell, because it is a
+   * small object standing inside the observatory's very forgiving hit volume.
+   */
+  private buildLightSwitch(): void {
+    const { surface } = this.placeLayout('campus');
+    const group = new THREE.Group();
+    group.name = 'light-switch';
+    group.position.set(2.35, surface, 2.45);
+    group.rotation.y = Math.PI * 0.25;
+    this.group.add(group);
+
+    /* Base and pillar. */
+    this.mesh(terrace(0.34, 0.14, 0.06), this.materials.stoneDark, group, 'switch-base', {
+      position: new THREE.Vector3(0, 0.02, 0),
+    });
+    this.mesh(new THREE.CylinderGeometry(0.07, 0.1, 1.15, 10), this.materials.ceramic, group, 'switch-pillar', {
+      position: new THREE.Vector3(0, 0.62, 0),
+    });
+
+    /* The lamp: a glazed box with a lit core, so the switch itself shows
+       whether the observatory's lamps are on. */
+    const core = this.materials.windowPanel(this.theme.window, 1.6);
+    this.mesh(roundedBox(0.34, 0.34, 0.34, 0.04), core, group, 'switch-lamp', {
+      position: new THREE.Vector3(0, 1.3, 0),
+      cast: false,
+      receive: false,
+    });
+    const cage = this.mesh(
+      new THREE.TorusGeometry(0.24, 0.022, 5, 20),
+      this.materials.metal,
+      group,
+      'switch-cage',
+      { position: new THREE.Vector3(0, 1.3, 0), cast: false },
+    );
+    cage.rotation.x = Math.PI / 2;
+
+    /* The lever. It tilts with the state, which is what makes the object read
+       as a switch rather than as a lamp on a post. */
+    const lever = this.mesh(roundedBox(0.05, 0.34, 0.05, 0.015), this.materials.metal, group, 'switch-lever', {
+      position: new THREE.Vector3(0.2, 0.95, 0),
+    });
+    lever.rotation.z = 0.4;
+    this.switchLever = lever;
+    this.mesh(new THREE.SphereGeometry(0.05, 10, 8), this.materials.signal, group, 'switch-knob', {
+      position: new THREE.Vector3(0.26, 1.09, 0),
+      cast: false,
+      receive: false,
+    });
+
+    /*
+     * The hit volume. Generous — 0.85 of a unit — because this is a control
+     * that has to be pressable from the overview camera, and the shell checks
+     * it in screen space before any building's own volume.
+     */
+    const pick = new THREE.Mesh(
+      this.track(new THREE.CylinderGeometry(0.85, 0.85, 1.8, 8, 1, false)),
+      this.pickMaterial,
+    );
+    pick.name = 'pick-light-switch';
+    pick.position.set(0, 0.9, 0);
+    group.add(pick);
+    this.switchPick = pick;
+  }
+
+  /**
+   * Tell the camera where the buildings are.
+   *
+   * One cylinder per destination terrace, sized from the pad the place was
+   * laid out with and lofted above the tallest thing standing on it. The rig
+   * keeps the camera outside all of them, which is what stops a zoom or a
+   * shallow orbit from ending up inside the dome.
+   */
+  private registerSolids(): void {
+    const heights: Record<DestinationId, number> = {
+      campus: 11.5,
+      studio: 3.4,
+      workshop: 4.6,
+      library: 3.6,
+      workbench: 6.4,
+      contact: 4.2,
+    };
+    for (const [id, layout] of Object.entries(LAYOUT) as [DestinationId, PlaceLayout][]) {
+      const { surface } = this.placeLayout(id);
+      this.solids.push({
+        x: layout.x,
+        z: layout.z,
+        radius: layout.pad + 0.9,
+        top: surface + heights[id],
+      });
+    }
+    /* The switch is small, but the camera should not stand inside it either. */
+    this.solids.push({ x: 2.35, z: 2.45, radius: 1.1, top: GROUND + 2.4 });
+  }
+
+  /** Solid volumes for the camera rig. */
+  cameraSolids(): { x: number; z: number; radius: number; top: number }[] {
+    return this.solids;
+  }
+
+  /** True when a ray hits the light switch. Used for the direct tap, which is
+   *  resolved before the place volumes so a visitor aiming at a visible switch
+   *  gets the switch. */
+  switchTarget(): THREE.Object3D | null {
+    return this.switchPick;
+  }
+
+  /** Where the switch's caption hangs: just above the lamp. */
+  lightSwitchAnchor(): THREE.Vector3 {
+    return new THREE.Vector3(2.35, this.placeLayout('campus').surface + 2.15, 2.45);
+  }
+
+  /**
+   * Tilt the switch's lever to match the state of the world's lights.
+   *
+   * The lamp on the post needs no special handling: it is a registered window
+   * panel, so it fades with every other window in the world as the blend runs.
+   */
+  setSwitchState(night: boolean): void {
+    if (!this.switchLever) return;
+    this.switchLever.rotation.z = night ? -0.4 : 0.4;
   }
 
   /* ── Station: work pavilion ────────────────────────────────────────── */
@@ -1230,6 +1503,27 @@ export class ObservatoryWorld {
           cast: false,
           receive: false,
         });
+
+        /* Two rows of windows on the flanks, so the studio is a lit building
+           from across the island and not only from the front. */
+        for (const side of [-1, 1]) {
+          this.windowBand(group, `studio-windows-${side > 0 ? 'a' : 'b'}`, {
+            axis: 'x',
+            at: new THREE.Vector3(side * 1.64, surface + 0.95, 0.55),
+            length: 1.5,
+            count: 2,
+            height: 0.5,
+            offset: 0.02,
+          });
+          this.windowBand(group, `studio-windows-${side > 0 ? 'c' : 'd'}`, {
+            axis: 'x',
+            at: new THREE.Vector3(side * 1.64, surface + 1.35, 0.55),
+            length: 1.5,
+            count: 1,
+            height: 0.26,
+            offset: 0.02,
+          });
+        }
 
         /* The portrait: the real photograph, framed on the back wall. */
         const portrait = this.mesh(
@@ -1526,6 +1820,13 @@ export class ObservatoryWorld {
           position: new THREE.Vector3(1.9, surface + 0.35, 1.3),
         });
 
+        /*
+         * The workshop's own light comes from its vitrines, which are already
+         * lit objects with their own colours. A workshop that is a canopy over
+         * an open yard has no wall to put a window in, so it does not pretend
+         * to have one.
+         */
+
         return {
           anchorY: 3.5,
           pickRadius: 3.6,
@@ -1706,6 +2007,30 @@ export class ObservatoryWorld {
         /* A sign over the door. */
         this.mesh(roundedBox(1.1, 0.22, 0.04, 0.02), this.materials.metalDark, group, 'library-sign', {
           position: new THREE.Vector3(0, surface + 1.62, -0.42),
+        });
+
+        /*
+         * A clerestory along the vault's shoulder, and windows in the end
+         * walls. A reading hall at night is lit from inside and along the top,
+         * which is also what gives the barrel its shape in the dark.
+         */
+        for (const side of [-1, 1]) {
+          this.windowBand(group, `library-windows-${side > 0 ? 'a' : 'b'}`, {
+            axis: 'z',
+            at: new THREE.Vector3(side * 1.85, surface + 1.02, -0.02),
+            length: 1.2,
+            count: 2,
+            height: 0.58,
+            offset: 0,
+          });
+        }
+        this.windowBand(group, 'library-clerestory', {
+          axis: 'x',
+          at: new THREE.Vector3(0, surface + 2.28, 0.6),
+          length: width - 0.9,
+          count: 5,
+          height: 0.2,
+          offset: 0,
         });
 
         return { anchorY: 3.2, pickRadius: 3.3, pickHeight: 3.6, targetY: 1.3 };
@@ -2166,6 +2491,26 @@ export class ObservatoryWorld {
       (this.beaconCore.material as THREE.MeshStandardMaterial).emissive.setHex(theme.signal);
     }
 
+    /*
+     * The ground is repainted rather than filtered. Its four bands — grass,
+     * dry earth, the bare lip and the dark keel — are the same four tokens the
+     * page uses, so the island changes colour with the sky instead of going
+     * muddy under a global tint.
+     */
+    if (this.islandGeometry) {
+      paintIsland(this.islandGeometry, this.islandPalette(theme));
+      const colors = this.islandGeometry.attributes.color as THREE.BufferAttribute | undefined;
+      if (colors) colors.needsUpdate = true;
+    }
+
+    /* Clouds carry their own light and shade, so a theme change repaints them
+       rather than recolouring a material. */
+    for (const cloud of this.clouds) {
+      paintCloud(cloud.geometry, theme.snow, theme.cloudShade);
+      const colors = cloud.geometry.attributes.color as THREE.BufferAttribute | undefined;
+      if (colors) colors.needsUpdate = true;
+    }
+
     /* Atmosphere-adjacent pieces that are painted rather than lit. */
     for (const layer of this.mistLayers) {
       const material = layer.material as THREE.MeshBasicMaterial;
@@ -2188,6 +2533,8 @@ export class ObservatoryWorld {
       (this.flight.mesh.material as THREE.MeshStandardMaterial).emissive.setHex(theme.signal);
     }
 
+    /* The switch's lever points at whichever way the world's lights are. */
+    this.setSwitchState(theme.dayness < 0.5);
   }
 
   setQuality(quality: QualitySettings): void {
@@ -2198,6 +2545,10 @@ export class ObservatoryWorld {
     this.signals.forEach((signal, index) => {
       signal.mesh.visible = index < quality.signalCount;
     });
+    this.clouds.forEach((cloud, index) => {
+      cloud.visible = index < (quality.detail ? 5 : quality.mistLayers >= 3 ? 3 : 2);
+    });
+    this.cloudGroup.visible = this.clouds.some((cloud) => cloud.visible);
     this.searchlight.visible = quality.detail;
   }
 
@@ -2270,6 +2621,19 @@ export class ObservatoryWorld {
       layer.position.y =
         (layer.userData.baseY as number) +
         Math.sin(t * 0.25 + (layer.userData.bob as number)) * 0.14;
+    }
+
+    /* Clouds drift on a slow orbit of their own, so the sky is never static
+       but never draws attention either. */
+    for (const cloud of this.clouds) {
+      if (!cloud.visible) continue;
+      const angle = (cloud.userData.angle as number) + t * (cloud.userData.speed as number);
+      const radius = cloud.userData.radius as number;
+      cloud.position.x = Math.cos(angle) * radius;
+      cloud.position.z = Math.sin(angle) * radius;
+      cloud.position.y =
+        (cloud.userData.baseY as number) +
+        Math.sin(t * 0.08 + (cloud.userData.bob as number)) * 0.6;
     }
 
     /* Signals travelling the pathways. */
@@ -2357,6 +2721,11 @@ export class ObservatoryWorld {
     }
     for (const marker of this.objectMarkers) targets.push(marker.pick);
     return targets;
+  }
+
+  /** Objects a ray may hit to find the in-scene light switch. */
+  switchTargets(): THREE.Object3D[] {
+    return this.switchPick ? [this.switchPick] : [];
   }
 
   /**

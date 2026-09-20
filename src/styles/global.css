@@ -76,19 +76,27 @@
   --noise-blend: overlay;
 
   /* The miniature world reads these, so DOM and canvas stay coherent. */
-  --world-sky-top: #05080f;
-  --world-sky-horizon: #2b3a68;
-  --world-fog: #121b31;
-  --world-mist: #1b2740;
-  --world-stone: #6d6656;
-  --world-stone-deep: #4a4438;
-  --world-ceramic: #ab9e85;
-  --world-metal: #232e4d;
-  --world-grass: #43584b;
-  --world-key: #cfe0ff;
-  --world-practical: #ffbe6a;
-  --world-signal: #6ee7d8;
-  --world-exposure: 1.05;
+  --world-sky-top: #030713;
+  --world-sky-horizon: #22386b;
+  --world-fog: #0c1526;
+  --world-mist: #1a2742;
+  --world-stone: #9a9280;
+  --world-stone-deep: #6b6455;
+  --world-stone-alt: #847c6a;
+  --world-earth: #6a6049;
+  --world-ceramic: #cfc2a8;
+  --world-metal: #33415f;
+  --world-grass: #5a7a63;
+  --world-moss: #4a6857;
+  --world-shore: #7d7460;
+  --world-snow: #e6ecf6;
+  --world-cloud-shade: #44557c;
+  --world-key: #dce7ff;
+  --world-practical: #ffcb86;
+  --world-signal: #8aecdf;
+  --world-glass: #1c2b47;
+  --world-window: #ffd08a;
+  --world-exposure: 1.2;
 
   /* Type ------------------------------------------------------------ */
   --font-display: 'Fraunces Variable', 'Iowan Old Style', Georgia, serif;
@@ -197,19 +205,27 @@
   --noise-opacity: 0.32;
   --noise-blend: multiply;
 
-  --world-sky-top: #7fa8d4;
-  --world-sky-horizon: #f7ead2;
-  --world-fog: #ded9c9;
-  --world-mist: #f1ece0;
-  --world-stone: #e3d9c4;
-  --world-stone-deep: #ab9f88;
-  --world-ceramic: #f6f0e2;
-  --world-metal: #33415f;
-  --world-grass: #6f9078;
-  --world-key: #fff3dc;
-  --world-practical: #cf7f2e;
+  --world-sky-top: #6d9fd4;
+  --world-sky-horizon: #f4e2c2;
+  --world-fog: #d6d1bf;
+  --world-mist: #efeadd;
+  --world-stone: #ddd3bd;
+  --world-stone-deep: #a89c85;
+  --world-stone-alt: #cdc1a8;
+  --world-earth: #ae9b78;
+  --world-ceramic: #f5efe1;
+  --world-metal: #3a4a6b;
+  --world-grass: #6c8f74;
+  --world-moss: #5c7f65;
+  --world-shore: #c2b494;
+  --world-snow: #ffffff;
+  --world-cloud-shade: #b4c2d6;
+  --world-key: #fff1d4;
+  --world-practical: #c8781f;
   --world-signal: #0f9c90;
-  --world-exposure: 0.96;
+  --world-glass: #b9cfdd;
+  --world-window: #d9a04a;
+  --world-exposure: 0.86;
 
   color-scheme: light;
 }
@@ -241,8 +257,8 @@ html[data-theme-anim='true'] .chip,
 html[data-theme-anim='true'] .btn,
 html[data-theme-anim='true'] .prose pre,
 html[data-theme-anim='true'] .prose code {
-  transition: background-color 700ms var(--ease-out), color 700ms var(--ease-out),
-    border-color 700ms var(--ease-out), box-shadow 700ms var(--ease-out);
+  transition: background-color 800ms var(--ease-out), color 800ms var(--ease-out),
+    border-color 800ms var(--ease-out), box-shadow 800ms var(--ease-out);
 }
 
 /* ── 02. Reset & base ──────────────────────────────────────────────── */
@@ -1212,6 +1228,13 @@ html[data-mode='world'] body {
   pointer-events: none;
 }
 
+/*
+  A caption is a control, so it has to be able to take a press — but only
+  where it actually is. A hidden caption keeps `pointer-events: none`: a
+  transparent pill left lying over a building would swallow the tap that was
+  meant for the destination underneath it, which is exactly how a place
+  becomes unselectable.
+*/
 .world-hotspot {
   position: absolute;
   top: 0;
@@ -1229,8 +1252,8 @@ html[data-mode='world'] body {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  pointer-events: auto;
   opacity: 0;
+  pointer-events: none;
   transition: opacity var(--dur-3) var(--ease-out),
     transform var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out),
     color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
@@ -1244,6 +1267,7 @@ html[data-mode='world'] body {
 
 .world-hotspot[data-visible='true'] {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .world-hotspot:hover,

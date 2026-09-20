@@ -6,26 +6,58 @@
  *
  * Orbit and zoom are applied on top of the current shot and are always
  * available — the world is the interface, so dragging and zooming it is the
- * primary way of looking around. Bounds are generous but hard, so no amount
- * of dragging can lose the island or turn the camera upside down.
+ * primary way of looking around.
+ *
+ * The rig owns the one rule that keeps the world legible: the camera is never
+ * allowed to end up underneath the island, inside the rock, or inside a
+ * building. Bounds alone are not enough for that, because the distance a shot
+ * is framed from depends on the viewport, so a limit that is safe on a desktop
+ * is not safe in a short strip. Instead every candidate position is tested
+ * against the island's own silhouette — the same profile the geometry is
+ * lathed from — plus a list of solid volumes the world registers, and is
+ * pulled in to the last point on its approach line that clears them. That
+ * holds for the composed shots, for the orbit the visitor drives, and for
+ * every intermediate frame of a transition.
  */
 
 import * as THREE from 'three';
+import { islandEnvelopeAt } from './parts';
 import type { Shot } from './world';
 
 const MIN_TRAVEL = 0.7;
 const MAX_TRAVEL = 1.1;
-/** Horizontal swing around the subject. */
-const AZIMUTH_LIMIT = 1.5;
-/** Vertical swing: enough to look down on the campus, never past vertical. */
-const POLAR_MIN = 0.16;
-const POLAR_MAX = 1.45;
-/** Distance multiplier limits. */
-const ZOOM_MIN = 0.45;
-const ZOOM_MAX = 2.4;
-/** Orbit is expressed relative to the shot's own elevation. */
-const ORBIT_POLAR_LIMIT = 0.95;
-const MIN_HEIGHT = 2.2;
+/** Horizontal swing around the subject. Generous: the whole campus is round. */
+const AZIMUTH_LIMIT = 1.9;
+/** Vertical swing: from just above the horizon to a steep look-down. */
+const ORBIT_POLAR_DOWN = 0.92;
+const ORBIT_POLAR_UP = 0.44;
+/** Distance multiplier limits, relative to the composed shot. */
+const ZOOM_MIN = 0.62;
+const ZOOM_MAX = 1.7;
+/** How high the ground sits, matching the world's plateau. */
+const GROUND = 1;
+/** The camera never comes closer to the plateau than this. */
+const GROUND_CLEARANCE = 1.9;
+/**
+ * The steepest and shallowest the camera is ever allowed to look at the
+ * island from, measured as the polar angle of its offset from the subject.
+ * Phi is measured from straight up, so the small value is the steep look-down
+ * and the value near a right angle is the flattest view above the horizon.
+ */
+const POLAR_LOOK_DOWN = 0.22;
+const POLAR_LOOK_LEVEL = Math.PI / 2 - 0.06;
+/** The shallowest a composed shot's own elevation may be pulled to. */
+const SHOT_POLAR_FLOOR = 0.5;
+
+/** A solid the camera must stay out of: a vertical cylinder with a lid. */
+export interface SolidVolume {
+  x: number;
+  z: number;
+  /** Radius of the volume, already including the camera's own body. */
+  radius: number;
+  /** World height of the top of the volume. */
+  top: number;
+}
 
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -41,6 +73,31 @@ export interface OrbitState {
   azimuth: number;
   polar: number;
   zoom: number;
+}
+
+/**
+ * The lowest the camera may sit at a horizontal position.
+ *
+ * Inside the island's footprint the floor is the plateau itself; outside it
+ * there is nothing underneath at all, and the camera may drop to the level of
+ * the keel's foot so the underside can be looked at from a distance — which is
+ * the one view from below that is worth having, and it is a view of a finished
+ * body rather than of its back faces.
+ */
+export function terrainFloorAt(x: number, z: number): number {
+  const radial = Math.hypot(x, z);
+  const footprint = islandEnvelopeAt(GROUND - 0.02);
+  if (radial <= footprint + 0.4) return GROUND + GROUND_CLEARANCE;
+  /*
+   * Outside the footprint the camera is in open air; it may descend, but never
+   * below the keel, so the island is always seen from the side or above.
+   */
+  const approach = THREE.MathUtils.clamp(
+    (radial - footprint) / 6,
+    0,
+    1,
+  );
+  return THREE.MathUtils.lerp(GROUND + GROUND_CLEARANCE, -8.4, approach);
 }
 
 export class CameraRig {
@@ -61,16 +118,21 @@ export class CameraRig {
   private readonly offset = new THREE.Vector3();
   private readonly spherical = new THREE.Spherical();
   private readonly position = new THREE.Vector3();
+  private readonly scratch = new THREE.Vector3();
+  /** Solid volumes the camera must not enter; filled by the world. */
+  private solids: SolidVolume[] = [];
   private reducedMotion: boolean;
 
   constructor(aspect: number, home: Shot, reducedMotion: boolean) {
-    this.camera = new THREE.PerspectiveCamera(home.fov, aspect, 0.5, 900);
-    this.camera.position.copy(home.position);
+    this.camera = new THREE.PerspectiveCamera(home.fov, aspect, 0.35, 1200);
     this.base = cloneShot(home);
     this.from = cloneShot(home);
     this.to = cloneShot(home);
     this.reducedMotion = reducedMotion;
     this.duration = 0;
+    this.clearance(home.position);
+    this.camera.position.copy(home.position);
+    this.camera.lookAt(home.target);
     this.apply();
   }
 
@@ -78,26 +140,32 @@ export class CameraRig {
     this.reducedMotion = value;
   }
 
+  /** Register the buildings the camera must keep out of. */
+  setSolids(solids: SolidVolume[]): void {
+    this.solids = solids;
+  }
+
   get home(): Shot {
     return cloneShot(this.base);
   }
 
-  /** Travel to a composed viewpoint. */
+  /** Travel to a composed viewpoint, along a path that stays above ground. */
   goTo(shot: Shot, options: TravelOptions = {}): void {
-    const duration = this.reducedMotion || options.immediate ? 0 : this.travelDuration();
+    const safe = this.safeShot(shot);
+    const duration = this.reducedMotion || options.immediate ? 0 : this.travelDuration(safe);
     this.from = this.currentShot();
-    this.to = cloneShot(shot);
+    this.to = safe;
     this.duration = duration;
     this.travel = duration === 0 ? 1 : 0;
     if (duration === 0) {
-      this.base = cloneShot(shot);
+      this.base = cloneShot(safe);
       this.apply();
     }
   }
 
   /** Duration scales gently with how far the camera has to move. */
-  private travelDuration(): number {
-    const distance = this.from.position.distanceTo(this.to.position);
+  private travelDuration(to: Shot): number {
+    const distance = this.from.position.distanceTo(to.position);
     const t = THREE.MathUtils.clamp(distance / 26, 0, 1);
     return THREE.MathUtils.lerp(MIN_TRAVEL, MAX_TRAVEL, t);
   }
@@ -112,6 +180,92 @@ export class CameraRig {
     };
   }
 
+  /**
+   * Make a shot safe before it is ever travelled to.
+   *
+   * The line from the look-at target out to the composed position is sampled
+   * from the inside out, and the camera is placed at the last sample that
+   * clears the island and every registered volume. Sampling rather than
+   * testing the endpoint is what stops a shot whose endpoint happens to be
+   * clear from passing through the dome to get there.
+   */
+  private safeShot(shot: Shot): Shot {
+    const position = this.clearanceAlong(shot.target, shot.position);
+    return { position, target: shot.target.clone(), fov: shot.fov };
+  }
+
+  /** Walk target → wanted and return the furthest clear point. */
+  private clearanceAlong(target: THREE.Vector3, wanted: THREE.Vector3): THREE.Vector3 {
+    const distance = target.distanceTo(wanted);
+    if (distance < 0.001) return this.clearance(wanted);
+    const steps = Math.max(6, Math.min(40, Math.ceil(distance * 3)));
+    let lastClear = target.clone().addScaledVector(
+      this.scratch.subVectors(wanted, target).normalize(),
+      Math.min(1.2, distance),
+    );
+    /* The near end of the line is inside the building; start from the first
+       clear sample and keep the furthest one after that. */
+    let started = false;
+    for (let step = 1; step <= steps; step++) {
+      const t = step / steps;
+      const point = new THREE.Vector3().lerpVectors(target, wanted, t);
+      if (this.clears(point)) {
+        started = true;
+        lastClear = point;
+      } else if (started) {
+        /* The line went into something after having been clear: stop here. */
+        break;
+      }
+    }
+    return this.clearance(lastClear);
+  }
+
+  /** True when a point is above the ground and outside every solid. */
+  private clears(point: THREE.Vector3): boolean {
+    if (point.y < terrainFloorAt(point.x, point.z)) return false;
+    for (const solid of this.solids) {
+      if (point.y > solid.top) continue;
+      const dx = point.x - solid.x;
+      const dz = point.z - solid.z;
+      if (dx * dx + dz * dz < solid.radius * solid.radius) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Lift a point to the first clear position above it.
+   *
+   * Vertical, not radial: a camera pushed straight up keeps its bearing on the
+   * subject, so the composition the shot was chosen for survives the
+   * correction instead of sliding sideways. This is the correction
+   * `clearanceAlong` applies to the point it settles on, and the one the live
+   * orbit is clamped with every frame.
+   */
+  private clearance(point: THREE.Vector3): THREE.Vector3 {
+    const out = point.clone();
+    const floor = terrainFloorAt(out.x, out.z);
+    if (out.y < floor) out.y = floor;
+    for (const solid of this.solids) {
+      if (out.y > solid.top) continue;
+      const dx = out.x - solid.x;
+      const dz = out.z - solid.z;
+      const squared = dx * dx + dz * dz;
+      if (squared >= solid.radius * solid.radius) continue;
+      /* Push out along the horizontal normal, away from the volume's axis. */
+      const distance = Math.sqrt(squared);
+      if (distance < 0.0001) {
+        out.x += solid.radius;
+        continue;
+      }
+      const push = (solid.radius - distance) / distance;
+      out.x += dx * push;
+      out.z += dz * push;
+    }
+    const floorAfter = terrainFloorAt(out.x, out.z);
+    if (out.y < floorAfter) out.y = floorAfter;
+    return out;
+  }
+
   /** Drag to look around. Amounts are in pointer pixels. */
   orbit(dx: number, dy: number): void {
     this.targetAzimuth = THREE.MathUtils.clamp(
@@ -121,14 +275,19 @@ export class CameraRig {
     );
     this.targetPolar = THREE.MathUtils.clamp(
       this.targetPolar - dy * 0.0038,
-      -ORBIT_POLAR_LIMIT,
-      ORBIT_POLAR_LIMIT,
+      -ORBIT_POLAR_DOWN,
+      ORBIT_POLAR_UP,
     );
   }
 
   /**
    * Zoom. `amount` is a signed fraction of the current distance: positive
    * moves closer, so a wheel notch of 0.1 closes ten percent of the gap.
+   *
+   * MIN_ZOOM keeps the camera outside the largest building on the island: the
+   * closest a composed shot ever is to its subject is about 9 units, and 0.58
+   * of that is still clear of the dome's 2.7-unit radius, so zooming all the
+   * way in reveals detail rather than the inside of a wall.
    */
   zoomBy(amount: number): void {
     this.targetZoom = THREE.MathUtils.clamp(
@@ -142,6 +301,7 @@ export class CameraRig {
     return this.zoom;
   }
 
+  /** True when the visitor has looked away from the composed view. */
   get orbiting(): boolean {
     return (
       Math.abs(this.targetAzimuth) > 0.001 ||
@@ -172,12 +332,16 @@ export class CameraRig {
   setOrbitState(state: Partial<OrbitState> | null | undefined): void {
     if (!state) return;
     if (typeof state.azimuth === 'number') {
-      this.orbitAzimuth = state.azimuth;
-      this.targetAzimuth = state.azimuth;
+      this.orbitAzimuth = THREE.MathUtils.clamp(state.azimuth, -AZIMUTH_LIMIT, AZIMUTH_LIMIT);
+      this.targetAzimuth = this.orbitAzimuth;
     }
     if (typeof state.polar === 'number') {
-      this.orbitPolar = state.polar;
-      this.targetPolar = state.polar;
+      this.orbitPolar = THREE.MathUtils.clamp(
+        state.polar,
+        -ORBIT_POLAR_DOWN,
+        ORBIT_POLAR_UP,
+      );
+      this.targetPolar = this.orbitPolar;
     }
     if (typeof state.zoom === 'number') {
       this.zoom = THREE.MathUtils.clamp(state.zoom, ZOOM_MIN, ZOOM_MAX);
@@ -204,15 +368,27 @@ export class CameraRig {
     this.offset.subVectors(this.base.position, this.base.target);
     this.spherical.setFromVector3(this.offset);
     this.spherical.theta += this.orbitAzimuth;
-    this.spherical.phi = THREE.MathUtils.clamp(
-      this.spherical.phi + this.orbitPolar,
-      POLAR_MIN,
-      POLAR_MAX,
+    /*
+     * The composed shot's own elevation plus the visitor's swing, held inside
+     * the band where the island reads. Phi is measured from straight up, so
+     * the lower bound is the steep look-down and the upper bound is the
+     * shallowest angle above the horizon.
+     */
+    const basePolar = THREE.MathUtils.clamp(
+      this.spherical.phi,
+      SHOT_POLAR_FLOOR,
+      POLAR_LOOK_LEVEL,
     );
-    this.spherical.radius *= this.zoom;
+    this.spherical.phi = THREE.MathUtils.clamp(
+      basePolar + this.orbitPolar,
+      POLAR_LOOK_DOWN,
+      POLAR_LOOK_LEVEL,
+    );
+    this.spherical.radius = Math.max(3.4, this.spherical.radius * this.zoom);
     this.position.setFromSpherical(this.spherical).add(this.base.target);
-    this.position.y = Math.max(this.position.y, MIN_HEIGHT);
-    this.camera.position.copy(this.position);
+
+    const clear = this.clearance(this.position);
+    this.camera.position.copy(clear);
     this.camera.lookAt(this.base.target);
     if (Math.abs(this.camera.fov - this.base.fov) > 0.01) {
       this.camera.fov = this.base.fov;
@@ -233,6 +409,23 @@ export class CameraRig {
   /** True while the camera is still moving between shots. */
   get travelling(): boolean {
     return this.duration > 0 && this.travel < 1;
+  }
+
+  /** Live diagnostics: where the camera is and how far it is above the floor. */
+  debug(): {
+    position: [number, number, number];
+    target: [number, number, number];
+    above: number;
+    radius: number;
+    polar: number;
+  } {
+    return {
+      position: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
+      target: [this.base.target.x, this.base.target.y, this.base.target.z],
+      above: this.camera.position.y - terrainFloorAt(this.camera.position.x, this.camera.position.z),
+      radius: this.camera.position.distanceTo(this.base.target),
+      polar: this.spherical.phi,
+    };
   }
 }
 

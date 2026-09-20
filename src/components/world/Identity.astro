@@ -109,6 +109,11 @@ import { site, hero } from '../../site.config';
     While the world is running this is a caption in the corner: it must not
     read as navigation and must not swallow a drag, so it ignores the pointer
     entirely. In simple mode the same markup is the opening of the page.
+
+    The card also carries a soft scrim of its own. The island is wide, so the
+    two can meet on a desktop; a gradient that fades out toward the top and the
+    right keeps the words legible where they touch the scenery without drawing
+    a visible panel across the picture — which is what a filled card would do.
   */
   :global(html[data-mode='world']) .world-identity {
     position: fixed;
@@ -121,6 +126,20 @@ import { site, hero } from '../../site.config';
     padding: 0;
     pointer-events: none;
     animation: identity-in 900ms var(--ease-out) 320ms both;
+  }
+
+  :global(html[data-mode='world']) .world-identity::before {
+    content: '';
+    position: absolute;
+    inset: -3.5rem -7rem -2.5rem -4rem;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(
+      120% 100% at 12% 100%,
+      color-mix(in srgb, var(--bg) 84%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 56%, transparent) 44%,
+      transparent 78%
+    );
   }
 
   :global(html[data-mode='world']) .identity-lead {

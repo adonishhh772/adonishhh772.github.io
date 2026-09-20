@@ -54,9 +54,25 @@ export interface Palette {
   mist: number;
   stone: number;
   stoneDeep: number;
+  /** A second stone, for the patches that break up the plateau. */
+  stoneAlt: number;
+  /** Dry earth under the planting. */
+  earth: number;
   ceramic: number;
   metal: number;
   grass: number;
+  /** A deeper green, for the shaded shelf under the trees. */
+  moss: number;
+  /** The bare ring at the lip of the cliff. */
+  shore: number;
+  /** The cool highlight on roofs and the dome. */
+  snow: number;
+  /** The underside of a cloud: snow pushed toward the sky it hangs in. */
+  cloudShade: number;
+  /** Glazing: dark by day, reflecting the sky. */
+  glass: number;
+  /** The warm light behind a window. Subdued by day, a lamp at night. */
+  window: number;
   key: number;
   practical: number;
   signal: number;
@@ -91,22 +107,33 @@ const NUMERICS: Record<
   Omit<WorldTheme, keyof Palette | 'name' | 'dayness'>
 > = {
   dark: {
-    exposure: 1.05,
-    fogDensity: 0.0115,
-    hemi: 0.8,
-    keyIntensity: 2.9,
-    practicalIntensity: 1.5,
-    emissive: 1.25,
-    environmentIntensity: 0.5,
+    exposure: 1.2,
+    fogDensity: 0.0102,
+    /*
+     * A night that can still be read.
+     *
+     * The previous night was lit almost entirely by one directional key, so
+     * every face turned away from it fell to black and the buildings read as
+     * silhouettes rather than as architecture. The ambient term now carries
+     * enough of the blue sky to keep surfaces legible at 1am, the key is warm
+     * rather than neutral — a moonlit scene wants a little colour in it — and
+     * the practical lamps carry further, which is what puts warm pools of
+     * light on the paths instead of isolated bright dots.
+     */
+    hemi: 1.6,
+    keyIntensity: 2.75,
+    practicalIntensity: 2.1,
+    emissive: 1.5,
+    environmentIntensity: 0.7,
   },
   light: {
-    exposure: 0.96,
-    fogDensity: 0.008,
-    hemi: 1,
-    keyIntensity: 3.2,
-    practicalIntensity: 0.4,
+    exposure: 0.86,
+    fogDensity: 0.0068,
+    hemi: 1.2,
+    keyIntensity: 2.9,
+    practicalIntensity: 0.35,
     emissive: 0.5,
-    environmentIntensity: 0.85,
+    environmentIntensity: 0.9,
   },
 };
 
@@ -124,34 +151,50 @@ function token(styles: CSSStyleDeclaration, name: string, fallback: string): num
 /** Read the live world palette from the document. */
 export function readWorldTheme(name: ThemeName = currentThemeName()): WorldTheme {
   const palette: Palette = {
-    skyTop: 0x05080f,
-    skyHorizon: 0x1a2544,
-    fog: 0x0d1424,
-    mist: 0x17223a,
-    stone: 0x8a8272,
-    stoneDeep: 0x5b5548,
-    ceramic: 0xc9bda4,
-    metal: 0x232e4d,
-    grass: 0x3f5c50,
-    key: 0xcfe0ff,
-    practical: 0xffbe6a,
-    signal: 0x6ee7d8,
+    skyTop: 0x030713,
+    skyHorizon: 0x22386b,
+    fog: 0x0c1526,
+    mist: 0x1a2742,
+    stone: 0x8f8878,
+    stoneDeep: 0x5f5949,
+    stoneAlt: 0x776f5e,
+    earth: 0x5a5140,
+    ceramic: 0xc6b99f,
+    metal: 0x2b3859,
+    grass: 0x4a6353,
+    moss: 0x3d5748,
+    shore: 0x6b6350,
+    snow: 0xdfe6f2,
+    cloudShade: 0x39496e,
+    glass: 0x16233c,
+    window: 0xffcb7d,
+    key: 0xd5e2ff,
+    practical: 0xffc478,
+    signal: 0x7fe9db,
   };
 
   if (typeof document !== 'undefined') {
     const styles = getComputedStyle(document.documentElement);
-    palette.skyTop = token(styles, '--world-sky-top', '#05080f');
-    palette.skyHorizon = token(styles, '--world-sky-horizon', '#1a2544');
-    palette.fog = token(styles, '--world-fog', '#0d1424');
-    palette.mist = token(styles, '--world-mist', '#17223a');
-    palette.stone = token(styles, '--world-stone', '#8a8272');
-    palette.stoneDeep = token(styles, '--world-stone-deep', '#5b5548');
-    palette.ceramic = token(styles, '--world-ceramic', '#c9bda4');
-    palette.metal = token(styles, '--world-metal', '#232e4d');
-    palette.grass = token(styles, '--world-grass', '#3f5c50');
-    palette.key = token(styles, '--world-key', '#cfe0ff');
-    palette.practical = token(styles, '--world-practical', '#ffbe6a');
-    palette.signal = token(styles, '--world-signal', '#6ee7d8');
+    palette.skyTop = token(styles, '--world-sky-top', '#030713');
+    palette.skyHorizon = token(styles, '--world-sky-horizon', '#22386b');
+    palette.fog = token(styles, '--world-fog', '#0c1526');
+    palette.mist = token(styles, '--world-mist', '#1a2742');
+    palette.stone = token(styles, '--world-stone', '#8f8878');
+    palette.stoneDeep = token(styles, '--world-stone-deep', '#5f5949');
+    palette.stoneAlt = token(styles, '--world-stone-alt', '#776f5e');
+    palette.earth = token(styles, '--world-earth', '#5a5140');
+    palette.ceramic = token(styles, '--world-ceramic', '#c6b99f');
+    palette.metal = token(styles, '--world-metal', '#2b3859');
+    palette.grass = token(styles, '--world-grass', '#4a6353');
+    palette.moss = token(styles, '--world-moss', '#3d5748');
+    palette.shore = token(styles, '--world-shore', '#6b6350');
+    palette.snow = token(styles, '--world-snow', '#dfe6f2');
+    palette.cloudShade = token(styles, '--world-cloud-shade', '#39496e');
+    palette.glass = token(styles, '--world-glass', '#16233c');
+    palette.window = token(styles, '--world-window', '#ffcb7d');
+    palette.key = token(styles, '--world-key', '#d5e2ff');
+    palette.practical = token(styles, '--world-practical', '#ffc478');
+    palette.signal = token(styles, '--world-signal', '#7fe9db');
   }
 
   const numeric = NUMERICS[name];
@@ -178,9 +221,17 @@ const PALETTE_KEYS: (keyof Palette)[] = [
   'mist',
   'stone',
   'stoneDeep',
+  'stoneAlt',
+  'earth',
   'ceramic',
   'metal',
   'grass',
+  'moss',
+  'shore',
+  'snow',
+  'cloudShade',
+  'glass',
+  'window',
   'key',
   'practical',
   'signal',

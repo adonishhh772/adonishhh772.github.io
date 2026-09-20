@@ -22,7 +22,12 @@ interface Props {
     | 'pause'
     | 'play'
     | 'chevron-down'
-    | 'eye';
+    | 'eye'
+    | 'switch'
+    | 'reset'
+    | 'sound-on'
+    | 'sound-off'
+    | 'volume';
   size?: number;
 }
 
@@ -320,6 +325,81 @@ const stroke = {
       {...stroke}
     >
       <path d="m6.5 9.5 5.5 5.5 5.5-5.5" />
+    </svg>
+  )
+}
+{
+  name === 'switch' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M7 4.5v15" />
+      <circle cx="7" cy="12" r="2.1" fill="currentColor" stroke="none" />
+      <path d="M7 5.5h6" />
+      <path d="M13 3.5h3.5v4H13z" />
+      <path d="M16.5 5.5h2.8M16.5 9.5h2.8M16.5 13.5h2.8M16.5 17.5h2.8" />
+    </svg>
+  )
+}
+{
+  name === 'reset' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5" />
+      <path d="M4.2 4.6v4.6h4.6" />
+    </svg>
+  )
+}
+{
+  name === 'sound-on' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M4.5 9.5h3l4-3.4v11.8l-4-3.4h-3z" />
+      <path d="M15 9.2a4 4 0 0 1 0 5.6" />
+      <path d="M17.6 6.6a7.6 7.6 0 0 1 0 10.8" />
+    </svg>
+  )
+}
+{
+  name === 'sound-off' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M4.5 9.5h3l4-3.4v11.8l-4-3.4h-3z" />
+      <path d="m15.2 9.8 5 4.4M20.2 9.8l-5 4.4" />
+    </svg>
+  )
+}
+{
+  name === 'volume' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M4.5 9.5h3l4-3.4v11.8l-4-3.4h-3z" />
+      <path d="M15 9.2a4 4 0 0 1 0 5.6" />
+      <path d="M17.6 6.6a7.6 7.6 0 0 1 0 10.8" />
     </svg>
   )
 }

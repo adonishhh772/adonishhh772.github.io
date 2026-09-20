@@ -5,8 +5,9 @@ dist/
 # dependencies
 node_modules/
 
-# local npm cache used when the default cache is unavailable
+# local npm cache and temp used when the default ones are unavailable
 .npm-cache/
+.npm-tmp/
 
 # verification artefacts (headless screenshots, browser profiles)
 .screenshots/

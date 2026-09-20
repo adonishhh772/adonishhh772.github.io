@@ -50,13 +50,14 @@ import {
   hideWorldAlert,
   isAmbientPaused,
   prefersReducedMotion,
+  RESET_VIEW_EVENT,
   showWorldAlert,
   subscribeAmbient,
   subscribeTheme,
   THEME_TRANSITION_MS,
   toggleTheme,
 } from '../world/theme-state';
-import { blendTheme, readWorldTheme, type WorldTheme } from '../observatory/theme';
+import { blendTheme, mixColor, readWorldTheme, type WorldTheme } from '../observatory/theme';
 import { Atmosphere } from '../observatory/lighting';
 import { Materials } from '../observatory/materials';
 import {
@@ -70,7 +71,7 @@ import {
   type QualitySettings,
   type QualityTier,
 } from '../observatory/quality';
-import { ObservatoryWorld, fitDistance, type Shot } from '../observatory/world';
+import { ObservatoryWorld, type Shot } from '../observatory/world';
 import { CameraRig } from '../observatory/camera';
 
 export interface ShellHandle {
@@ -88,8 +89,29 @@ const DRAG_THRESHOLD = 6;
  */
 const CELESTIAL_TAP_RADIUS = 34;
 
+/**
+ * The clear space two caption boxes must leave between them, in pixels.
+ *
+ * Captions are placed against boxes measured *before* each one is nudged back
+ * inside the frame, so two that just touch end up overlapping on screen. A
+ * small, explicit gap absorbs that nudge and is what keeps the campus map
+ * readable when six names are competing for the same corner of the island.
+ */
+const CAPTION_GAP = 10;
+
 /** The caption key for the in-world sun/moon control. */
 const CELESTIAL_KEY = 'celestial:sun';
+
+/**
+ * The caption key for the physical light switch on the observatory terrace.
+ *
+ * It is icon-only, like the sun: the object it names is visible and is itself
+ * the control, so a word beside it would be a label on a lamp. It exists
+ * because a small brass post standing among buildings is not obviously
+ * pressable at first glance, and because a visitor who never hovers should
+ * still be able to find it.
+ */
+const LIGHT_SWITCH_KEY = 'switch:lights';
 
 /** Selectors whose gestures belong to the control, never to the camera. */
 const INTERACTIVE_SELECTOR = [
@@ -138,21 +160,68 @@ export function webglAvailable(): boolean {
 
 /* ── Compositions ────────────────────────────────────────────────────── */
 
-const OVERVIEW_TARGET = new THREE.Vector3(0, 2.9, 0);
+/**
+ * The island's own extent.
+ *
+ * It is a disc, not a ball: `horizontal` is the rocky rim and `vertical` runs
+ * from the foot of the keel to the top of the dome. The overview is composed
+ * to fit *both*, so the frame is decided by the thing the visitor came to see
+ * rather than by a distance somebody liked the look of.
+ */
+const CAMPUS_EXTENT = { horizontal: 14.7, vertical: 11.5 };
+/** The centre of the island's visual mass, which is what the camera aims at. */
+const CAMPUS_CENTRE = new THREE.Vector3(0, 1.4, 0);
 
-/** The campus overview: high enough to read every destination at once. */
-function overviewShot(aspect: number): Shot {
-  const portrait = aspect < 1.15;
-  const radius = portrait ? 9.6 : 12.2;
-  const fov = portrait ? 46 : 36;
-  const distance = fitDistance(radius, fov, aspect);
+/**
+ * The campus overview.
+ *
+ * The camera sits at a fixed bearing and is set back far enough that the
+ * island fits inside the region the interface leaves free, on both axes.
+ *
+ * Getting this wrong is not subtle. The previous version sized the shot from a
+ * single "radius that fits" figure and then aimed it with a look-at shift: a
+ * sphere that fits vertically can still be far wider than a wide screen, and a
+ * frame that is three times wider than it is tall fits very different amounts
+ * on each axis. The result was an island running off the left and right edges
+ * with the top of the dome cut off. Here each axis is fitted on its own and
+ * the further constraint wins.
+ */
+function overviewShot(usable: { aspect: number }): Shot {
+  const portrait = usable.aspect < 1.15;
+  const fov = portrait ? 44 : 38;
+  const vFov = THREE.MathUtils.degToRad(fov);
+  const halfV = Math.tan(vFov / 2);
+  const halfH = halfV * Math.max(usable.aspect, 0.35);
+
+  /* How much of the free region the island is allowed to fill. */
+  const widthFraction = portrait ? 0.92 : 0.84;
+  const heightFraction = 0.86;
+  const distanceForWidth = CAMPUS_EXTENT.horizontal / widthFraction / halfH;
+  const distanceForHeight = CAMPUS_EXTENT.vertical / heightFraction / halfV;
+  const distance = Math.max(distanceForWidth, distanceForHeight);
+
+  /*
+   * The bearing. Portrait gets its own: a phone is so much narrower than it is
+   * tall that the island, seen from the desktop's three-quarter angle, runs off
+   * the right edge while leaving a wide band of empty sky on the left. Turning
+   * the camera round the island swings it back into the middle without moving
+   * it any further away.
+   */
   const direction = portrait
-    ? new THREE.Vector3(0.4, 0.36, 0.68).normalize()
+    ? new THREE.Vector3(0.4, 0.36, 0.68).normalize().applyAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        0.6,
+      )
     : new THREE.Vector3(0.58, 0.44, 0.67).normalize();
-  const target = OVERVIEW_TARGET.clone();
-  /* A phone screen is tall: aim above the island's centre so the buildings
-     fill it instead of leaving a dark band of ground underneath. */
-  target.y = portrait ? 2.1 : 2.4;
+  const target = CAMPUS_CENTRE.clone();
+  /*
+   * A portrait frame is tall and narrow, and the island is a wide disc: the
+   * width is what limits it, which leaves a band of empty sky above and below,
+   * with the identity card and the control bar already claiming the top. On a
+   * phone the aim is therefore lifted a little, so that empty band sits above
+   * the campus where the card is rather than below it.
+   */
+  if (portrait) target.y += 2.6;
   return { position: target.clone().addScaledVector(direction, distance), target, fov };
 }
 
@@ -171,30 +240,44 @@ function placeShot(base: Shot, aspect: number, reach = 1): Shot {
   };
 }
 
+/**
+ * A rectangle of the stage, in CSS pixels, that the composition must keep a
+ * subject out of. The reading surface is one; so is the identity card that
+ * stands in the corner of the campus overview.
+ */
+interface Reserved {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
 interface ViewMetrics {
   stageWidth: number;
   stageHeight: number;
   /** Region of the stage the document leaves visible. */
   free: { left: number; top: number; right: number; bottom: number };
+  /** Other interface regions the subject must also stay clear of. */
+  reserved: Reserved[];
 }
 
 /**
- * Compose a destination so the reading surface never covers it.
+ * Compose a shot so the interfaces never cover the subject.
  *
- * The camera keeps its position and the look-at point is slid, which moves the
- * subject to the middle of the region the document leaves visible. That region
- * is a side panel on a desktop and a bottom sheet on a phone, so the shift is
- * computed on both axes rather than assuming one. The conversion from pixels
- * to world units uses the real distance and field of view, so it holds at any
- * viewport size instead of being a tuned guess.
+ * The camera keeps its position, and the look-at point is slid so the subject
+ * lands at `screen` instead of wherever it happened to be. The conversion from
+ * pixels to world units uses the real distance and field of view, so the shift
+ * holds at any viewport size rather than being a tuned guess.
  */
-function readingShot(base: Shot, view: ViewMetrics): Shot {
+function readingShot(
+  base: Shot,
+  view: ViewMetrics,
+  screen: { x: number; y: number },
+): Shot {
   const position = base.position.clone();
   const target = base.target.clone();
-  const freeCentreX = (view.free.left + view.free.right) / 2;
-  const freeCentreY = (view.free.top + view.free.bottom) / 2;
-  const offsetX = view.stageWidth / 2 - freeCentreX;
-  const offsetY = view.stageHeight / 2 - freeCentreY;
+  const offsetX = view.stageWidth / 2 - screen.x;
+  const offsetY = view.stageHeight / 2 - screen.y;
 
   const distance = position.distanceTo(target);
   const worldPerPixel =
@@ -283,7 +366,29 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   const scene = new THREE.Scene();
   const materials = new Materials(theme, settings);
-  const atmosphere = new Atmosphere(theme, settings, renderer);
+  /*
+   * A paper-thin bright shell around everything.
+   *
+   * The moon hangs off to one side of the frame, so the buildings' far edges
+   * face away from it and had no light at all — which is what turned the
+   * night silhouettes into flat black cut-outs. A shell with the moon's own
+   * direction is one of the cheapest lights there is (no falloff, no shadow
+   * pass, no distance limit) and it rims exactly those edges without lifting
+   * the surfaces the key already lights.
+   */
+  const rim = new THREE.Group();
+  rim.name = 'rim-light';
+  scene.add(rim);
+  const rimDirectional = new THREE.DirectionalLight(theme.key, 0.5);
+  rimDirectional.name = 'rim';
+  /*
+   * The moon hangs off to one side of the frame, so the buildings' far edges
+   * face away from it. A shell from that side is the cheapest light there is —
+   * no falloff, no shadow pass, no distance limit — and it rims exactly those
+   * edges without lifting the surfaces the key already lights.
+   */
+  rimDirectional.position.set(-16, 10, -19);
+  rim.add(rimDirectional, rimDirectional.target);  const atmosphere = new Atmosphere(theme, settings, renderer);
   scene.add(atmosphere.group);
   scene.environment = atmosphere.environment;
   scene.environmentIntensity = theme.environmentIntensity;
@@ -293,7 +398,14 @@ export function mountShell(root: WorldHost): ShellHandle {
   scene.add(world.group);
   world.loadPortrait(portraitUrl);
 
-  const rig = new CameraRig(1, overviewShot(1), reducedMotion);
+  const rig = new CameraRig(1, overviewShot({ aspect: 1 }), reducedMotion);
+  /*
+   * Tell the rig what it must not fly through. The world knows where its own
+   * buildings are, so the camera's clearance volumes come from the same layout
+   * the geometry was placed with — there is no second map of the campus to
+   * drift out of step.
+   */
+  rig.setSolids(world.cameraSolids());
 
   /* ── State ───────────────────────────────────────────────────────── */
   let state: WorldState = readState();
@@ -308,6 +420,8 @@ export function mountShell(root: WorldHost): ShellHandle {
   let contextLost = false;
   /** The caption that opened the open document, so focus can go back to it. */
   let lastOpenedKey: string | null = null;
+  /** The caption currently shown in full despite having been placed compact. */
+  let revealedKey: string | null = null;
 
   const hotspots = new Map<string, HTMLElement>();
   const occluded = new Map<string, boolean>();
@@ -319,10 +433,14 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   function labelLimitFor(value: QualityTier): number {
     const width = window.innerWidth;
-    /* Phones get a small budget on purpose — but enough that the campus still
-       reads as a set of destinations rather than one label at a time. */
-    const base = width < 560 ? 4 : width < 900 ? 5 : 7;
-    return value === 'low' ? Math.min(base, 5) : base;
+    /*
+     * Phones get a small budget on purpose: a 40px marker is a tenth of a
+     * portrait screen's width, so a handful of them is already a crowd. The
+     * aim is that the campus still reads as a set of destinations — the map
+     * menu is the guaranteed route to every one of them.
+     */
+    const base = width < 560 ? 3 : width < 900 ? 5 : 6;
+    return value === 'low' ? Math.min(base, 4) : base;
   }
 
   /* ── Quality ─────────────────────────────────────────────────────── */
@@ -385,6 +503,16 @@ export function mountShell(root: WorldHost): ShellHandle {
     clearColor.setHex(next.fog);
     renderer.setClearColor(clearColor, 1);
     renderer.toneMappingExposure = next.exposure;
+
+    /*
+     * The rim follows whichever body is up: warm sun by day, cool moon by
+     * night. It is driven from the day/night blend rather than from the sky
+     * body's own position, so it is authored rather than emergent — the rim
+     * should land on the silhouette edges the visitor is looking at.
+     */
+    const day = THREE.MathUtils.clamp(next.dayness, 0, 1);
+    rimDirectional.color.setHex(day > 0.5 ? next.key : mixColor(next.key, next.skyHorizon, 0.35));
+    rimDirectional.intensity = 0.34 + (1 - day) * 0.36;
   }
 
   function startThemeTransition(next: WorldTheme, animate: boolean): void {
@@ -458,6 +586,7 @@ export function mountShell(root: WorldHost): ShellHandle {
    */
   function iconFor(key: string): string {
     if (key === CELESTIAL_KEY) return currentTheme() === 'light' ? 'sun' : 'moon';
+    if (key === LIGHT_SWITCH_KEY) return currentTheme() === 'light' ? 'sun' : 'moon';
     if (key.startsWith('place:')) {
       const id = key.slice(6);
       if (id === 'campus') return 'compass';
@@ -545,7 +674,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     mark.setAttribute('aria-hidden', 'true');
     paintMark(mark, iconFor(key));
     link.append(mark);
-    /* An icon-only caption (the sun) has no label to show. */
+    /* An icon-only caption (the sun, the light switch) has no label to show. */
     if (label) {
       const name = document.createElement('span');
       name.className = 'world-hotspot-name';
@@ -562,6 +691,32 @@ export function mountShell(root: WorldHost): ShellHandle {
     hotspotEl.append(link);
     link.addEventListener('focus', () => {
       link.dataset.visible = 'true';
+      revealedKey = key;
+    });
+    link.addEventListener('blur', () => {
+      if (revealedKey === key) revealedKey = null;
+    });
+    /*
+     * A pointer that hovers reveals a compact caption; a finger cannot hover,
+     * so a tap on a marker reveals it instead. The first tap opens the marker
+     * into its full name, and the caption is then a normal target — a phone
+     * therefore never has to guess what a circle stands for, and never has to
+     * open a document to find out.
+     */
+    link.addEventListener('pointerenter', () => {
+      revealedKey = key;
+    });
+    link.addEventListener('pointerleave', () => {
+      if (revealedKey === key) revealedKey = null;
+    });
+    /*
+     * Touch has no hover, so a finger reveals a compact marker on the way
+     * down — before the click it is about to produce. A marker therefore
+     * always shows its name to the visitor who is about to open it, whether
+     * they are using a mouse, a finger or the keyboard.
+     */
+    link.addEventListener('pointerdown', () => {
+      revealedKey = key;
     });
     if (kind === 'place') {
       const id = key.startsWith('place:') ? (key.slice(6) as DestinationId) : 'campus';
@@ -677,6 +832,17 @@ export function mountShell(root: WorldHost): ShellHandle {
       }
     }
 
+    /*
+     * The light switch stands on the observatory terrace, so its caption
+     * belongs to the campus. It is a button that drives the same shared state
+     * as the labelled control in the chrome — the in-scene control and the
+     * interface control are two handles on one switch.
+     */
+    if (!atPlace) {
+      const lightSwitch = makeHotspot(LIGHT_SWITCH_KEY, '', '', '', 'celestial');
+      hotspots.set(LIGHT_SWITCH_KEY, lightSwitch);
+    }
+
     updateCelestialHotspot();
 
     if (activeKey) {
@@ -691,16 +857,27 @@ export function mountShell(root: WorldHost): ShellHandle {
    */
   function updateCelestialHotspot(): void {
     const link = hotspots.get(CELESTIAL_KEY);
-    if (!link) return;
-    const day = currentTheme() === 'light';
-    const label = day
-      ? 'Sun — switch to night lighting'
-      : 'Moon — switch to daylight';
-    link.setAttribute('aria-pressed', day ? 'true' : 'false');
-    link.setAttribute('aria-label', label);
-    link.setAttribute('title', label);
-    const mark = link.querySelector<HTMLElement>('.world-hotspot-mark');
-    if (mark) paintMark(mark, day ? 'sun' : 'moon');
+    if (link) {
+      const day = currentTheme() === 'light';
+      const label = day ? 'Sun — switch to night lighting' : 'Moon — switch to daylight';
+      link.setAttribute('aria-pressed', day ? 'true' : 'false');
+      link.setAttribute('aria-label', label);
+      link.setAttribute('title', label);
+      const mark = link.querySelector<HTMLElement>('.world-hotspot-mark');
+      if (mark) paintMark(mark, day ? 'sun' : 'moon');
+    }
+    const physical = hotspots.get(LIGHT_SWITCH_KEY);
+    if (physical) {
+      const day = currentTheme() === 'light';
+      const label = day
+        ? 'The observatory light switch — turn the lamps on'
+        : 'The observatory light switch — turn the lamps off';
+      physical.setAttribute('aria-pressed', day ? 'true' : 'false');
+      physical.setAttribute('aria-label', label);
+      physical.setAttribute('title', label);
+      const mark = physical.querySelector<HTMLElement>('.world-hotspot-mark');
+      if (mark) paintMark(mark, 'switch');
+    }
   }
 
   function anchorFor(key: string): THREE.Vector3 | null {
@@ -710,11 +887,18 @@ export function mountShell(root: WorldHost): ShellHandle {
          of the disc. */
       return atmosphere.activeCelestialCaptionPosition();
     }
+    if (key === LIGHT_SWITCH_KEY) {
+      /* A little above the lamp on the post, so the marker clears the object
+         it names rather than sitting on the control. */
+      return world.lightSwitchAnchor();
+    }
     if (key.startsWith('place:')) {
       const id = key.slice(6) as DestinationId;
       if (id === 'campus') {
+        /* Above the dome, but not so far above it that the label is pushed
+           off the top of the frame on a wide, short view. */
         const node = world.places.get('campus');
-        return node ? node.anchor.clone().add(new THREE.Vector3(0, 3.4, 0)) : null;
+        return node ? node.anchor.clone().add(new THREE.Vector3(0, 2.5, 0)) : null;
       }
       const node = world.places.get(id);
       return node ? node.anchor.clone() : null;
@@ -750,17 +934,39 @@ export function mountShell(root: WorldHost): ShellHandle {
    * reading header.
    *
    * Written from the frame clock rather than only from a scroll listener:
-   * `scroll` does not propagate, momentum scrolling fires it in bursts, and a
-   * panel that is replaced while scrolled would otherwise never report. The
-   * write is skipped unless the value actually moved.
+   * `scroll` does not propagate, momentum scrolling fires it in bursts, and —
+   * measured while verifying this — a programmatic `scrollTop` assignment can
+   * move a panel without any `scroll` event being delivered at all. A
+   * progress rule that only listens for an event is therefore one burst of
+   * momentum away from being wrong, so the frame clock is the source of truth
+   * and the scroll listener is only an optimisation that makes it immediate.
+   *
+   * Two guards, because a progress rule that is one document out of date is
+   * worse than none: the value is only written when it has actually moved, and
+   * the measurement it was derived from is remembered alongside it. A panel
+   * that has just been replaced has the same scroll fraction as the one before
+   * it — both are at the top, or both at the end — so comparing fractions
+   * alone silently kept the previous document's reading position.
    */
   let lastProgress = -1;
+  let lastProgressShape = '';
   function updateReadProgress(surface: HTMLElement): void {
     const scrollable = surface.scrollHeight - surface.clientHeight;
     const progress = scrollable > 8 ? THREE.MathUtils.clamp(surface.scrollTop / scrollable, 0, 1) : 0;
+    const shape = `${Math.round(scrollable)}:${surface.clientHeight}`;
+    if (shape !== lastProgressShape) {
+      lastProgressShape = shape;
+      lastProgress = -1;
+    }
     if (Math.abs(progress - lastProgress) < 0.004) return;
     lastProgress = progress;
     surface.style.setProperty('--read-progress', progress.toFixed(4));
+  }
+
+  /** Forget the last reading position, so a new document reports its own. */
+  function resetReadProgress(): void {
+    lastProgress = -1;
+    lastProgressShape = '';
   }
 
   /**
@@ -825,6 +1031,17 @@ export function mountShell(root: WorldHost): ShellHandle {
     const placed: { x: number; y: number; w: number; h: number }[] = [];
     /** The markers among them, which are allowed to crowd each other. */
     const markers: { x: number; y: number; w: number; h: number }[] = [];
+    /*
+     * The identity card and the open document. A caption that lands under
+     * either is not a caption any more, it is part of the furniture — so
+     * both are treated as solid for placement, not merely as things the
+     * subject has to avoid.
+     */
+    const blocked: { x: number; y: number; w: number; h: number }[] = [];
+    const card = identityReserved();
+    if (card) {
+      blocked.push({ x: card.left, y: card.top, w: card.right - card.left, h: card.bottom - card.top });
+    }
 
     const candidates: Candidate[] = [];
     for (const [key, link] of hotspots) {
@@ -860,6 +1077,7 @@ export function mountShell(root: WorldHost): ShellHandle {
           (key.startsWith('object:') ? 200 : 0) +
           (key.startsWith('place:') ? 150 : 0) +
           (key === CELESTIAL_KEY ? 360 : 0) +
+          (key === LIGHT_SWITCH_KEY ? 330 : 0) +
           Math.max(0, 60 - distance),
         occluded: isOccluded || offscreen || underPanel,
       });
@@ -884,7 +1102,11 @@ export function mountShell(root: WorldHost): ShellHandle {
 
     const overlapsAny = (box: { x: number; y: number; w: number; h: number }, list: typeof placed) =>
       list.some(
-        (o) => box.x < o.x + o.w && box.x + box.w > o.x && box.y < o.y + o.h && box.y + box.h > o.y,
+        (o) =>
+          box.x < o.x + o.w + CAPTION_GAP &&
+          box.x + box.w + CAPTION_GAP > o.x &&
+          box.y < o.y + o.h + CAPTION_GAP &&
+          box.y + box.h + CAPTION_GAP > o.y,
       );
 
     /*
@@ -911,9 +1133,12 @@ export function mountShell(root: WorldHost): ShellHandle {
     for (const candidate of candidates) {
       const link = candidate.link;
       const isFocused = focused === link;
+      /* A caption the visitor is on shows its name, even where a pill would
+         not fit — that is what makes a marker a label on hover or focus. */
+      const isRevealed = revealedKey === candidate.key;
       link.dataset.compact = 'false';
 
-      if (candidate.occluded && !isFocused) {
+      if (candidate.occluded && !isFocused && !isRevealed) {
         link.dataset.visible = 'false';
         link.setAttribute('aria-hidden', 'true');
         link.tabIndex = -1;
@@ -924,30 +1149,43 @@ export function mountShell(root: WorldHost): ShellHandle {
        * Captions are placed in two weights.
        *
        * A full pill has to have room — it must not touch another pill, another
-       * marker, or the sun — and it has to be within the label budget. When it
-       * cannot, the caption falls back to its marker: a 40px circle centred on
-       * the same anchor. Markers keep off pills but may crowd each other, so
-       * zooming out turns the view into a map of markers instead of quietly
-       * losing destinations.
+       * marker, the sun, the identity card or the open document — and it has
+       * to be within the label budget. When it cannot, the caption falls back
+       * to its marker: a 40px circle centred on the same anchor. Markers keep
+       * off pills but may crowd each other, so zooming out turns the view into
+       * a map of markers instead of quietly losing destinations.
+       *
+       * The budget is deliberately small. A caption is a key to the map, not
+       * the map: six names at once over the island covered more of the view
+       * than the buildings they were naming.
        */
-      const compactAll = rig.zoomLevel > 1.28;
+      const compactAll = rig.zoomLevel > 1.24;
       let compact = false;
-      let box = isFocused ? boxFor(link) : null;
+      let box = isFocused || isRevealed ? boxFor(link) : null;
 
-      if (!isFocused) {
+      if (!isFocused && !isRevealed) {
         const full = compactAll ? null : boxFor(link);
         const fitsFull =
           full !== null &&
           !overlapsAny(full, placed) &&
           !overlapsAny(full, markers) &&
           !overlapsAny(full, sunCore) &&
+          !overlapsAny(full, blocked) &&
           placed.length < labelLimit;
         if (fitsFull) {
           box = full;
-        } else if (placed.length + markers.length < labelLimit + 6) {
+        } else if (placed.length + markers.length < labelLimit + 4) {
           compact = true;
           const marker = boxFor(link);
-          box = marker && !overlapsAny(marker, placed) ? marker : null;
+          /*
+           * A marker may share space with another marker — two circles that
+           * overlap still read as two circles — but never with a named pill
+           * or with the interface.
+           */
+          box =
+            marker && !overlapsAny(marker, placed) && !overlapsAny(marker, blocked)
+              ? marker
+              : null;
         } else {
           box = null;
         }
@@ -963,14 +1201,26 @@ export function mountShell(root: WorldHost): ShellHandle {
 
       placed.push(box);
       if (compact) markers.push(box);
-      /* Keep the whole caption on screen: its own width decides the margin. */
+      /*
+       * Keep the whole caption on screen, on both axes. Its own width decides
+       * the horizontal margin, and the vertical clamp is what stops a caption
+       * anchored high on the island — the workbench gantry, or the observatory
+       * itself — from being pushed off the top of the frame and becoming
+       * unreachable.
+       */
       const margin = 8;
+      const halfW = box.w / 2;
+      const halfH = box.h / 2;
       const x = THREE.MathUtils.clamp(
-        box.x + box.w / 2,
-        box.w / 2 + margin,
-        Math.max(box.w / 2 + margin, width - box.w / 2 - margin),
+        box.x + halfW,
+        halfW + margin,
+        Math.max(halfW + margin, width - halfW - margin),
       );
-      const y = box.y + box.h / 2;
+      const y = THREE.MathUtils.clamp(
+        box.y + halfH,
+        halfH + margin,
+        Math.max(halfH + margin, height - halfH - margin),
+      );
       link.dataset.visible = 'true';
       link.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
       link.setAttribute('aria-hidden', 'false');
@@ -986,16 +1236,37 @@ export function mountShell(root: WorldHost): ShellHandle {
   }
 
   /* ── Camera composition ──────────────────────────────────────────── */
-  /** The region of the stage the reading surface does not cover. */
+
+  /**
+   * The identity card's own rectangle.
+   *
+   * The card stands in the corner of the campus overview and carries the one
+   * piece of standing text on the site, so it is measured rather than assumed:
+   * its width is a clamp and its height depends on how the headline wraps.
+   * Only the campus reserves it — at a destination the frame belongs to the
+   * building, and the card is hidden anyway.
+   */
+  function identityReserved(): Reserved | null {
+    if (focusPlace !== 'campus' || reading) return null;
+    const card = document.querySelector<HTMLElement>('.world-identity');
+    if (!card) return null;
+    const style = getComputedStyle(card);
+    if (style.display === 'none' || style.visibility === 'hidden') return null;
+    const rect = card.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8) return null;
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+  }
+
+  /** The region of the stage the interfaces do not cover. */
   function viewMetrics(): ViewMetrics {
     const stageWidth = stageEl.clientWidth || 1;
     const stageHeight = stageEl.clientHeight || 1;
+    const reserved: Reserved[] = [];
+    const card = identityReserved();
+    if (card) reserved.push(card);
+    const whole = { left: 0, top: 0, right: stageWidth, bottom: stageHeight };
     if (!panelRect) {
-      return {
-        stageWidth,
-        stageHeight,
-        free: { left: 0, top: 0, right: stageWidth, bottom: stageHeight },
-      };
+      return { stageWidth, stageHeight, free: whole, reserved };
     }
     /* Clamp the panel to the stage, so an overshooting rect cannot invert
        the free region. */
@@ -1005,7 +1276,6 @@ export function mountShell(root: WorldHost): ShellHandle {
     const bottom = Math.max(top, Math.min(panelRect.bottom, stageHeight));
     const freeWidth = stageWidth - (right - left);
     const freeHeight = stageHeight - (bottom - top);
-    const whole = { left: 0, top: 0, right: stageWidth, bottom: stageHeight };
 
     /* The document is docked to an edge: it is a bottom sheet on a phone and
        a side panel on a desktop. Find the strip it leaves behind. */
@@ -1018,48 +1288,111 @@ export function mountShell(root: WorldHost): ShellHandle {
 
     if (freeHeight >= freeWidth && freeHeight > 48) {
       if (touches.bottom && !touches.top) {
-        return { stageWidth, stageHeight, free: { left: 0, top: 0, right: stageWidth, bottom: top } };
+        return {
+          stageWidth,
+          stageHeight,
+          free: { left: 0, top: 0, right: stageWidth, bottom: top },
+          reserved,
+        };
       }
       if (touches.top && !touches.bottom) {
         return {
           stageWidth,
           stageHeight,
           free: { left: 0, top: bottom, right: stageWidth, bottom: stageHeight },
+          reserved,
         };
       }
     } else if (freeWidth > 48) {
       if (touches.right && !touches.left) {
-        return { stageWidth, stageHeight, free: { left: 0, top: 0, right: left, bottom: stageHeight } };
+        return {
+          stageWidth,
+          stageHeight,
+          free: { left: 0, top: 0, right: left, bottom: stageHeight },
+          reserved,
+        };
       }
       if (touches.left && !touches.right) {
         return {
           stageWidth,
           stageHeight,
           free: { left: right, top: 0, right: stageWidth, bottom: stageHeight },
+          reserved,
         };
       }
     }
-    return { stageWidth, stageHeight, free: whole };
+    return { stageWidth, stageHeight, free: whole, reserved };
+  }
+
+  /**
+   * Shrink a free region until it no longer overlaps a reserved rectangle.
+   *
+   * Only the axis that can afford to give ground is cut: a card in the bottom
+   * corner of a wide frame costs the frame some height, not half its width, so
+   * the free strip stays as large as the interface genuinely allows.
+   */
+  function carveFree(free: Reserved, reserved: Reserved[]): Reserved {
+    let box = { ...free };
+    for (const block of reserved) {
+      const overlaps =
+        box.left < block.right &&
+        box.right > block.left &&
+        box.top < block.bottom &&
+        box.bottom > block.top;
+      if (!overlaps) continue;
+      /* How much each side would have to give up to clear the block. */
+      const cutLeft = block.right - box.left;
+      const cutRight = box.right - block.left;
+      const cutTop = block.bottom - box.top;
+      const cutBottom = box.bottom - block.top;
+      const horizontal = Math.min(cutLeft, cutRight);
+      const vertical = Math.min(cutTop, cutBottom);
+      /*
+       * Give up the cheaper edge on the axis with more room to spare, so a
+       * short, wide card eats height and a tall panel eats width. Never let
+       * the region collapse below a usable band.
+       */
+      if (vertical <= horizontal) {
+        if (box.bottom - box.top - vertical < 90) continue;
+        if (cutTop < cutBottom) box.top = block.bottom;
+        else box.bottom = block.top;
+      } else {
+        if (box.right - box.left - horizontal < 120) continue;
+        if (cutLeft < cutRight) box.left = block.right;
+        else box.right = block.left;
+      }
+    }
+    return box;
   }
 
   function shotFor(): Shot {
     const view = viewMetrics();
-    /* Frame for the space that is actually visible, not the whole window. */
-    const freeWidth = Math.max(view.free.right - view.free.left, 200);
-    const freeHeight = Math.max(view.free.bottom - view.free.top, 200);
+    const free = carveFree(view.free, view.reserved);
+    const freeWidth = Math.max(free.right - free.left, 200);
+    const freeHeight = Math.max(free.bottom - free.top, 200);
     const aspect = freeWidth / freeHeight;
-    const overview = overviewShot(aspect);
+    const overview = overviewShot({ aspect });
+    /* Where the subject should end up: the middle of what is not covered. */
+    const screen = {
+      x: (free.left + free.right) / 2,
+      y: (free.top + free.bottom) / 2,
+    };
 
     /* The campus *is* the overview: whatever is open there, the visitor
        should still be looking at the whole place. */
     if (focusPlace === 'campus') {
-      return reading ? readingShot(overview, view) : overview;
+      return readingShot(overview, view, screen);
     }
-    /* A wide, short strip needs the subject smaller than a tall one. */
+    /*
+     * A destination is framed close, from its own composed shot. The reach is
+     * lengthened when the visible region is a short band — a phone with a
+     * document open — so the whole building stays in the strip.
+     */
     const band = freeHeight < view.stageHeight * 0.5;
     const node = world.places.get(focusPlace);
-    const base = node ? placeShot(node.shot, aspect, band ? 1.45 : 1) : overview;
-    return reading ? readingShot(base, view) : base;
+    if (!node) return readingShot(overview, view, screen);
+    const base = placeShot(node.shot, aspect, band ? 1.45 : 1);
+    return readingShot(base, view, screen);
   }
 
   function compose(immediate: boolean): void {
@@ -1113,6 +1446,8 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   /* ── Apply the page's state ──────────────────────────────────────── */
   let nowDocument = false;
+  /** False until the first state has been applied, so boot does not travel. */
+  let ready = false;
 
   function applyState(): void {
     const previous = state;
@@ -1121,11 +1456,25 @@ export function mountShell(root: WorldHost): ShellHandle {
     const wasDocument = isDocument(previous);
     nowDocument = isDocument(state);
     reading = isReading(state);
+    /*
+     * A new document starts its own reading position. The cache behind the
+     * progress rule is keyed on the panel that produced it, and a panel that
+     * has just been swapped in is not the one the cache describes.
+     */
+    if (previous.surface !== state.surface || previous.surfaceId !== state.surfaceId) {
+      resetReadProgress();
+    }
 
     /*
      * Opening a document remembers where the visitor was standing, so closing
      * it puts them back exactly there rather than at some default view.
+     *
+     * The record is a request, not an instruction: the orbit is restored after
+     * the shot for the current place has been composed, because composing
+     * clamps the orbit to what that shot allows and applying it first would
+     * only be overwritten. `pendingRestore` carries it across the compose.
      */
+    let pendingRestore: ReturnType<typeof readReturnView> = null;
     if (nowDocument && !wasDocument) {
       writeReturnView({
         href: currentHref || '/',
@@ -1135,8 +1484,7 @@ export function mountShell(root: WorldHost): ShellHandle {
         ...rig.orbitState,
       });
     } else if (!reading && wasReading) {
-      const returned = readReturnView();
-      if (returned) rig.setOrbitState(returned);
+      pendingRestore = readReturnView();
       clearReturnView();
     }
     /*
@@ -1152,10 +1500,13 @@ export function mountShell(root: WorldHost): ShellHandle {
     rebuildHotspots();
     measurePanel();
     compose(
-      previous.destination !== state.destination ||
+      !ready ||
+        previous.destination !== state.destination ||
         previous.surface !== state.surface ||
         previous.panel !== state.panel,
     );
+    ready = true;
+    if (pendingRestore) rig.setOrbitState(pendingRestore);
 
     if (focusPlace !== announced) {
       if (focusPlace !== 'campus') world.triggerSignal(focusPlace);
@@ -1459,6 +1810,12 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   /** What the world object under a point stands for. */
   function pickAt(x: number, y: number): THREE.Object3D | null {
+    const hit = rayAt(x, y, world.pickTargets());
+    return hit;
+  }
+
+  /** Cast a ray from a screen point at a specific set of objects. */
+  function rayAt(x: number, y: number, targets: THREE.Object3D[]): THREE.Object3D | null {
     const rect = canvasEl.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
     const ndc = new THREE.Vector2(
@@ -1467,7 +1824,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     );
     raycaster.setFromCamera(ndc, rig.camera);
     raycaster.far = Infinity;
-    const hits = raycaster.intersectObjects(world.pickTargets(), false);
+    const hits = raycaster.intersectObjects(targets, false);
     return hits[0]?.object ?? null;
   }
 
@@ -1476,13 +1833,18 @@ export function mountShell(root: WorldHost): ShellHandle {
    * under the finger is activated exactly as if it had been pressed, and
    * otherwise the scene itself answers.
    *
-   * The light switch is checked first, in screen space. It is a small object
-   * standing among much larger destination hit-volumes, and a ray through it
-   * can legitimately pass through a building's forgiving pick cylinder first —
-   * a visitor aiming at a visible switch should get the switch.
+   * The world's light switch is checked first, in screen space. It is a small
+   * object standing inside the observatory's much larger hit volume, so a ray
+   * aimed at it can legitimately reach the building first — a visitor aiming
+   * at a visible switch should get the switch.
    */
   function handleTap(x: number, y: number): void {
     if (currentMode() !== 'world') return;
+
+    if (rayAt(x, y, world.switchTargets())) {
+      toggleTheme({ animate: true });
+      return;
+    }
 
     if (atmosphere.activeCelestialPosition()) {
       const projected = atmosphere.activeCelestialPosition()!.clone().project(rig.camera);
@@ -1545,11 +1907,30 @@ export function mountShell(root: WorldHost): ShellHandle {
     document.removeEventListener('click', onCloseClick);
   });
 
+  /*
+   * Reset view.
+   *
+   * The chrome raises this rather than reaching into the rig, so there is one
+   * owner of the camera and the control cannot drift out of step with it. It
+   * puts the composition back exactly where the current place composed it:
+   * orbit, zoom and any panning at once, without travelling anywhere.
+   */
+  const onResetView = () => {
+    if (disposed) return;
+    rig.resetOrbit();
+    compose(true);
+    renderOnce();
+  };
+  document.addEventListener(RESET_VIEW_EVENT, onResetView);
+  cleanups.push(() => document.removeEventListener(RESET_VIEW_EVENT, onResetView));
+
   /* ── Loop ────────────────────────────────────────────────────────── */
   let frameHandle = 0;
   let last = 0;
   let clock = 0;
   let running = false;
+  /** Frames drawn since the renderer started, for the diagnostics. */
+  let frameCount = 0;
 
   function syncLoop(): void {
     const shouldRun =
@@ -1573,6 +1954,7 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   function frame(now: number): void {
     if (disposed) return;
+    frameCount++;
     const delta = Math.min(Math.max((now - last) / 1000, 0), 0.05);
     last = now;
     /* A document on screen means the scenery should settle, not perform. */
@@ -1633,15 +2015,26 @@ export function mountShell(root: WorldHost): ShellHandle {
    * propagate at all — not even through the capture phase — so the listener
    * has to sit on the panel itself. Each navigation brings a fresh panel, so
    * the wiring is keyed on the element and the old one goes with its page.
+   *
+   * The listener is an optimisation, not the source of truth: the frame clock
+   * reads the same measurement, and a panel that has been laid out — a font
+   * that swapped in, an image that finished loading, a transition that ended —
+   * reports its position through a `ResizeObserver` as well. Between the three
+   * there is no state in which the rule is left showing the wrong position.
    */
+  const panelSizeObserver =
+    typeof ResizeObserver === 'function' ? new ResizeObserver(() => measurePanel()) : null;
+
   function wirePanelScroll(): void {
     document.querySelectorAll<HTMLElement>('[data-surface-panel]').forEach((panel) => {
+      panelSizeObserver?.observe(panel);
       if (panel.dataset.scrollWired === '1') return;
       panel.dataset.scrollWired = '1';
       panel.addEventListener('scroll', measurePanel, { passive: true });
     });
   }
   cleanups.push(() => {
+    panelSizeObserver?.disconnect();
     document.querySelectorAll<HTMLElement>('[data-surface-panel]').forEach((panel) => {
       panel.removeEventListener('scroll', measurePanel);
       delete panel.dataset.scrollWired;
@@ -1764,11 +2157,44 @@ export function mountShell(root: WorldHost): ShellHandle {
       /** Which caption opened the current document, if any. */
       openedFrom: lastOpenedKey,
       /**
+       * Where the camera actually is, and how far it is above the floor the
+       * rig enforces. `above` is never negative by construction; it exists so
+       * a verification run can prove that rather than trust it.
+       */
+      camera: rig.debug(),
+      /** True while the camera is still travelling between composed shots. */
+      travelling: rig.travelling,
+      /**
        * The sky body that is currently up — the sun by day, the moon by night
        * — as a screen point and the tap radius it deserves.
        */
       celestial: toScreen(projected),
       celestialRadius: atmosphere.activeCelestialRadius(rig.camera) * height,
+      /** Why the body may be missing: it is only ever a blend or a distance. */
+      celestialHidden: atmosphere.celestialDiagnostics(),
+      /** Every caption the shell is currently projecting, with its placement. */
+      captions: [...hotspots.entries()].map(([key, link]) => ({
+        key,
+        visible: link.dataset.visible === 'true',
+        compact: link.dataset.compact === 'true',
+        occluded: occluded.get(key) === true,
+        label: link.textContent?.trim() ?? '',
+      })),
+      /** The reading-progress rule's own state, so a stall is diagnosable. */
+      progress: {
+        value: lastProgress,
+        shape: lastProgressShape,
+        frames: frameCount,
+        running,
+        panel: panelRect
+          ? {
+              x: Math.round(panelRect.left),
+              y: Math.round(panelRect.top),
+              w: Math.round(panelRect.right - panelRect.left),
+              h: Math.round(panelRect.bottom - panelRect.top),
+            }
+          : null,
+      },
     };
   };
 
@@ -1784,6 +2210,96 @@ export function mountShell(root: WorldHost): ShellHandle {
       if (hit === marker.pick) return `object:${marker.kind}:${marker.id}`;
     }
     return hit.name || hit.type;
+  };
+
+  /**
+   * Geometry diagnostics.
+   *
+   * The island's shading is the one thing that cannot be checked from a
+   * screenshot alone: a surface that is lit from behind looks exactly like a
+   * surface that is too dark. This reads the built geometry back — face
+   * normals, up/down split, band colours, bounds — so a normals mistake is
+   * provable rather than guessed at.
+   */
+  (window as unknown as { __worldGeometry?: (name: string) => unknown }).__worldGeometry = (
+    name: string,
+  ) => {
+    let found: THREE.Mesh | null = null;
+    world.group.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!found && mesh.isMesh && mesh.name === name) found = mesh;
+    });
+    const mesh = found as THREE.Mesh | null;
+    if (!mesh) return null;
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    const position = geometry.attributes.position as THREE.BufferAttribute;
+    const normal = geometry.attributes.normal as THREE.BufferAttribute | undefined;
+    const color = geometry.attributes.color as THREE.BufferAttribute | undefined;
+    const index = geometry.index;
+    const triangles = index ? index.count / 3 : position.count / 3;
+    let up = 0;
+    let down = 0;
+    let sideways = 0;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let minR = Infinity;
+    let maxR = 0;
+    let normalSumY = 0;
+    let downwardFaces = 0;
+    const faceCount = Math.min(triangles, 40000);
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    const ab = new THREE.Vector3();
+    const ac = new THREE.Vector3();
+    const face = new THREE.Vector3();
+    for (let t = 0; t < faceCount; t++) {
+      const i0 = index ? index.getX(t * 3) : t * 3;
+      const i1 = index ? index.getX(t * 3 + 1) : t * 3 + 1;
+      const i2 = index ? index.getX(t * 3 + 2) : t * 3 + 2;
+      a.fromBufferAttribute(position, i0);
+      b.fromBufferAttribute(position, i1);
+      c.fromBufferAttribute(position, i2);
+      ab.subVectors(b, a);
+      ac.subVectors(c, a);
+      face.crossVectors(ab, ac).normalize();
+      if (face.y > 0.35) up++;
+      else if (face.y < -0.35) {
+        down++;
+        /* A face that winds downward while sitting on the plateau is a wound
+           or a displaced vertex, not a legal piece of an island. */
+        if ((a.y + b.y + c.y) / 3 > 0.55) downwardFaces++;
+      } else sideways++;
+      for (const point of [a, b, c]) {
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+        const radial = Math.hypot(point.x, point.z);
+        minR = Math.min(minR, radial);
+        maxR = Math.max(maxR, radial);
+      }
+    }
+    if (normal && position.count < 40000) {
+      for (let i = 0; i < position.count; i++) normalSumY += normal.getY(i);
+    }
+    return {
+      name,
+      triangles,
+      vertices: position.count,
+      indexed: Boolean(index),
+      up,
+      down,
+      sideways,
+      downwardFacesOnPlateau: downwardFaces,
+      meanNormalY: position.count < 40000 ? normalSumY / position.count : null,
+      minY,
+      maxY,
+      minRadius: minR,
+      maxRadius: maxR,
+      hasVertexColors: Boolean(color),
+      boundingSphere: geometry.boundingSphere
+        ? { radius: geometry.boundingSphere.radius, center: geometry.boundingSphere.center.toArray() }
+        : null,
+    };
   };
 
   root.dataset.worldState = 'ready';

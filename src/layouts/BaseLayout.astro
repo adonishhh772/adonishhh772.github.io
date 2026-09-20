@@ -22,6 +22,7 @@ import Footer from '../components/Footer.astro';
 import Icon from '../components/Icon.astro';
 import WorldShell from '../components/world/WorldShell.astro';
 import WorldChrome from '../components/world/WorldChrome.astro';
+import WorldWelcome from '../components/world/WorldWelcome.astro';
 import Identity from '../components/world/Identity.astro';
 import { destinationMeta, type DestinationId, type SurfaceKind } from '../lib/world/destinations';
 import { surfaceLabel } from '../lib/world/state';
@@ -195,6 +196,7 @@ const hasSurface = surface !== 'none';
     <Header />
     <WorldShell />
     <WorldChrome />
+    <WorldWelcome />
     {destination === 'campus' && !hasSurface && <Identity />}
 
     <main

@@ -12,7 +12,9 @@
     "astro": "astro",
     "verify:world": "node tools/worldcheck/run.mjs",
     "verify:a11y": "node tools/worldcheck/a11y.mjs",
-    "verify:content": "node tools/worldcheck/content.mjs"
+    "verify:content": "node tools/worldcheck/content.mjs",
+    "verify:music": "node tools/worldcheck/music.mjs",
+    "inspect:world": "node tools/worldcheck/inspect.mjs"
   },
   "engines": {
     "node": ">=20.0.0"
