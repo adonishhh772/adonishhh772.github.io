@@ -112,6 +112,28 @@ const CAPTION_GAP = 10;
  */
 const CAPTION_HIDE_DELAY = 260;
 
+/**
+ * The order the campus menu is placed in — Home first, then the ring.
+ *
+ * It is deliberately not the captions' distance from the camera. Distance is a
+ * function of where the island has turned to, so a placement order built on it
+ * changes while the visitor is only looking, and two captions that clash end up
+ * trading places frame by frame. A fixed order gives the menu a fixed head and
+ * a stable queue behind it: whoever cannot have the spot yields, and always the
+ * same one does.
+ */
+const PLACE_RANK: Record<string, number> = {
+  'place:campus': 0,
+  'place:studio': 1,
+  'place:workshop': 2,
+  'place:library': 3,
+  'place:workbench': 4,
+  'place:contact': 5,
+};
+const PLACE_RANK_SPAN = 5;
+/** Kept inside the band the old distance bonus used, so nothing else moves. */
+const PLACE_RANK_WEIGHT = 4;
+
 /** The caption key for the in-world sun/moon control. */
 const CELESTIAL_KEY = 'celestial:sun';
 
@@ -1200,6 +1222,19 @@ export function mountShell(root: WorldHost): ShellHandle {
         y > panelRect.top - 24 &&
         y < panelRect.bottom + 24;
       const distance = rig.camera.position.distanceTo(anchor);
+      /*
+       * Places are placed in a fixed order, not by how far away they happen to
+       * be this frame.
+       *
+       * Distance changes as the island turns, and a priority that drifts with
+       * it means two captions which clash can swap places from one frame to the
+       * next — one takes the spot, the other moves aside, and then they trade.
+       * That trading is the shuffling. Home is placed first, so the menu has a
+       * fixed head, and the rest follow the campus ring from it; a caption that
+       * cannot have its own spot now yields *downwards* (see `clearSpot`),
+       * which is what keeps Open source under Home rather than over it.
+       */
+      const rank = PLACE_RANK[key];
       candidates.push({
         key,
         link,
@@ -1217,7 +1252,9 @@ export function mountShell(root: WorldHost): ShellHandle {
           (key.startsWith('place:') ? 150 : 0) +
           (key === CELESTIAL_KEY ? 360 : 0) +
           (key === LIGHT_SWITCH_KEY ? 330 : 0) +
-          Math.max(0, 60 - distance),
+          (rank === undefined
+            ? Math.max(0, 60 - distance)
+            : (PLACE_RANK_SPAN - rank) * PLACE_RANK_WEIGHT),
         occluded: isOccluded || offscreen || underPanel,
       });
     }
@@ -1272,11 +1309,14 @@ export function mountShell(root: WorldHost): ShellHandle {
     /**
      * A caption that has to be shown is moved, not dropped.
      *
-     * The search walks outwards from the anchor — a little above, a little
-     * below, then further — and takes the first position that clears the named
-     * pills, the sun's core and the interface. Markers are allowed to share
-     * space with each other, so the caller decides which of the two lists they
-     * must also avoid.
+     * The search walks outwards from the anchor and takes the first position
+     * that clears the named pills, the sun's core and the interface. It walks
+     * *downwards* first, and that is not arbitrary: a caption that has to give
+     * way should give way towards the foot of the frame, where the labels are
+     * spread out and the identity card already keeps them off, rather than
+     * upwards into the head of the menu — pushing Open source above Home is
+     * exactly what it used to do. The position the caption held last frame is
+     * tried before either, so a caption that still fits where it is stays put.
      */
     const clearSpot = (
       box: { x: number; y: number; w: number; h: number },
@@ -1285,12 +1325,7 @@ export function mountShell(root: WorldHost): ShellHandle {
       avoid: typeof placed,
       preferred = 0,
     ): { x: number; y: number; w: number; h: number } | null => {
-      /*
-       * The position this caption held last frame is tried first, so a caption
-       * that still fits where it was stays where it was: the search is a way
-       * out of a collision, not a reason to move every frame.
-       */
-      for (const dy of [preferred, 0, -18, 18, -36, 36, -56, 56, -78, 78]) {
+      for (const dy of [preferred, 0, 18, -18, 36, -36, 56, -56, 78, -78]) {
         const moved = { ...box, y: box.y + dy };
         if (
           !overlapsAny(moved, solid) &&
@@ -1389,6 +1424,23 @@ export function mountShell(root: WorldHost): ShellHandle {
         /* A menu caption answers to the bar as well as to the card. */
         const solid = guaranteed ? menuBlocked : blocked;
         /*
+         * Where it stood last frame.
+         *
+         * This is the first candidate for this frame, and the reason the menu
+         * holds still: a caption that was a name a moment ago, and whose name
+         * still fits where it was — offset and all — is left exactly there.
+         * Without it a caption that had stepped aside snaps back to its anchor
+         * the moment the anchor is clear again and steps aside again the next
+         * frame, which is a flicker at the frame rate of the island's turn.
+         */
+        const held = full && before ? { ...full, y: full.y + before.dy } : null;
+        const heldFits =
+          held !== null &&
+          !overlapsAny(held, placed) &&
+          !overlapsAny(held, markers) &&
+          !overlapsAny(held, sunCore) &&
+          !overlapsAny(held, solid);
+        /*
          * Growing back from a marker is the one decision worth asking for more
          * room than it needs: a pill that only just fits this frame will not
          * fit the next, and the caption would flicker between the two weights
@@ -1405,8 +1457,16 @@ export function mountShell(root: WorldHost): ShellHandle {
           !overlapsAny(probe, sunCore) &&
           !overlapsAny(probe, solid) &&
           (mustPlace || placedLabels < labelLimit);
-        if (fitsFull) {
+
+        if (before && !before.compact && heldFits) {
+          box = held;
+          spotDy = before.dy;
+        } else if (fitsFull) {
           box = full;
+        } else if (before?.compact && heldFits) {
+          compact = true;
+          box = held;
+          spotDy = before.dy;
         } else if (mustPlace) {
           /* The name if it can be moved clear, its marker if it cannot. */
           const kept = before?.dy ?? 0;
