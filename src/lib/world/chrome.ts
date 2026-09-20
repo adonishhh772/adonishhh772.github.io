@@ -45,7 +45,14 @@ function mapMenu(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[data-world-map-menu]');
 }
 
-/** Keep every theme control showing the state that is actually live. */
+/**
+ * Keep every theme control showing the state that is actually live.
+ *
+ * There is no light control in the bar any more: the world's light is switched
+ * by the brass switch standing on the observatory terrace, and by the sun and
+ * moon themselves. This still runs, because the map menu names the current
+ * light and anything else that reads the state must agree with the scene.
+ */
 export function syncThemeControls(): void {
   const theme = currentTheme();
   for (const button of document.querySelectorAll<HTMLElement>('[data-theme-toggle]')) {
@@ -55,15 +62,6 @@ export function syncThemeControls(): void {
       theme === 'light' ? 'Switch to night lighting' : 'Switch to daylight',
     );
     button.setAttribute('title', theme === 'light' ? 'Night lighting' : 'Daylight');
-    const state = button.querySelector<HTMLElement>('[data-theme-state]');
-    if (state) state.textContent = theme === 'light' ? 'Day' : 'Night';
-    /*
-     * The control is labelled, not just an icon: which way the world's lights
-     * are currently switched is the one piece of state a visitor should be
-     * able to read without pressing anything.
-     */
-    const label = button.querySelector<HTMLElement>('[data-theme-label]');
-    if (label) label.textContent = theme === 'light' ? 'Day' : 'Night';
     button.dataset.themeNow = theme;
   }
   for (const readout of document.querySelectorAll<HTMLElement>('[data-world-environment]')) {

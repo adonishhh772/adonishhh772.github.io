@@ -1,10 +1,11 @@
 /**
  * The sound controls.
  *
- * Mute, unmute and volume, wired to the one audio engine the whole session
- * shares. Like the rest of the chrome this module deliberately does not import
- * three.js: the controls have to keep working when the renderer is the thing
- * that failed, and the music is not part of the renderer.
+ * Mute, unmute, volume and the interface-sound switch, wired to the one audio
+ * engine the whole session shares. Like the rest of the chrome this module
+ * deliberately does not import three.js: the controls have to keep working when
+ * the renderer is the thing that failed, and the music is not part of the
+ * renderer.
  *
  * Everything here is idempotent. The chrome element is persisted across
  * client-side navigation, so a second `watchSoundControls()` call must not
@@ -14,10 +15,10 @@
 
 import {
   ambient,
-  hasVisited,
+  armFirstGesture,
+  readEffects,
   readSoundPreference,
   readVolume,
-  resumeIfWanted,
   type AudioState,
 } from './audio';
 
@@ -81,6 +82,9 @@ function paint(state: AudioState): void {
     range.setAttribute('aria-valuetext', `${value} percent`);
   }
 
+  const effects = document.querySelector<HTMLInputElement>('[data-world-effects]');
+  if (effects) effects.checked = state.effects;
+
   const note = document.querySelector<HTMLElement>('[data-sound-note]');
   if (note) {
     if (state.wanted && state.blocked) {
@@ -90,7 +94,7 @@ function paint(state: AudioState): void {
     } else {
       note.dataset.state = 'ready';
       note.textContent =
-        'Generated in your browser — no track is downloaded, and nothing plays until you ask.';
+        'Generated in your browser — no track is downloaded. Interface sounds are separate.';
     }
   }
 }
@@ -98,10 +102,10 @@ function paint(state: AudioState): void {
 /**
  * Start watching, once.
  *
- * Also the place a returning visitor's preference is honoured: if they asked
- * for sound last time, the first gesture anywhere on the page is used to try
- * to start it. It is a request, never an assumption — a refusal leaves the
- * control saying "off".
+ * Also where the music is armed: the first gesture anywhere on the page starts
+ * it, because sound is the default and a browser will not allow anything
+ * earlier than that. There is no card and no question — the visitor's first
+ * press is the answer.
  */
 export function watchSoundControls(): void {
   if (typeof document === 'undefined') return;
@@ -109,7 +113,13 @@ export function watchSoundControls(): void {
 
   const engine = ambient();
   engine.subscribe(paint);
-  paint({ playing: false, wanted: readSoundPreference() === 'on', volume: readVolume(), blocked: false });
+  paint({
+    playing: false,
+    wanted: readSoundPreference() !== 'off',
+    volume: readVolume(),
+    effects: readEffects(),
+    blocked: false,
+  });
 
   /*
    * A read-only view of the music, in the same spirit as the world's own
@@ -137,6 +147,31 @@ export function watchSoundControls(): void {
   };
   document.addEventListener('input', onVolume);
   document.addEventListener('change', onVolume);
+
+  document.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    if (!input.matches('[data-world-effects]')) return;
+    engine.setEffects(input.checked);
+  });
+
+  /*
+   * Every press in the interface answers with a small sound, as long as the
+   * engine is running and the visitor has not switched interface sounds off.
+   * It is delegated from the document rather than bound to each control, so a
+   * control that arrives with a new page is covered without re-wiring.
+   */
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const control = target.closest('button, a[href], [role="button"], input[type="range"]');
+      if (!control) return;
+      engine.click('tap');
+    },
+    true,
+  );
 
   document.addEventListener('click', (event) => {
     const target = event.target;
@@ -170,19 +205,10 @@ export function watchSoundControls(): void {
   });
 
   /*
-   * A returning visitor who asked for sound. The listener disarms itself the
-   * moment it is used, so a later gesture cannot start a second attempt, and
-   * it never fires on a page where the visitor has not asked.
+   * The music is on unless the visitor turned it off, and this is what starts
+   * it: the first press, scroll, key or touch anywhere on the page.
    */
-  if (readSoundPreference() === 'on' && hasVisited()) {
-    const arm = () => {
-      document.removeEventListener('pointerdown', arm, true);
-      document.removeEventListener('keydown', arm, true);
-      void resumeIfWanted();
-    };
-    document.addEventListener('pointerdown', arm, true);
-    document.addEventListener('keydown', arm, true);
-  }
+  if (readSoundPreference() !== 'off') armFirstGesture();
 
   document.addEventListener('visibilitychange', () => {
     engine.handleVisibility(document.hidden);

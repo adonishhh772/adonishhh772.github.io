@@ -23,6 +23,32 @@ const only = args.indexOf('--only') >= 0 ? args[args.indexOf('--only') + 1] : nu
 
 mkdirSync(OUT, { recursive: true });
 
+/**
+ * Set the light.
+ *
+ * There is no day/night button in the bar any more: the world's light is
+ * switched by the brass switch on the observatory terrace, by the sun and the
+ * moon, and by whatever names a theme in a URL. For photography this drives
+ * the same shared state directly, so a frame is captured rather than a click
+ * simulated.
+ */
+async function setLight(page, theme) {
+  await page.evaluate(`(async () => {
+    const { setTheme } = await import('/src/lib/world/theme-state.ts').catch(() => ({}));
+    if (typeof setTheme === 'function') {
+      setTheme(${JSON.stringify(theme)}, { animate: true, persist: true });
+      return;
+    }
+    /* The built bundle has no module path: write the state the pre-paint probe
+       reads and let the shell's observer do the rest. */
+    document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+    localStorage.setItem('theme', ${JSON.stringify(theme)});
+    document.dispatchEvent(new CustomEvent('world:themechange', {
+      detail: { theme: ${JSON.stringify(theme)}, animate: true },
+    }));
+  })()`);
+}
+
 const report = {
   url: BASE,
   when: new Date().toISOString(),
@@ -32,13 +58,14 @@ const report = {
   captions: null,
   screenshots: [],
   audio: null,
+  turning: null,
   errors: [],
 };
 
 async function ready(page) {
   await page.waitFor(
     `document.querySelector('[data-world]')?.dataset.worldState === 'ready'`,
-    { timeout: 40000, label: 'world ready' },
+    { timeout: 150000, label: 'world ready' },
   );
   await page.waitFor(`document.querySelector('[data-world] canvas')?.width > 10`, {
     timeout: 20000,
@@ -48,6 +75,8 @@ async function ready(page) {
 }
 
 async function dismissWelcome(page) {
+  /* There is no welcome card any more — sound is on by default. The probe is
+     kept so a page that somehow still has one is still handled. */
   const present = await page.evaluate(
     `(() => { const el = document.querySelector('[data-world-welcome]'); return !!el && !el.hidden; })()`,
   );
@@ -62,6 +91,18 @@ async function settleTheme(page) {
     `!!window.__worldDebug && window.__worldDebug().transitioning === false`,
     { timeout: 40000, label: 'theme settled' },
   );
+  await sleep(500);
+}
+
+/**
+ * Stop the automatic turn before a frame is captured.
+ *
+ * The campus turns itself by default, so a screenshot taken a few seconds
+ * after load has already drifted a few degrees — which makes two runs
+ * impossible to compare. This is the same reset the control performs.
+ */
+async function resetTurn(page) {
+  await page.evaluate(`window.__worldResetTurn && window.__worldResetTurn()`);
   await sleep(500);
 }
 
@@ -154,6 +195,7 @@ const main = async () => {
     const welcomed = await dismissWelcome(page);
     report.world = { welcomed };
     await settleTheme(page);
+    await resetTurn(page);
 
     report.layout = await page.evaluate(probe);
     report.camera = report.layout.debug.camera;
@@ -164,6 +206,20 @@ const main = async () => {
       barClashes: report.layout.barClashes,
     };
 
+    /*
+     * The campus turns itself: two readings of the camera's own turn a few
+     * seconds apart prove the motion is real rather than asserted.
+     */
+    const beforeTurn = await page.evaluate(`window.__worldDebug().camera.turn`);
+    await sleep(6000);
+    const afterTurn = await page.evaluate(`window.__worldDebug().camera.turn`);
+    report.turning = {
+      before: beforeTurn,
+      after: afterTurn,
+      moved: Number((afterTurn - beforeTurn).toFixed(4)),
+      turning: afterTurn - beforeTurn > 0.01,
+    };
+
     if (only === 'camera') {
       report.cameraSweep = await sweepCamera(page);
     }
@@ -172,8 +228,9 @@ const main = async () => {
 
     if (!only || only === 'all') {
       /* Day. */
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await setLight(page, 'light');
       await settleTheme(page);
+      await resetTurn(page);
       await shoot('02-campus-day');
 
       /* Studio with the CV open. */
@@ -181,7 +238,6 @@ const main = async () => {
       await ready(page);
       await settleTheme(page);
       await shoot('03-cv-day');
-      await page.screenshot(join(OUT, '03-cv-day.png'));
       report.cv = await page.evaluate(`(() => {
         const panel = document.querySelector('[data-surface-panel]:not([hidden])');
         return {
@@ -194,7 +250,7 @@ const main = async () => {
 
       /* Night with the CV open — the theme must not disturb the camera. */
       const beforeCamera = (await page.evaluate(probe)).debug.camera;
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await setLight(page, 'dark');
       await settleTheme(page);
       const afterCamera = (await page.evaluate(probe)).debug.camera;
       report.themeKeepsCamera = {
@@ -234,7 +290,7 @@ const main = async () => {
       await settleTheme(page);
       report.mobile = await page.evaluate(probe);
       await shoot('08-mobile-night');
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await setLight(page, 'light');
       await settleTheme(page);
       await shoot('09-mobile-day');
 

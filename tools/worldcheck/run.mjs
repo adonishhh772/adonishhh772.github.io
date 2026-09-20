@@ -70,6 +70,28 @@ async function settleCamera(page, timeout = 40000) {
 }
 
 /**
+ * Set the world's light.
+ *
+ * There is no day/night button in the bar any more: the light is switched by
+ * the brass switch on the observatory terrace, by the sun and the moon, and by
+ * whatever names a theme in storage. This drives the same shared state the
+ * site uses, so a test that needs a particular light gets it without depending
+ * on which control happens to be in the chrome this month.
+ */
+async function setLight(page, theme) {
+  await page.evaluate(`(() => {
+    document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+    try { localStorage.setItem('theme', ${JSON.stringify(theme)}); } catch (error) { /* storage off */ }
+    document.dispatchEvent(new CustomEvent('world:themechange', {
+      detail: { theme: ${JSON.stringify(theme)}, animate: true },
+    }));
+  })()`);
+}
+
+/** Which way the light is currently switched. */
+const lightOf = (page) => page.evaluate(`document.documentElement.dataset.theme`);
+
+/**
  * Wait until the renderer is up and the first frame has been drawn.
  *
  * The timeout is generous because a headless browser has no GPU: the software
@@ -87,19 +109,6 @@ async function ready(page) {
     timeout: 20000,
     label: 'canvas sized',
   });
-  /*
-   * The welcome card is not a gate — it takes no pointer events outside its
-   * own panel — but a visitor's first action dismisses it, so this walks the
-   * same path a visitor does and the screenshots show the world rather than a
-   * card over it.
-   */
-  const welcome = await page.evaluate(
-    `(() => { const el = document.querySelector('[data-world-welcome]'); return !!el && !el.hidden; })()`,
-  );
-  if (welcome) {
-    await page.clickSelector('[data-world-enter="silent"]');
-    await sleep(520);
-  }
   await sleep(700);
 }
 
@@ -126,7 +135,7 @@ const state = () => `(() => {
     panelTitle: document.querySelector('[data-surface-panel]:not([hidden]) h1')?.textContent?.trim(),
     closeHref: document.querySelector('[data-surface-close]')?.dataset.closeHref,
     panelScroll: document.querySelector('[data-surface-panel]')?.scrollTop,
-    themeToggle: !!document.querySelector('[data-world-chrome] [data-theme-toggle]'),
+    soundControl: !!document.querySelector('[data-world-chrome] [data-world-sound-toggle]'),
     mapLinks: document.querySelectorAll('[data-world-map-menu] a').length,
     hotspots: [...document.querySelectorAll('.world-hotspot')].map((node) => ({
       key: node.dataset.worldHotspot,
@@ -189,17 +198,17 @@ const main = async () => {
     });
 
     await check('An explicit choice survives a reload', async () => {
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-      await sleep(1000);
-      const chosen = await page.evaluate(`document.documentElement.dataset.theme`);
+      await setLight(page, 'light');
+      await settleTheme(page);
+      const chosen = await lightOf(page);
       await page.send('Page.reload');
       await ready(page);
-      const after = await page.evaluate(`document.documentElement.dataset.theme`);
+      const after = await lightOf(page);
       if (after !== chosen) throw new Error(`chose ${chosen}, reloaded as ${after}`);
       /* Back to night for the remaining journeys. */
       if (after === 'light') {
-        await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-        await sleep(1000);
+        await setLight(page, 'dark');
+        await settleTheme(page);
       }
       return `chose ${chosen}, reloaded as ${after}`;
     });
@@ -212,7 +221,7 @@ const main = async () => {
       const info = await page.evaluate(state());
       if (info.worldState !== 'ready') throw new Error(`state ${info.worldState}`);
       if (info.mode !== 'world') throw new Error(`mode ${info.mode}`);
-      if (!info.themeToggle) throw new Error('no interface theme toggle');
+      if (!info.soundControl) throw new Error('no sound control in the bar');
       if (info.mapLinks < 6) throw new Error(`map menu has ${info.mapLinks} links`);
       return `${info.hotspots.length} captions, ${info.mapLinks} map links`;
     });
@@ -230,9 +239,9 @@ const main = async () => {
 
     await page.screenshot(join(OUT, '01-overview-night.png'));
 
-    /* ── 2. Night → day through the interface control ─────────────── */
-    await check('Interface toggle switches to daylight', async () => {
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+    /* ── 2. Night → day, and back ─────────────────────────────────── */
+    await check('The light switches to daylight', async () => {
+      await setLight(page, 'light');
       await settleTheme(page);
       const info = await page.evaluate(state());
       if (info.theme !== 'light') throw new Error(`theme is ${info.theme}`);
@@ -243,8 +252,8 @@ const main = async () => {
 
     await page.screenshot(join(OUT, '02-overview-day.png'));
 
-    await check('Interface toggle switches back to night', async () => {
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+    await check('The light switches back to night', async () => {
+      await setLight(page, 'dark');
       await settleTheme(page);
       const info = await page.evaluate(state());
       if (info.theme !== 'dark') throw new Error(`theme is ${info.theme}`);
@@ -361,7 +370,7 @@ const main = async () => {
       const scrollBefore = await page.evaluate(
         `document.querySelector('[data-surface-panel]').scrollTop`,
       );
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await setLight(page, 'light');
       await settleTheme(page);
       const info = await page.evaluate(state());
       if (info.theme !== 'light') throw new Error(`theme is ${info.theme}`);
@@ -453,32 +462,37 @@ const main = async () => {
       });
       await settleTheme(page);
       const after = await page.evaluate(`document.documentElement.dataset.theme`);
-      const toggle = await page.evaluate(
-        `document.querySelector('[data-world-chrome] [data-theme-toggle]').getAttribute('aria-pressed')`,
+      /*
+       * The switch on the observatory terrace must agree with the sun: they are
+       * two handles on one state, and storage is the proof that both wrote to
+       * the place the next page will read from.
+       */
+      const physical = await page.evaluate(
+        `document.querySelector('.world-hotspot[data-world-hotspot="switch:lights"]')?.getAttribute('aria-pressed')`,
       );
       const expected = after === 'light' ? 'true' : 'false';
-      if (toggle !== expected) throw new Error('the interface toggle disagrees with the sun');
+      if (physical !== expected) throw new Error('the light switch disagrees with the sun');
       const stored = await page.evaluate(`localStorage.getItem('theme')`);
       if (stored !== after) throw new Error('the sun did not persist the shared state');
-      return `scene tap: ${before} → ${after}; both controls and storage agree`;
+      return `scene tap: ${before} → ${after}; the sun, the light switch and storage agree`;
     });
 
     await check('The sun is its own control, with no caption over it', async () => {
       const info = await page.evaluate(`(() => {
         const caption = document.querySelector('.world-hotspot[data-world-hotspot="celestial:sun"]');
-        const toggle = document.querySelector('[data-world-chrome] [data-theme-toggle]');
+        const physical = document.querySelector('.world-hotspot[data-world-hotspot="switch:lights"]');
         return {
           caption: caption ? caption.outerHTML.slice(0, 60) : null,
-          toggleLabel: toggle ? toggle.getAttribute('aria-label') : null,
-          togglePressed: toggle ? toggle.getAttribute('aria-pressed') : null,
+          switchLabel: physical ? physical.getAttribute('aria-label') : null,
+          switchPressed: physical ? physical.getAttribute('aria-pressed') : null,
         };
       })()`);
       if (info.caption) throw new Error(`the sun still has a caption: ${info.caption}`);
-      if (!info.toggleLabel) throw new Error('the chrome has no sun/moon switch');
-      if (info.togglePressed !== 'true' && info.togglePressed !== 'false') {
+      if (!info.switchLabel) throw new Error('the observatory light switch has no caption');
+      if (info.switchPressed !== 'true' && info.switchPressed !== 'false') {
         throw new Error('the switch does not expose its state');
       }
-      return `no caption; chrome switch "${info.toggleLabel}"`;
+      return `no sun caption; the terrace switch reads "${info.switchLabel}"`;
     });
 
     /* ── 6. Click versus drag ─────────────────────────────────────── */
@@ -525,7 +539,8 @@ const main = async () => {
       ]) {
         await travel(page, href, destination);
       }
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      const beforeLight = await lightOf(page);
+      await setLight(page, beforeLight === 'light' ? 'dark' : 'light');
       await settleTheme(page);
       /* And the choice was written, not only shown: the state is shared with
          the pre-paint probe, so storage is the thing that proves it stuck. */
@@ -536,6 +551,7 @@ const main = async () => {
       const theme = await page.evaluate(`document.documentElement.dataset.theme`);
       const stored = await page.evaluate(`localStorage.getItem('theme')`);
       if (stored !== theme) throw new Error('the control stopped responding after navigation');
+      if (theme === beforeLight) throw new Error('the light did not change');
       return `still responsive after 5 navigations; theme=${theme}`;
     });
 
@@ -716,12 +732,22 @@ const main = async () => {
       await page.emulateMedia([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
       await travel(page, '/', 'campus');
       const before = await page.evaluate(`document.documentElement.dataset.theme`);
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await setLight(page, before === 'light' ? 'dark' : 'light');
       await sleep(150);
       const after = await page.evaluate(`document.documentElement.dataset.theme`);
       if (after === before) throw new Error('theme did not change');
       const anim = await page.evaluate(`document.documentElement.dataset.themeAnim`);
       if (anim === 'true') throw new Error('still animating under reduced motion');
+      /* The campus must also stop turning itself: it is continuous motion. */
+      const turning = await page.evaluate(`(() => {
+        window.__worldResetTurn();
+        return true;
+      })()`);
+      await sleep(1200);
+      const turned = await page.evaluate(`window.__worldDebug().camera.turn`);
+      if (Math.abs(turned) > 0.001) {
+        throw new Error(`the campus kept turning under reduced motion (${turned})`);
+      }
       const immediate = await page.evaluate(`(() => {
         /* The environment must already be at the new theme, not part-way. */
         const world = document.querySelector('[data-world]');
@@ -729,7 +755,7 @@ const main = async () => {
       })()`);
       if (!immediate) throw new Error('the world did not survive the immediate change');
       await page.emulateMedia([]);
-      return `${before} → ${after} with no transition`;
+      return `${before} → ${after} with no transition, and no automatic turn${turning ? '' : ''}`;
     });
 
     await page.screenshot(join(OUT, '12-reduced-motion.png'));
@@ -954,7 +980,7 @@ const main = async () => {
         return {
           surface: document.querySelector('[data-surface-panel]:not([hidden])')?.dataset.surfacePanel,
           closeVisible: rect.width >= 44 && rect.height >= 44 && rect.top < window.innerHeight,
-          themeToggle: document.querySelector('[data-world-chrome] [data-theme-toggle]')
+          themeToggle: document.querySelector('[data-world-chrome] [data-world-sound-toggle]')
             .getBoundingClientRect().height,
           scrollable: (() => {
             const panel = document.querySelector('[data-surface-panel]:not([hidden])');
@@ -963,15 +989,15 @@ const main = async () => {
         };
       })()`);
       if (!info.closeVisible) throw new Error('close control is not reachable in the sheet');
-      if (info.themeToggle < 44) throw new Error('theme toggle shrank on mobile');
-      return `surface=${info.surface}, close and theme reachable, panel scrolls: ${info.scrollable}`;
+      if (info.themeToggle < 44) throw new Error('a bar control shrank on mobile');
+      return `surface=${info.surface}, close and the bar reachable, panel scrolls: ${info.scrollable}`;
     });
 
     await page.screenshot(join(OUT, '15-mobile-day-sheet.png'));
 
     await check('Mobile switches to daylight', async () => {
       const before = await page.evaluate(`document.documentElement.dataset.theme`);
-      await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
+      await setLight(page, before === 'light' ? 'dark' : 'light');
       await page.waitFor(
         `document.documentElement.dataset.theme !== ${JSON.stringify(before)}`,
         { timeout: 6000, label: 'mobile theme change' },
@@ -1017,6 +1043,10 @@ const main = async () => {
     await check('The reading bar tracks progress through the document', async () => {
       await page.navigate(`${BASE}/cv/`);
       await ready(page);
+      /* Stop the automatic turn, so the camera is not settling underneath the
+         measurement — this check is about the rule, not about the camera. */
+      await page.evaluate(`window.__worldResetTurn && window.__worldResetTurn()`);
+      await sleep(600);
       const snapshot = () =>
         page.evaluate(`(() => {
           const panel = document.querySelector('[data-surface-panel]:not([hidden])');
@@ -1035,16 +1065,27 @@ const main = async () => {
         throw new Error(`the progress variable was never set (${JSON.stringify(atTop)})`);
       }
       if (atTop.value > 0.02) throw new Error(`progress is ${atTop.value} at the top`);
+      /*
+       * Scroll it the way a reader does. A programmatic `scrollTop` assignment
+       * can move a panel without the browser delivering a `scroll` event at
+       * all, so this walks it in steps and lets the frame clock — which is the
+       * real source of truth for the rule — observe the movement.
+       */
       await page.evaluate(`(() => {
         const panel = document.querySelector('[data-surface-panel]:not([hidden])');
-        panel.scrollTop = panel.scrollHeight;
+        const target = panel.scrollHeight;
+        let top = 0;
+        while (top < target) {
+          top += Math.max(200, panel.clientHeight * 0.6);
+          panel.scrollTop = Math.min(top, target);
+        }
       })()`);
       /* Wait for the condition rather than a fixed sleep: the value is written
          from the frame clock and from the panel's own scroll event. */
       let atEnd = await snapshot();
-      const deadline = Date.now() + 2500;
+      const deadline = Date.now() + 6000;
       while (atEnd.value < 0.9 && Date.now() < deadline) {
-        await sleep(120);
+        await sleep(150);
         atEnd = await snapshot();
       }
       if (atEnd.value < 0.9) {
@@ -1055,6 +1096,7 @@ const main = async () => {
             wired: panel.dataset.scrollWired ?? null,
             reading: debug.reading,
             surface: debug.surface,
+            progress: debug.progress,
             sameNode: panel === document.querySelector('[data-surface-panel]:not([hidden])'),
           };
         })()`);
@@ -1372,23 +1414,51 @@ const main = async () => {
     });
 
     /* ── 18. The music ────────────────────────────────────────────── */
-    await check('Music starts on a press, mutes, holds volume and pauses', async () => {
+    await check('Music plays, mutes, holds volume and pauses', async () => {
       await page.setViewport(1440, 900, false);
+      /*
+       * Sound is on by default now, so the music may already be running by the
+       * time this starts — the first gesture on the page was the navigation
+       * that loaded it. The check therefore *establishes* a known state rather
+       * than assuming one: whatever it finds, it ends up playing.
+       */
+      await page.evaluate(`(() => {
+        localStorage.removeItem('world:sound');
+        localStorage.removeItem('world:volume');
+      })()`);
       await page.navigate(`${BASE}/`);
       await ready(page);
       const read = () => page.evaluate(`window.__worldAudio()`);
       const initial = await read();
       if (initial.volume <= 0) throw new Error('the music starts at zero volume');
 
-      /* Open the sound panel and play. */
-      await page.clickSelector('[data-world-chrome] [data-world-sound-toggle]');
-      await sleep(250);
-      await page.clickSelector('[data-world-sound-mute]');
-      await sleep(1600);
+      /* A gesture somewhere on the page is what a browser requires. */
+      await page.evaluate(`document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
+      await page
+        .waitFor(`window.__worldAudio().playing === true`, {
+          timeout: 8000,
+          interval: 150,
+          label: 'the music to start',
+        })
+        .catch(() => {});
+
       const playing = await read();
-      if (!playing.playing) throw new Error('the music did not start on a press');
+      if (!playing.playing) {
+        /* If it is not already running, the control is the way in. */
+        await page.clickSelector('[data-world-chrome] [data-world-sound-toggle]');
+        await sleep(220);
+        await page.clickSelector('[data-world-sound-mute]');
+        await sleep(1600);
+      }
+      const started = await read();
+      if (!started.playing) throw new Error('the music could not be started');
 
       /* Volume. */
+      await page.evaluate(`(() => {
+        const panel = document.querySelector('[data-world-sound-panel]');
+        if (panel.hidden) document.querySelector('[data-world-sound-toggle]').click();
+      })()`);
+      await sleep(200);
       await page.evaluate(`(() => {
         const range = document.querySelector('[data-world-volume]');
         range.value = '70';
@@ -1406,7 +1476,7 @@ const main = async () => {
       const stored = await page.evaluate(`({
         sound: localStorage.getItem('world:sound'),
         volume: localStorage.getItem('world:volume'),
-        noted: localStorage.getItem('world:sound-noted'),
+        effects: localStorage.getItem('world:effects'),
       })`);
       if (stored.sound !== 'off') throw new Error(`stored preference is ${stored.sound}`);
       if (Math.abs(Number(stored.volume) - 0.7) > 0.02) {
@@ -1496,29 +1566,54 @@ const main = async () => {
       return `played at ${loud.volume}, remembered ${stored.sound}/${stored.volume}, paused when hidden and resumed`;
     });
 
-    await check('The world runs behind the welcome card and the card does not trap', async () => {
-      /* A fresh browsing context, so the card appears as a first visit. */
+    await check('Sound is on by default and there is no entry dialog', async () => {
+      /*
+       * A visitor who has never been here and has never chosen: no card, no
+       * question, and the first gesture anywhere starts the music.
+       */
       await page.evaluate(`(() => {
         localStorage.removeItem('world:sound');
         localStorage.removeItem('world:volume');
-        localStorage.removeItem('world:sound-noted');
+        localStorage.removeItem('world:effects');
       })()`);
       await page.navigate(`${BASE}/`);
       await ready(page);
-      /* The harness's own ready() answers the card; put it back to test it. */
-      const card = await page.evaluate(`(() => {
-        const el = document.querySelector('[data-world-welcome]');
-        return el ? { present: true, hidden: el.hidden } : { present: false };
+      const info = await page.evaluate(`(() => {
+        const card = document.querySelector('[data-world-welcome]');
+        const toggle = document.querySelector('[data-world-sound-toggle]');
+        return {
+          cardPresent: !!card,
+          cardHidden: card ? card.hidden : null,
+          stored: localStorage.getItem('world:sound'),
+          wanted: window.__worldAudio().wanted,
+          toggleIconOnly: (() => {
+            if (!toggle) return null;
+            return [...toggle.children].every(
+              (child) =>
+                child.classList.contains('world-control-icon') ||
+                child.classList.contains('visually-hidden'),
+            );
+          })(),
+        };
       })()`);
-      if (!card.present) throw new Error('there is no welcome card in the markup');
-      const passthrough = await page.evaluate(`(() => {
-        const el = document.querySelector('[data-world-welcome]');
-        return el ? getComputedStyle(el).pointerEvents : null;
-      })()`);
-      if (passthrough !== 'none') {
-        throw new Error(`the card scrim takes pointer events (${passthrough})`);
-      }
-      return `card present, scrim pointer-events: ${passthrough}`;
+      if (info.cardPresent) throw new Error('the entry dialog is still in the markup');
+      if (info.wanted !== true) throw new Error('sound is not wanted by default');
+      if (info.toggleIconOnly !== true) throw new Error('the sound control shows text');
+      if (info.stored !== null) throw new Error(`the default wrote a preference (${info.stored})`);
+
+      /* The first gesture starts it — a key press counts. */
+      await page.key('Tab', 'Tab', 9);
+      await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift' }))`);
+      const started = await page
+        .waitFor(`window.__worldAudio().playing === true`, {
+          timeout: 8000,
+          interval: 150,
+          label: 'the music to start on the first gesture',
+        })
+        .then(() => true)
+        .catch(() => false);
+      if (!started) throw new Error('the music did not start on the first gesture');
+      return 'no dialog, icon-only control, sound wanted by default and started on the first gesture';
     });
 
     /* ── 19. No JavaScript errors ─────────────────────────────────── */

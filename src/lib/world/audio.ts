@@ -1,9 +1,12 @@
 /**
- * The observatory's music.
+ * The observatory's music and its interface sounds.
  *
  * A single, lazily-created `AudioContext` that synthesises a calm instrumental
  * bed in the browser: slow pad chords, a sparse piano figure drawn from the
- * same harmony, a little air, and a soft space around all of it.
+ * same harmony, a little air, and a soft space around all of it. The same
+ * context plays the site's own button sounds, on their own bus and behind
+ * their own switch, so muting the music never muting the interface and turning
+ * the interface down never touches the score.
  *
  * Why generated rather than a file
  * --------------------------------
@@ -14,14 +17,14 @@
  * It also means the loop is genuinely seamless: the scheduler places every
  * event on the audio clock, so there is no seam to hear and nothing to buffer.
  *
- * Every sound begins after an explicit gesture
- * -------------------------------------------
- * Browsers refuse to start an `AudioContext` without one and they are right
- * to. The context is therefore created on the visitor's press — "Enter with
- * sound" on the welcome card, or the sound control in the chrome — and never
- * before. A remembered preference is only ever a request: if the browser
- * refuses on a later visit, playback simply does not start and the control
- * says so, because a control that claims to be playing silence is a lie.
+ * On by default, and started by the first gesture
+ * -----------------------------------------------
+ * The music is on unless the visitor turns it off. Browsers refuse to start an
+ * `AudioContext` without a gesture and they are right to, so the context is
+ * created at the visitor's first press, scroll, key or touch anywhere on the
+ * page and never before. Until that happens the sound control reads "off",
+ * because nothing is playing — a control that claims to be playing silence is
+ * a lie, and this one never tells it.
  *
  * One instance, and it survives navigation
  * ----------------------------------------
@@ -34,19 +37,21 @@ export type AudioPreference = 'on' | 'off' | 'unset';
 
 const SOUND_KEY = 'world:sound';
 const VOLUME_KEY = 'world:volume';
-const NOTE_KEY = 'world:sound-noted';
+const EFFECTS_KEY = 'world:effects';
 
 /** Conservative: a bed, not a performance. */
-const DEFAULT_VOLUME = 0.3;
+const DEFAULT_VOLUME = 0.34;
 /** Anything quieter than this is silent, and muting it is the honest move. */
 const MIN_AUDIBLE = 0.005;
 
 export interface AudioState {
-  /** True only while sound is actually coming out of the speakers. */
+  /** True only while music is actually coming out of the speakers. */
   playing: boolean;
   /** True when the visitor has asked for sound, whether or not it started. */
   wanted: boolean;
   volume: number;
+  /** Whether the interface's own button sounds are on. */
+  effects: boolean;
   /** Set when the browser refused to start, so the interface can say so. */
   blocked: boolean;
 }
@@ -61,14 +66,20 @@ function storage(): Storage | null {
   }
 }
 
+/**
+ * Whether the visitor wants music.
+ *
+ * Absent a stored answer the answer is yes: sound is the default, and turning
+ * it off is a decision the visitor makes. A stored `off` is honoured for good.
+ */
 export function readSoundPreference(): AudioPreference {
   const store = storage();
-  if (!store) return 'unset';
+  if (!store) return 'on';
   try {
     const value = store.getItem(SOUND_KEY);
-    return value === 'on' || value === 'off' ? value : 'unset';
+    return value === 'on' || value === 'off' ? value : 'on';
   } catch {
-    return 'unset';
+    return 'on';
   }
 }
 
@@ -86,33 +97,28 @@ export function readVolume(): number {
   }
 }
 
-function writePreference(next: AudioPreference, volume: number): void {
+export function readEffects(): boolean {
   const store = storage();
+  if (!store) return true;
   try {
-    store?.setItem(SOUND_KEY, next);
-    store?.setItem(VOLUME_KEY, String(volume));
+    return store.getItem(EFFECTS_KEY) !== 'off';
   } catch {
-    /* storage unavailable — the choice lasts for this visit */
+    return true;
   }
 }
 
-/** True once the visitor has answered the welcome card at least once. */
-export function hasVisited(): boolean {
-  const store = storage();
-  if (!store) return false;
-  try {
-    return store.getItem(NOTE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function markVisited(): void {
+function writePreferences(state: {
+  sound: AudioPreference;
+  volume: number;
+  effects: boolean;
+}): void {
   const store = storage();
   try {
-    store?.setItem(NOTE_KEY, '1');
+    store?.setItem(SOUND_KEY, state.sound);
+    store?.setItem(VOLUME_KEY, String(state.volume));
+    store?.setItem(EFFECTS_KEY, state.effects ? 'on' : 'off');
   } catch {
-    /* storage unavailable — the card simply appears again */
+    /* storage unavailable — the choices last for this visit */
   }
 }
 
@@ -151,6 +157,7 @@ class AmbientEngine {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private musicBus: GainNode | null = null;
+  private effectsBus: GainNode | null = null;
   private reverbSend: GainNode | null = null;
   private noiseSource: AudioBufferSourceNode | null = null;
 
@@ -162,13 +169,18 @@ class AmbientEngine {
   private playing = false;
   private blocked = false;
   private volume = DEFAULT_VOLUME;
+  private effects = true;
   private disposed = false;
   /** True when the page hid while playing, so coming back resumes it. */
   private resumeAfterHidden = false;
+  /** The last time a click sound was played, so a burst cannot stack. */
+  private lastClick = 0;
 
   constructor() {
     this.volume = readVolume();
-    this.wanted = readSoundPreference() === 'on';
+    this.effects = readEffects();
+    /* Sound is the default: the music is wanted unless it was turned off. */
+    this.wanted = readSoundPreference() !== 'off';
   }
 
   get state(): AudioState {
@@ -176,6 +188,7 @@ class AmbientEngine {
       playing: this.playing,
       wanted: this.wanted,
       volume: this.volume,
+      effects: this.effects,
       blocked: this.blocked,
     };
   }
@@ -238,6 +251,13 @@ class AmbientEngine {
     const bus = context.createGain();
     bus.gain.value = 1;
     bus.connect(shelf);
+    /*
+     * The interface's own sounds have their own bus, so they survive the music
+     * being muted and can be switched off without touching the score.
+     */
+    const effectsBus = context.createGain();
+    effectsBus.gain.value = this.effects ? 0.5 : 0;
+    effectsBus.connect(shelf);
 
     /*
      * Space. A short, decorrelated impulse built from noise gives the pad a
@@ -252,6 +272,7 @@ class AmbientEngine {
 
     this.master = master;
     this.musicBus = bus;
+    this.effectsBus = effectsBus;
     this.reverbSend = send;
 
     /* A quiet bed of filtered noise: the air in the room. */
@@ -312,7 +333,7 @@ class AmbientEngine {
    */
   async play(options: { fadeMs?: number } = {}): Promise<boolean> {
     this.wanted = true;
-    writePreference('on', this.volume);
+    writePreferences({ sound: 'on', volume: this.volume, effects: this.effects });
     const context = this.ensureContext();
     if (!context || !this.master) {
       this.playing = false;
@@ -361,7 +382,11 @@ class AmbientEngine {
   pause(options: { fadeMs?: number; forget?: boolean } = {}): void {
     if (options.forget !== false) this.wanted = false;
     this.stopScheduler();
-    writePreference(this.wanted ? 'on' : 'off', this.volume);
+    writePreferences({
+      sound: this.wanted ? 'on' : 'off',
+      volume: this.volume,
+      effects: this.effects,
+    });
     const context = this.context;
     if (context && this.master) {
       const fade = Math.max(0.15, (options.fadeMs ?? 700) / 1000);
@@ -385,7 +410,11 @@ class AmbientEngine {
 
   setVolume(value: number): void {
     this.volume = Math.min(1, Math.max(0, value));
-    writePreference(this.wanted ? 'on' : 'off', this.volume);
+    writePreferences({
+      sound: this.wanted ? 'on' : 'off',
+      volume: this.volume,
+      effects: this.effects,
+    });
     const context = this.context;
     if (context && this.master && this.playing) {
       const now = context.currentTime;
@@ -395,6 +424,28 @@ class AmbientEngine {
       this.master.gain.linearRampToValueAtTime(target, now + 0.12);
     }
     this.emit();
+  }
+
+  /** Switch the interface's own button sounds on or off, independently. */
+  setEffects(on: boolean): void {
+    this.effects = on;
+    writePreferences({
+      sound: this.wanted ? 'on' : 'off',
+      volume: this.volume,
+      effects: this.effects,
+    });
+    const context = this.context;
+    if (context && this.effectsBus) {
+      const now = context.currentTime;
+      this.effectsBus.gain.cancelScheduledValues(now);
+      this.effectsBus.gain.setValueAtTime(this.effectsBus.gain.value, now);
+      this.effectsBus.gain.linearRampToValueAtTime(on ? 0.5 : 0, now + 0.08);
+    }
+    this.emit();
+  }
+
+  get effectsEnabled(): boolean {
+    return this.effects;
   }
 
   get volumeLevel(): number {
@@ -434,6 +485,68 @@ class AmbientEngine {
        */
       void this.play({ fadeMs: 1400 });
     }
+  }
+
+  /* ── Interface sounds ──────────────────────────────────────────────── */
+
+  /**
+   * A short, soft confirmation that a control was pressed.
+   *
+   * Deliberately small and deliberately dull: a low sine with a fast decay and
+   * a whisper of a second partial, closer to a fingertip on a wooden panel
+   * than to a notification. It is panned slightly by the pitch so a row of
+   * buttons does not sound like one button played repeatedly, and a burst of
+   * presses is thinned rather than stacked — thirty of these in a second is
+   * noise, not feedback.
+   *
+   * It has its own bus, so it is heard with the music muted and gone when the
+   * visitor switches interface sounds off.
+   */
+  click(kind: 'tap' | 'open' | 'close' = 'tap'): void {
+    if (!this.effects) return;
+    const context = this.context;
+    const bus = this.effectsBus;
+    if (!context || !bus || context.state !== 'running') return;
+    const now = context.currentTime;
+    /* At most one every 45ms, which is faster than any deliberate press. */
+    if (now - this.lastClick < 0.045) return;
+    this.lastClick = now;
+
+    const base = kind === 'open' ? 392 : kind === 'close' ? 262 : 330;
+    const decay = kind === 'tap' ? 0.14 : 0.22;
+    const level = kind === 'tap' ? 0.5 : 0.42;
+
+    const envelope = context.createGain();
+    envelope.gain.setValueAtTime(0, now);
+    envelope.gain.linearRampToValueAtTime(level, now + 0.006);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, now + decay);
+
+    const body = context.createOscillator();
+    body.type = 'sine';
+    body.frequency.setValueAtTime(base, now);
+    /* A tiny downward bend, which is what stops it reading as a beep. */
+    body.frequency.exponentialRampToValueAtTime(base * 0.86, now + decay);
+
+    const sheen = context.createOscillator();
+    sheen.type = 'triangle';
+    sheen.frequency.value = base * 3.02;
+    const sheenGain = context.createGain();
+    sheenGain.gain.value = 0.12;
+
+    const tone = context.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = 2400;
+
+    body.connect(envelope);
+    sheen.connect(sheenGain);
+    sheenGain.connect(envelope);
+    envelope.connect(tone);
+    tone.connect(bus);
+
+    body.start(now);
+    sheen.start(now);
+    body.stop(now + decay + 0.05);
+    sheen.stop(now + decay + 0.05);
   }
 
   /* ── Scheduling ────────────────────────────────────────────────────── */
@@ -615,14 +728,41 @@ export function ambient(): AmbientEngine {
 /**
  * Start the music from a visitor's gesture, if they have asked for it.
  *
- * Used on a later visit: the preference is honoured *as a request*. If the
- * browser refuses, nothing is claimed and the control reports it — which is
- * the only honest way to handle a rule the page cannot override.
+ * The preference is honoured *as a request*: if the browser refuses, nothing
+ * is claimed and the controls report it — which is the only honest way to
+ * handle a rule the page cannot override.
  */
 export async function resumeIfWanted(): Promise<void> {
   const sound = ambient();
-  if (readSoundPreference() !== 'on') return;
-  await sound.play({ fadeMs: 3000 });
+  if (readSoundPreference() === 'off') return;
+  await sound.play({ fadeMs: 3400 });
+}
+
+/**
+ * Arm the first gesture anywhere on the page.
+ *
+ * That gesture is the earliest moment a browser will allow a context to run,
+ * so it is what starts the music: a press, a scroll, a key or a touch. Because
+ * sound is the default, this fires on the first visit too — the music is
+ * simply already playing by the time the visitor has looked around. The
+ * listener disarms itself, so a later gesture cannot start a second attempt.
+ */
+export function armFirstGesture(): void {
+  if (typeof document === 'undefined') return;
+  let armed = true;
+  const fire = () => {
+    if (!armed) return;
+    armed = false;
+    document.removeEventListener('pointerdown', fire, true);
+    document.removeEventListener('keydown', fire, true);
+    document.removeEventListener('wheel', fire, true);
+    document.removeEventListener('touchstart', fire, true);
+    void resumeIfWanted();
+  };
+  document.addEventListener('pointerdown', fire, true);
+  document.addEventListener('keydown', fire, true);
+  document.addEventListener('wheel', fire, { capture: true, passive: true });
+  document.addEventListener('touchstart', fire, { capture: true, passive: true });
 }
 
 export { DEFAULT_VOLUME };

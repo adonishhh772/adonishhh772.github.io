@@ -122,6 +122,17 @@ export class CameraRig {
   /** Solid volumes the camera must not enter; filled by the world. */
   private solids: SolidVolume[] = [];
   private reducedMotion: boolean;
+  /**
+   * Automatic turning, in radians per second.
+   *
+   * `turnTarget` is what the shell has asked for and `turnRate` is what the
+   * camera is actually doing, so the movement eases in and out rather than
+   * starting at full speed the moment the page loads — the first thing a
+   * visitor sees should settle into motion, not jerk into it.
+   */
+  private turnRate = 0;
+  private turnTarget = 0;
+  private turnOffset = 0;
 
   constructor(aspect: number, home: Shot, reducedMotion: boolean) {
     this.camera = new THREE.PerspectiveCamera(home.fov, aspect, 0.35, 1200);
@@ -314,6 +325,28 @@ export class CameraRig {
     this.targetAzimuth = 0;
     this.targetPolar = 0;
     this.targetZoom = 1;
+    /* A reset puts the island back where it was composed, which includes
+       undoing however far the automatic turn had carried it. */
+    this.turnOffset = 0;
+    this.orbitAzimuth = 0;
+  }
+
+  /**
+   * Turn the campus slowly, forever.
+   *
+   * `rate` is in radians per second; zero stops it. The rig adds this to its
+   * own azimuth rather than moving the composed shot, so the visitor's drag
+   * limits, the reset and the return-view restore all keep working in the same
+   * coordinates — the turn is a baseline the visitor's own movement is added
+   * on top of.
+   */
+  setAutoTurn(rate: number): void {
+    this.turnTarget = this.reducedMotion ? 0 : rate;
+  }
+
+  /** True while the campus is turning itself. */
+  get turning(): boolean {
+    return this.turnRate > 0.0001;
   }
 
   /** The visitor's current look-around, for restoring a previous view. */
@@ -350,7 +383,14 @@ export class CameraRig {
     this.apply();
   }
 
-  update(delta: number): void {
+  /**
+   * `delta` is the clamped step the simulation uses; `realDelta` is the time
+   * that actually passed. They differ only on a slow renderer, and the
+   * difference matters: easing must be clamped so a long frame does not
+   * teleport the camera, but the automatic turn is wall-clock motion and would
+   * otherwise crawl on exactly the devices that need it most.
+   */
+  update(delta: number, realDelta = delta): void {
     if (this.duration > 0 && this.travel < 1) {
       this.travel = Math.min(1, this.travel + delta / this.duration);
     }
@@ -361,13 +401,19 @@ export class CameraRig {
     this.orbitAzimuth = THREE.MathUtils.damp(this.orbitAzimuth, this.targetAzimuth, lambda, delta);
     this.orbitPolar = THREE.MathUtils.damp(this.orbitPolar, this.targetPolar, lambda, delta);
     this.zoom = THREE.MathUtils.damp(this.zoom, this.targetZoom, lambda, delta);
+
+    /* The automatic turn eases in over about a second and a half. */
+    const turnLambda = this.reducedMotion ? 1000 : 0.9;
+    this.turnRate = THREE.MathUtils.damp(this.turnRate, this.turnTarget, turnLambda, realDelta);
+    if (this.turnRate > 0.00001) this.turnOffset += this.turnRate * realDelta;
+
     this.apply();
   }
 
   private apply(): void {
     this.offset.subVectors(this.base.position, this.base.target);
     this.spherical.setFromVector3(this.offset);
-    this.spherical.theta += this.orbitAzimuth;
+    this.spherical.theta += this.orbitAzimuth + this.turnOffset;
     /*
      * The composed shot's own elevation plus the visitor's swing, held inside
      * the band where the island reads. Phi is measured from straight up, so
@@ -418,6 +464,7 @@ export class CameraRig {
     above: number;
     radius: number;
     polar: number;
+    turn: number;
   } {
     return {
       position: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
@@ -425,6 +472,7 @@ export class CameraRig {
       above: this.camera.position.y - terrainFloorAt(this.camera.position.x, this.camera.position.z),
       radius: this.camera.position.distanceTo(this.base.target),
       polar: this.spherical.phi,
+      turn: this.turnOffset,
     };
   }
 }

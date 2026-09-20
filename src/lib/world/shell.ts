@@ -113,6 +113,19 @@ const CELESTIAL_KEY = 'celestial:sun';
  */
 const LIGHT_SWITCH_KEY = 'switch:lights';
 
+/**
+ * The campus turns itself, slowly.
+ *
+ * This is the default view: the world is already moving when the visitor
+ * arrives, so the first thing they learn is that it is a place they can look
+ * around rather than a picture they have to work out. The rate is deliberately
+ * under a degree a second — a full turn takes about five minutes — so it reads
+ * as the scene breathing rather than as a carousel.
+ */
+const AUTO_TURN_RATE = 0.021;
+/** How long the visitor must leave the camera alone before it resumes. */
+const AUTO_TURN_RESUME_MS = 3500;
+
 /** Selectors whose gestures belong to the control, never to the camera. */
 const INTERACTIVE_SELECTOR = [
   'a[href]',
@@ -169,8 +182,16 @@ export function webglAvailable(): boolean {
  * rather than by a distance somebody liked the look of.
  */
 const CAMPUS_EXTENT = { horizontal: 14.7, vertical: 11.5 };
-/** The centre of the island's visual mass, which is what the camera aims at. */
-const CAMPUS_CENTRE = new THREE.Vector3(0, 1.4, 0);
+/**
+ * What the overview camera aims at.
+ *
+ * Above the island's own centre of mass on purpose: the camera looks down at
+ * the campus, so aiming a little high lifts the island up the frame — and the
+ * band the identity card occupies is at the bottom, where the keel would
+ * otherwise be behind it. It also leaves the keel in view: the underside is
+ * part of the model, and hiding it would make the island a flat cut-out again.
+ */
+const CAMPUS_CENTRE = new THREE.Vector3(0, 3.4, 0);
 
 /**
  * The campus overview.
@@ -422,6 +443,12 @@ export function mountShell(root: WorldHost): ShellHandle {
   let lastOpenedKey: string | null = null;
   /** The caption currently shown in full despite having been placed compact. */
   let revealedKey: string | null = null;
+  /**
+   * When the visitor last did something to the camera. The automatic turn
+   * waits a moment after this before picking up again, so a visitor who is
+   * exploring is never fighting the scene for the controls.
+   */
+  let lastInteraction = typeof performance === 'undefined' ? 0 : performance.now();
 
   const hotspots = new Map<string, HTMLElement>();
   const occluded = new Map<string, boolean>();
@@ -748,6 +775,7 @@ export function mountShell(root: WorldHost): ShellHandle {
    */
   function travelTo(id: DestinationId, immediate = false): void {
     if (disposed) return;
+    lastInteraction = performance.now();
     focusPlace = id;
     root.dataset.focus = id;
     world.setPlaceState(id === 'campus' ? null : id);
@@ -1421,8 +1449,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   }
 
   /** Point the close control at where the visitor actually came from. */
-  function syncCloseControl(): void {
-    const close = document.querySelector<HTMLElement>('[data-surface-close]');
+  function syncCloseControl(): void {    const close = document.querySelector<HTMLElement>('[data-surface-close]');
     if (!close) return;
     const returned = readReturnView();
     const back = document.querySelector<HTMLAnchorElement>('[data-surface-back]');
@@ -1709,6 +1736,7 @@ export function mountShell(root: WorldHost): ShellHandle {
         capture(gesture, canvasEl);
         canvasEl.dataset.dragging = 'true';
       }
+      lastInteraction = performance.now();
 
       if (pointers.size >= 2) {
         const next = twoPointerDistance(pointers);
@@ -1759,6 +1787,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     const onWheel = (event: WheelEvent) => {
       if (currentMode() !== 'world') return;
       if (isInteractiveTarget(event.target)) return;
+      lastInteraction = performance.now();
       /* Line and page deltas normalise to roughly one notch. */
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
       rig.zoomBy(THREE.MathUtils.clamp((event.deltaY * unit) / 600, -0.4, 0.4));
@@ -1917,6 +1946,7 @@ export function mountShell(root: WorldHost): ShellHandle {
    */
   const onResetView = () => {
     if (disposed) return;
+    lastInteraction = performance.now();
     rig.resetOrbit();
     compose(true);
     renderOnce();
@@ -1955,14 +1985,33 @@ export function mountShell(root: WorldHost): ShellHandle {
   function frame(now: number): void {
     if (disposed) return;
     frameCount++;
-    const delta = Math.min(Math.max((now - last) / 1000, 0), 0.05);
+    /*
+     * Two deltas, on purpose.
+     *
+     * The simulation uses one clamped to 50ms, because a frame that took a
+     * second must not teleport the world. The automatic turn uses the real
+     * elapsed time, because it is wall-clock motion: on a slow renderer the
+     * clamped value would have the campus crawling, which is exactly the bug
+     * this split fixes.
+     */
+    const realDelta = Math.max((now - last) / 1000, 0);
+    const delta = Math.min(Math.max(realDelta, 0), 0.05);
     last = now;
     /* A document on screen means the scenery should settle, not perform. */
     const animate = ambientAllowed && !reading;
     if (animate) clock += delta;
     const step = animate ? delta : 0;
 
-    rig.update(delta);
+    /*
+     * The campus turns itself while the visitor is only looking. It yields the
+     * moment they take the camera — a finger on the scene, a wheel, or any
+     * travel — and picks up again once they have stopped, which is what makes
+     * it feel like a display case rather than a fight over the controls.
+     */
+    const idling = performance.now() - lastInteraction > AUTO_TURN_RESUME_MS;
+    rig.setAutoTurn(animate && idling ? AUTO_TURN_RATE : 0);
+
+    rig.update(delta, realDelta);
     world.update(clock, step);
     /* The day/night blend runs on real time, so it finishes while reading. */
     advanceTheme(delta);
@@ -2210,6 +2259,21 @@ export function mountShell(root: WorldHost): ShellHandle {
       if (hit === marker.pick) return `object:${marker.kind}:${marker.id}`;
     }
     return hit.name || hit.type;
+  };
+
+  /**
+   * Put the campus back to the pose it was composed in.
+   *
+   * The world turns itself by default, so a screenshot taken a few seconds
+   * after load has already drifted. This is for photography and for the
+   * verification suite: it is the same reset the control performs, without
+   * travelling anywhere.
+   */
+  (window as unknown as { __worldResetTurn?: () => void }).__worldResetTurn = () => {
+    rig.resetOrbit();
+    lastInteraction = performance.now();
+    compose(true);
+    renderOnce();
   };
 
   /**

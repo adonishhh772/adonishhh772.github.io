@@ -84,7 +84,24 @@ interface PlaceLayout {
 }
 
 /** Radius of the ring of destinations around the campus landmark. */
-const RING_RADIUS = 8.6;
+const RING_RADIUS = 9.2;
+
+/**
+ * Where the ring is rotated to.
+ *
+ * The campus is a ring, so the bearing the camera starts from decides which of
+ * the five destinations are in front of the observatory and which are behind
+ * it. Only side-to-side position decides visibility from a high angle like
+ * this, so the bearings are projected onto the camera's own left-right axis
+ * and the ring is turned until their mean is zero — the arrangement in which
+ * the five are spread as evenly as a ring allows across the frame, and none of
+ * them is hidden by the landmark at the centre.
+ *
+ * Before this, the workbench sat directly behind the observatory from the
+ * overview: it was on the map, its caption was projected, and its building
+ * could not be seen at all without dragging the camera round the island.
+ */
+const RING_ROTATION = 22;
 
 /**
  * Placement is an art-direction decision, not an arbitrary one. The overview
@@ -111,17 +128,11 @@ function localToWorld(layout: PlaceLayout, x: number, y: number, z: number): THR
 
 const LAYOUT: Record<DestinationId, PlaceLayout> = {
   campus: layoutAt(0, 0, 4.3, 0.9),
-  studio: layoutAt(-45, RING_RADIUS, 3, 0.5),
-  workshop: layoutAt(0, RING_RADIUS, 3.2, 0.55),
-  library: layoutAt(50, RING_RADIUS, 3, 0.45),
-  contact: layoutAt(115, RING_RADIUS, 2.4, 0.45),
-  /*
-   * The workbench sits in the widest gap left in the ring. Its gantry is tall
-   * and open, so from the overview bearing it reads as a structure beyond the
-   * observatory rather than disappearing behind it — and one small orbit
-   * brings it fully into view.
-   */
-  workbench: layoutAt(212, RING_RADIUS, 3.1, 0.4),
+  studio: layoutAt(-45 + RING_ROTATION, RING_RADIUS, 3, 0.5),
+  workshop: layoutAt(0 + RING_ROTATION, RING_RADIUS, 3.2, 0.55),
+  library: layoutAt(50 + RING_ROTATION, RING_RADIUS, 3, 0.45),
+  contact: layoutAt(115 + RING_ROTATION, RING_RADIUS, 2.4, 0.45),
+  workbench: layoutAt(212 + RING_ROTATION, RING_RADIUS, 3.1, 0.4),
 };
 
 /** Walkway order — the ring, sorted by angle around the island. */
@@ -597,8 +608,8 @@ export class ObservatoryWorld {
       const matrix = new THREE.Matrix4();
       const outward = new THREE.Vector3();
       const bands = [
-        { count: 15, geometry: boulderGeometry(7, 0.62), y: -1.0, scale: [0.55, 0.85] },
-        { count: 12, geometry: boulderGeometry(19, 0.58), y: -1.9, scale: [0.8, 1.2] },
+        { count: 20, geometry: boulderGeometry(7, 0.62), y: -1.0, scale: [0.55, 0.9] },
+        { count: 16, geometry: boulderGeometry(19, 0.58), y: -1.9, scale: [0.8, 1.25] },
       ];
       for (const band of bands) {
         const matrices: THREE.Matrix4[] = [];
@@ -644,7 +655,7 @@ export class ObservatoryWorld {
       const matrices: THREE.Matrix4[] = [];
       const matrix = new THREE.Matrix4();
       const rim = plateauRadius();
-      const clusters = 7;
+      const clusters = 11;
       for (let cluster = 0; cluster < clusters; cluster++) {
         const angle = (cluster / clusters) * Math.PI * 2 + random() * 0.8;
         const radius = (rim - 5) + random() * 3.2;
@@ -671,6 +682,37 @@ export class ObservatoryWorld {
       outcrops.castShadow = this.quality.shadows;
       outcrops.receiveShadow = true;
       this.group.add(outcrops);
+
+      /*
+       * A scatter of single stones through the open ground, so the shelf reads
+       * as broken rock rather than as lawn. They are kept clear of the
+       * walkways and the terraces and kept flat: a stone stood on its edge is
+       * a stone that looks placed.
+       */
+      const scatter: THREE.Matrix4[] = [];
+      for (let i = 0; i < 46; i++) {
+        const angle = random() * Math.PI * 2;
+        const radius = 4.2 + random() * (rim - 5.4);
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        if (this.nearStation(x, z, 1.6)) continue;
+        const scale = 0.22 + random() * 0.4;
+        matrix.compose(
+          new THREE.Vector3(x, GROUND - 0.05 - scale * 0.62, z),
+          new THREE.Quaternion().setFromAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            random() * Math.PI * 2,
+          ),
+          new THREE.Vector3(scale * 1.35, scale * 0.7, scale),
+        );
+        scatter.push(matrix.clone());
+      }
+      if (scatter.length) {
+        const stones = instancedMesh(geometry, this.materials.rock, scatter, 'scattered-stone');
+        stones.castShadow = this.quality.shadows;
+        stones.receiveShadow = true;
+        this.group.add(stones);
+      }
     }
 
     /*
@@ -697,7 +739,7 @@ export class ObservatoryWorld {
     const rim = plateauRadius();
     for (let ring = 0; ring < rings; ring++) {
       const radius = (rim - 1.4) - ring * 1.5;
-      const count = 24 - ring * 3;
+      const count = 32 - ring * 5;
       for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2 + random() * 0.3 + ring * 0.9;
         const jitter = 0.86 + random() * 0.2;
@@ -775,7 +817,7 @@ export class ObservatoryWorld {
     const shrubGeometry = this.track(new THREE.IcosahedronGeometry(0.34, 0));
     shrubGeometry.scale(1, 0.66, 1);
     const shrubs: THREE.Matrix4[] = [];
-    for (let i = 0; i < 72; i++) {
+    for (let i = 0; i < 110; i++) {
       const angle = random() * Math.PI * 2;
       const radius = 3.6 + random() * 7.4;
       const x = Math.cos(angle) * radius;
@@ -936,11 +978,16 @@ export class ObservatoryWorld {
       const cloud = new THREE.Mesh(geometry, material);
       cloud.name = `cloud-${i}`;
       const angle = (i / count) * Math.PI * 2 + cloudRandom() * 0.7;
-      const radius = 30 + cloudRandom() * 18;
-      const scale = 2.3 + cloudRandom() * 1.1;
+      /*
+       * Well outside anything the camera can reach, and well above the island.
+       * A cloud inside the orbit's reach is a cloud that fills half the frame
+       * when the visitor zooms out, which is what a nearer ring of them did.
+       */
+      const radius = 62 + cloudRandom() * 30;
+      const scale = 4.2 + cloudRandom() * 2.2;
       cloud.position.set(
         Math.cos(angle) * radius,
-        17 + cloudRandom() * 5,
+        24 + cloudRandom() * 7,
         Math.sin(angle) * radius,
       );
       cloud.scale.setScalar(scale);

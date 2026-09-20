@@ -72,6 +72,18 @@ everything else follows from what you select.
   clears them. The verification suite drags past every stop and zooms fully in
   and out at every destination, and fails if the camera is ever below the
   ground.
+- **The campus turns itself.** The world is already moving when the visitor
+  arrives, at a little under a degree a second, so the first thing it says is
+  that it is a place rather than a picture. The turn is wall-clock motion, not
+  frame-counted, so it takes the same time on a slow device as on a fast one.
+  It yields the moment the visitor takes the camera — a drag, a scroll, a press
+  on the sun — and picks up again a few seconds after they stop. Under
+  `prefers-reduced-motion`, or with ambient movement paused, it does not run at
+  all.
+- **Every destination is on screen by default.** The ring of places is turned
+  to the bearing that spreads them widest across the opening frame: before
+  this, the workbench sat directly behind the observatory and could not be seen
+  without dragging the camera round the island.
 - **URLs are still real.** A deep link (`/cv/`, `/writing/<slug>/`) opens the
   world at that place with that document already open; refresh works; Back
   and Forward work.
@@ -97,11 +109,11 @@ everything else follows from what you select.
   switch turns the lamps over.
 - **The chrome is always there.** A compact bar holds the location readout,
   the **Map** (a labelled list of every place and document, as real links),
-  **Home**, **Reset view**, the labelled **Day/Night** control and the
-  **sound** controls. It takes the
+  **Reset view** and the **sound** controls. It takes the
   edge opposite the reading surface on a desktop and the top strip on a phone,
   so it stays reachable from the CV, an article, a case study or the contact
-  card. No destination can be lost behind a building or a panel.
+  card. No destination can be lost behind a building or a panel. The light is
+  not in the bar: it is a switch in the world.
 - **The camera is bounded and unambiguous.** A press only becomes a drag once
   it has travelled far enough to be unarguable, and a press that starts on a
   control belongs to that control - never to the camera.
@@ -121,14 +133,14 @@ The light is one authoritative state, held as `data-theme` on `<html>` and
 remembered in `localStorage` once the visitor makes an explicit choice. Until
 then the system preference is honoured.
 
-- **Two controls, one state, and both are visible.** A real sun hangs in the
-  sky; choosing night runs it down its arc while the moon rises from the other
-  end and the starfield comes up with it. The same value is driven by the
-  brass **light switch standing on the observatory terrace** — a post with a
-  lever and a glazed lamp, which a visitor can simply press — and by the
-  control in the bar, which is labelled with the current state rather than
-  being an icon to guess at. The sun's rays, the moon's craters and the
-  switch's own lever all follow it.
+- **A switch in the world, and the sun itself.** A real sun hangs in the sky;
+  choosing night runs it down its arc while the moon rises from the other end
+  and the starfield comes up with it. The same value is driven by the brass
+  **light switch standing on the observatory terrace** — a post with a lever and
+  a glazed lamp, which a visitor can simply press — and by the sun and the moon,
+  which are their own controls. The sun's rays, the moon's craters and the
+  switch's own lever all follow it. There is no day/night button in the bar:
+  the light is something you do to the place, not a setting in a toolbar.
 - **The sky changes, not a filter.** Sky gradient, fog colour and density,
   hemisphere and key lights, the rim light, practical lamps, window and lamp
   emissives, the environment probe, exposure and the shadow tuning all take
@@ -145,29 +157,34 @@ then the system preference is honoured.
 - **Nothing else moves.** Changing the light preserves the camera, the
   destination, the open document, the reading position and any form input.
 
-### Music
+### Music and interface sound
 
 There is no track. The score is synthesised in the browser — see
-[Third-party assets](#third-party-assets) for why — and it is optional at
-every step.
+[Third-party assets](#third-party-assets) for why — and it is on by default,
+with no dialog and no question.
 
-- **A welcome card, once.** A visitor who has never been here and has never
-  made a choice is offered *Enter with sound* and *Enter silently*. The card is
-  not a gate: its scrim takes no pointer events, and pressing the world
-  dismisses it, so nobody is ever stuck behind it.
-- **Nothing plays until asked.** Browsers refuse to start audio without a
-  gesture and they are right to. The context is created on the visitor's press
-  and never before, the fade-in is about 2.6 seconds, and the starting volume
-  is conservative.
+- **No entry card.** A visitor is not asked whether they want sound; they get
+  it, and the control to turn it off is in the bar from the first frame. The
+  music starts on the first gesture anywhere on the page, which is the earliest
+  moment a browser will allow a context to run, and fades in over about three
+  seconds at a conservative volume. Until it is actually playing, the control
+  says "off" — the control never claims sound that is not happening.
+- **Interface sounds are separate.** Every button, link and slider in the
+  chrome and the reading panels answers with a small, soft tap: a low sine with
+  a fast decay and a small downward bend, thinned so a burst of presses cannot
+  stack into noise. It has its own bus, so it is heard with the music muted and
+  gone when the visitor switches *Interface sounds* off in the sound panel.
 - **One engine, and it survives navigation.** The engine is a module-level
   singleton, so the router swapping the page around it cannot create a second
   one — the same rule the renderer follows.
-- **Controls in the bar, at every destination.** Mute, unmute and a volume
-  slider live in one popover that stays reachable while the CV, an article or a
-  case study is open. Volume and mute are remembered; playback is not assumed.
+- **Controls in the bar, at every destination.** The sound control is its icon
+  alone; mute, unmute, volume and the interface-sound switch live in one
+  popover that stays reachable while the CV, an article or a case study is open.
+  Volume and mute are remembered.
 - **Honest about refusals.** A browser that blocks the context is reported in
   the panel rather than papered over, and a hidden tab pauses the music and
-  resumes it only because the visitor had already asked for it.
+  resumes it only because the visitor had already asked for it — a pause the
+  page performs is not the visitor changing their mind.
 
 ### Architecture
 
