@@ -1519,10 +1519,21 @@ html[data-world-hold='true'] .world[data-world-state='ready'] .world-poster {
   ready. They come back the moment the world is usable — including when the
   visitor chooses to read without the scene, and when the failure screen needs
   them.
+
+  The state is read from the world element itself, which is the one that
+  persists. The document element's copy of it does not survive a client-side
+  navigation — the router brings the incoming page's attributes with it, and a
+  page has no state of its own — so styling the controls from that copy made
+  them disappear for the rest of the session after the first link.
 */
-html[data-mode='world']:not([data-world-ready='true']) .world-chrome-bar,
-html[data-mode='world']:not([data-world-ready='true']) .world-map,
-html[data-mode='world']:not([data-world-ready='true']) .world-identity {
+html[data-mode='world']:has(
+    .world:is(
+        [data-world-state='idle'],
+        [data-world-state='loading'],
+        [data-world-state='recovering']
+      )
+  )
+  :is(.world-chrome-bar, .world-map, .world-identity) {
   display: none;
 }
 

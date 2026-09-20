@@ -1961,6 +1961,13 @@ export function mountShell(root: WorldHost): ShellHandle {
     }
     root.dataset.worldReading = reading ? 'true' : 'false';
     root.dataset.focus = focusPlace;
+    /*
+     * The document element's copy of the world's state is re-asserted here,
+     * after every swap. The router brings the incoming page's attributes with
+     * it and a page has no state of its own, so the copy can otherwise be
+     * wiped by the first client-side navigation and take the controls with it.
+     */
+    mirrorWorldState(root.dataset.worldState ?? 'ready');
 
     document.querySelectorAll<HTMLElement>('[data-surface-panel]').forEach((panel) => {
       if (panel.dataset.surfacePanel === state.surface) panel.removeAttribute('hidden');
