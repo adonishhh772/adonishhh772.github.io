@@ -116,8 +116,6 @@ export const hero = {
       engine: 'Fetching the engine',
       build: 'Raising the island',
     },
-    /** In-scene affordance, shown once, then retired. */
-    hint: 'Drag to look around · scroll to zoom · select a caption to go there',
     posterAlt:
       'Illustration of a miniature AI studio campus on a floating island: a domed observatory at the centre, with a studio, a project workshop, a library, an open-source workbench and a contact station around it.',
   },

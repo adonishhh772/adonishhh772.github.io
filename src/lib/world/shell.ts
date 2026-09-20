@@ -367,7 +367,6 @@ export function mountShell(root: WorldHost): ShellHandle {
   const canvas = root.querySelector<HTMLCanvasElement>('[data-world-canvas]');
   const hotspotLayer = root.querySelector<HTMLElement>('[data-world-hotspots]');
   const status = root.querySelector<HTMLElement>('[data-world-status]');
-  const hint = root.querySelector<HTMLElement>('[data-world-hint]');
   if (!stage || !canvas || !hotspotLayer) {
     return { applyState() {}, dispose() {} };
   }
@@ -451,8 +450,6 @@ export function mountShell(root: WorldHost): ShellHandle {
   let reading = false;
   let focusPlace: DestinationId = 'campus';
   let announced: DestinationId = 'campus';
-  let hintTimer = 0;
-  let hintDone = false;
   let currentHref = typeof location === 'undefined' ? '/' : location.pathname;
   let contextLost = false;
   /** The caption that opened the open document, so focus can go back to it. */
@@ -1847,17 +1844,6 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (href) void navigate(href);
   }
 
-  function dismissHint(): void {
-    if (hintDone || !hint) return;
-    hintDone = true;
-    window.clearTimeout(hintTimer);
-    hint.dataset.leaving = 'true';
-    window.setTimeout(() => {
-      hint.hidden = true;
-      hint.dataset.leaving = 'false';
-    }, 460);
-  }
-
   /* ── Interaction ─────────────────────────────────────────────────── */
 
   const cleanups: (() => void)[] = [];
@@ -1925,7 +1911,6 @@ export function mountShell(root: WorldHost): ShellHandle {
         canvasEl.dataset.dragging = 'true';
         pinchDistance = twoPointerDistance(pointers);
       }
-      dismissHint();
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -2024,7 +2009,6 @@ export function mountShell(root: WorldHost): ShellHandle {
       /* Line and page deltas normalise to roughly one notch. */
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
       rig.zoomBy(THREE.MathUtils.clamp((event.deltaY * unit) / 600, -0.4, 0.4));
-      dismissHint();
     };
 
     const onDoubleClick = (event: MouseEvent) => {
@@ -2646,15 +2630,6 @@ export function mountShell(root: WorldHost): ShellHandle {
     }, 3200);
   }
 
-  if (hint) {
-    hintTimer = window.setTimeout(() => {
-      if (disposed || reading) return;
-      hint.hidden = false;
-      hintTimer = window.setTimeout(dismissHint, 7000);
-    }, 1400);
-  }
-  stageEl.addEventListener('pointerdown', dismissHint, { once: true, passive: true });
-
   resize();
   wireInteraction();
   applyState();
@@ -2668,7 +2643,6 @@ export function mountShell(root: WorldHost): ShellHandle {
       disposed = true;
       running = false;
       window.cancelAnimationFrame(frameHandle);
-      window.clearTimeout(hintTimer);
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       stopThemes();

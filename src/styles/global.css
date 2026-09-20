@@ -249,7 +249,6 @@ html[data-theme-anim='true'] .surface-bar,
 html[data-theme-anim='true'] .card,
 html[data-theme-anim='true'] .world-hotspot,
 html[data-theme-anim='true'] .world-status,
-html[data-theme-anim='true'] .world-hint,
 html[data-theme-anim='true'] .signup-input,
 html[data-theme-anim='true'] .site-footer,
 html[data-theme-anim='true'] .world-identity,
@@ -1525,54 +1524,6 @@ html[data-mode='world']:not([data-world-ready='true']) .world-identity {
   }
 }
 
-.world-hint {
-  position: absolute;
-  z-index: 5;
-  left: 50%;
-  top: 4.6rem;
-  transform: translateX(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  margin: 0;
-  padding: 0.4rem 0.85rem;
-  border-radius: 999px;
-  border: 1px solid var(--accent-line);
-  background: var(--bg-raised);
-  color: var(--text-soft);
-  font-size: 0.82rem;
-  white-space: nowrap;
-  animation: hint-in var(--dur-4) var(--ease-out) both;
-  transition: opacity var(--dur-4) var(--ease-out);
-}
-
-.world-hint[hidden] {
-  display: none;
-}
-
-.world-hint[data-leaving='true'] {
-  opacity: 0;
-}
-
-@keyframes hint-in {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%);
-  }
-}
-
-.world-hint-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-soft);
-}
-
 /* Captions ------------------------------------------------------------- */
 
 .world-hotspots {
@@ -1803,11 +1754,6 @@ html[data-mode='world']:not([data-world-ready='true']) .world-identity {
   .world-hotspot-meta {
     display: none;
   }
-}
-
-/* Reading a document settles the scenery. */
-.world[data-world-reading='true'] .world-hint {
-  display: none;
 }
 
 /* Reading surfaces ----------------------------------------------------- */
@@ -2097,15 +2043,6 @@ html[data-mode='world'] .surface-bar::after {
   /* The identity caption yields to the sheet: the top strip is the world. */
   html[data-mode='world'] body:not([data-surface='none']) .world-identity {
     display: none;
-  }
-
-  .world-hint {
-    top: auto;
-    bottom: 8.5rem;
-    font-size: 0.76rem;
-    max-width: calc(100vw - 2rem);
-    white-space: normal;
-    text-align: center;
   }
 }
 
