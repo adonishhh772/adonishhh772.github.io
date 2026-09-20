@@ -270,6 +270,25 @@ const captionIcons = [
       return document.querySelector('[data-world]');
     }
 
+    /*
+     * The state lives on two elements: `[data-world]`, which the shell works
+     * from, and the document element, which the interface is styled from —
+     * including the loading experience, which owns the screen until the campus
+     * is there. This script is the plain-DOM path, so it keeps both in step by
+     * hand; the shell does the same through `mirrorWorldState`.
+     */
+    function setState(state) {
+      var world = worldRoot();
+      if (world) world.setAttribute('data-world-state', state);
+      var html = document.documentElement;
+      html.dataset.worldState = state;
+      if (state === 'ready' || state === 'degraded' || state === 'error') {
+        html.dataset.worldReady = 'true';
+      } else {
+        delete html.dataset.worldReady;
+      }
+    }
+
     function show(message) {
       var world = worldRoot();
       if (world && world.getAttribute('data-world-state') === 'ready') return;
@@ -282,7 +301,7 @@ const captionIcons = [
         /* storage unavailable — the in-page state still stands */
       }
       if (world && world.getAttribute('data-world-state') === 'degraded') return;
-      if (world) world.setAttribute('data-world-state', 'error');
+      setState('error');
       if (reason && message) reason.textContent = ' ' + message;
       if (alertBox) alertBox.hidden = false;
       if (retry && alertBox && !alertBox.contains(document.activeElement)) {
@@ -355,8 +374,7 @@ const captionIcons = [
     var dismiss = document.querySelector('[data-world-dismiss]');
     if (dismiss) {
       dismiss.addEventListener('click', function () {
-        var world = worldRoot();
-        if (world) world.setAttribute('data-world-state', 'degraded');
+        setState('degraded');
         try {
           window.sessionStorage.setItem('world:no-scene', '1');
         } catch (error) {

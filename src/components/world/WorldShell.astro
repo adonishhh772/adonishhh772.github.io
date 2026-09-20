@@ -6,8 +6,7 @@
  * the scene and the camera — alive across client-side navigation. Only the
  * reading surfaces around it are swapped.
  */
-import StationPoster from '../observatory/StationPoster.astro';
-import { hero, rootUrl } from '../../site.config';
+import { hero, site, rootUrl } from '../../site.config';
 
 const portrait = rootUrl('/images/abd-bastola.jpg');
 ---
@@ -22,8 +21,63 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
   transition:persist="world"
 >
   <div class="world-stage" data-world-stage>
+    {/*
+      The loading experience.
+
+      Not a poster and not an illustration of the finished thing: while the
+      campus is being built the visitor watches the station's own orbital
+      mechanism, turning, over the haze the first frame will open onto. The
+      rule under it moves on real milestones only — the engine arriving, the
+      scene being raised, the campus coming online — so it can never claim
+      work that has not happened, and it is never left sitting at 100% waiting
+      for a scene that failed.
+
+      The element keeps its `world-poster` name because that is the layer the
+      canvas cross-fades with when the world is ready.
+    */}
     <div class="world-poster" data-world-poster>
-      <StationPoster />
+      <div
+        class="world-loader"
+        data-world-loader
+        data-step-engine={hero.stage.steps.engine}
+        data-step-build={hero.stage.steps.build}
+      >
+        <div class="loader-sky" aria-hidden="true"></div>
+
+        <div class="loader-orbit" aria-hidden="true">
+          <span class="loader-ring loader-ring--equator"></span>
+          <span class="loader-ring loader-ring--meridian"></span>
+          <span class="loader-ring loader-ring--outer"></span>
+          <span class="loader-satellite"></span>
+          <span class="loader-core"></span>
+          <span class="loader-sweep"></span>
+        </div>
+
+        <div class="loader-copy">
+          <p class="loader-eyebrow mono">{hero.eyebrow}</p>
+          <p class="loader-name">
+            {site.name}<span class="dot">.</span>
+          </p>
+          <p class="loader-step" data-world-load-step>{hero.stage.steps.engine}</p>
+
+          <div
+            class="loader-rule"
+            data-world-progress
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            aria-label={hero.stage.loadingLabel}
+          >
+            <span class="loader-rule-fill" data-world-progress-fill></span>
+            <span class="loader-rule-sheen" aria-hidden="true"></span>
+          </div>
+
+          <p class="loader-meta mono">
+            <span data-world-progress-value>0</span>% · {hero.stage.loadingLabel}
+          </p>
+        </div>
+      </div>
     </div>
 
     <canvas
@@ -72,6 +126,80 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
    * the plain-DOM bridge the chrome installs, so even a module that fails to
    * download can be reported honestly instead of leaving a blank canvas.
    */
+  import type { ProgressReport } from '../../lib/world/progress';
+
+  const loader = document.querySelector<HTMLElement>('[data-world-loader]');
+  const world = document.querySelector<HTMLElement>('[data-world]');
+  const track = document.querySelector<HTMLElement>('[data-world-progress]');
+  const valueEl = document.querySelector<HTMLElement>('[data-world-progress-value]');
+  const stepEl = document.querySelector<HTMLElement>('[data-world-load-step]');
+  /*
+   * The step labels come from the markup, not from this script: a bundled
+   * script is hoisted out of the page, so it has no frontmatter to read.
+   */
+  const STEP_ENGINE = loader?.dataset.stepEngine ?? '';
+  const STEP_BUILD = loader?.dataset.stepBuild ?? '';
+
+  /*
+   * The rule, and what it is allowed to say.
+   *
+   * `shown` is what the visitor sees; `ceiling` is how far the current phase
+   * may creep towards without having finished. While the engine is on the wire
+   * the honest answer is "not yet", so the bar advances towards 46% and never
+   * reaches it; only the module actually arriving moves it past. The same
+   * applies to the build: the bar can hold a conversation during it, and only
+   * the shell — which is the one thing that knows the scene is up — takes it
+   * to 100.
+   */
+  let shown = 0;
+  let ceiling = 8;
+
+  const paint = () => {
+    const rounded = Math.round(shown);
+    loader?.style.setProperty('--load-progress', (Math.min(shown, 100) / 100).toFixed(4));
+    if (track) track.setAttribute('aria-valuenow', String(rounded));
+    if (valueEl) valueEl.textContent = String(rounded);
+  };
+
+  const report: ProgressReport = (value, label) => {
+    shown = Math.max(shown, value);
+    ceiling = Math.max(ceiling, shown);
+    if (label && stepEl) stepEl.textContent = label;
+    paint();
+  };
+
+  (window as unknown as { __worldProgress?: ProgressReport }).__worldProgress = report;
+
+  const worldState = () => world?.dataset.worldState ?? 'loading';
+
+  /*
+   * The creep. Everything else on this screen is animated on the compositor —
+   * transforms and opacity only — so it keeps turning even while the main
+   * thread is building the island, which is exactly when a main-thread timer
+   * cannot fire.
+   */
+  const creep = window.setInterval(() => {
+    const state = worldState();
+    if (state === 'ready') {
+      report(100);
+      window.clearInterval(creep);
+      return;
+    }
+    if (state === 'error' || state === 'degraded') {
+      loader?.setAttribute('data-stalled', 'true');
+      window.clearInterval(creep);
+      return;
+    }
+    shown += (ceiling - shown) * 0.09;
+    paint();
+  }, 110);
+
+  report(4, STEP_ENGINE);
+  ceiling = 46;
+
+  const nextFrame = () =>
+    new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+
   let shellLoaded = false;
 
   const boot = async () => {
@@ -79,9 +207,19 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
     try {
       const { bootstrapShell } = await import('../../lib/world/shell');
       shellLoaded = true;
+      /*
+       * The engine is here. Saying so is worth a frame of its own: without it
+       * the bar would jump from 46 straight to whatever the finished world
+       * reports, because the build blocks the main thread from the first line
+       * of `bootstrapShell` to the last.
+       */
+      report(46, STEP_BUILD);
+      ceiling = 92;
+      await nextFrame();
       bootstrapShell();
       document.addEventListener('astro:page-load', () => bootstrapShell());
     } catch (error) {
+      loader?.setAttribute('data-stalled', 'true');
       const message = error instanceof Error ? error.message : String(error);
       const alert = window.__worldAlert;
       if (typeof alert === 'function') {
@@ -91,9 +229,9 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
   };
 
   /**
-   * Start once the first paint is done and the browser is idle. The world is
-   * ~600KB of three.js; fetching and parsing it during the first paint pushed
-   * the largest text paint past 2.5s, and the poster already covers the wait.
+   * Start once the first paint is done and the browser is idle: fetching and
+   * parsing ~600KB of three.js during the first paint is what would push the
+   * largest text paint out, and the loading experience covers the wait.
    */
   const schedule = () => {
     const idle = window.requestIdleCallback?.bind(window);
@@ -107,6 +245,7 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
   /* Retry re-enters boot only when the module itself never arrived; once it
      has, the shell owns the rebuild so the canvas is replaced properly. */
   document.addEventListener('world:retry', () => {
+    loader?.removeAttribute('data-stalled');
     if (shellLoaded) return;
     void boot();
   });
@@ -114,4 +253,24 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
 
 <script is:inline>
   window.__worldAlert = window.__worldAlert || function () {};
+
+  /*
+   * The document element carries the world's state as well as the world
+   * element, so the interface can be styled from one attribute: the loading
+   * experience owns the screen until the campus is there, and hands it back
+   * when the visitor is reading without a scene or looking at the failure
+   * screen.
+   *
+   * It reads the world element rather than assuming, because this runs again
+   * on a client-side navigation — where the world element is the persisted
+   * one and already knows what it is. Assuming "loading" there would take the
+   * controls away from a world that was running perfectly well.
+   */
+  (function () {
+    var world = document.querySelector('[data-world]');
+    var state = (world && world.dataset.worldState) || 'loading';
+    var usable = state === 'ready' || state === 'degraded' || state === 'error';
+    if (usable) document.documentElement.dataset.worldReady = 'true';
+    document.documentElement.dataset.worldState = state;
+  })();
 </script>

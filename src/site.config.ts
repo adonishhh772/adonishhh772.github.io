@@ -107,6 +107,15 @@ export const hero = {
     loadingLabel: 'Building the campus',
     readyLabel: 'Campus online',
     errorLabel: 'The interactive campus is unavailable here',
+    /**
+     * The line under the wordmark while the campus is being built. Each one is
+     * a real milestone — the engine arriving, then the scene being raised —
+     * never a timer counting up to a number nothing has done yet.
+     */
+    steps: {
+      engine: 'Fetching the engine',
+      build: 'Raising the island',
+    },
     /** In-scene affordance, shown once, then retired. */
     hint: 'Drag to look around · scroll to zoom · select a caption to go there',
     posterAlt:

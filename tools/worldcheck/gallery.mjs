@@ -58,11 +58,22 @@ try {
   await page.navigate(`${BASE}/`);
   await ready();
 
-  /* A first visit: the poster and the status pill while the world builds. */
-  await page.evaluate(`document.querySelector('[data-world]').dataset.worldState = 'loading'`);
+  /* A first visit: the loading experience while the world builds. The state
+     lives on both the world element and the document element, so a synthetic
+     one has to set both — otherwise the screenshot shows the controls the
+     loading screen is supposed to be hiding. */
+  await page.evaluate(`(() => {
+    document.querySelector('[data-world]').dataset.worldState = 'loading';
+    document.documentElement.dataset.worldState = 'loading';
+    delete document.documentElement.dataset.worldReady;
+  })()`);
   await sleep(400);
   await page.screenshot(join(OUT, '20-loading.png'));
-  await page.evaluate(`document.querySelector('[data-world]').dataset.worldState = 'ready'`);
+  await page.evaluate(`(() => {
+    document.querySelector('[data-world]').dataset.worldState = 'ready';
+    document.documentElement.dataset.worldState = 'ready';
+    document.documentElement.dataset.worldReady = 'true';
+  })()`);
   await sleep(600);
 
   /* Night overview, then daylight. */

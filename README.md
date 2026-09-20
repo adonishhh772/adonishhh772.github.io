@@ -260,8 +260,8 @@ cannot start, it says so.
   the world never downloads the 3D bundle.
 - **A failure is reported honestly.** A browser with no WebGL, a renderer that
   throws, a module that fails to download and a watchdog for a startup that
-  never finishes all raise the same branded screen over the poster: what
-  happened, **Try again**, **Reload the page**, and an explicit **Read the
+  never finishes all raise the same branded screen over the loading backdrop:
+  what happened, **Try again**, **Reload the page**, and an explicit **Read the
   documents without the 3D scene**.
 - **Reading without the scene is the visitor's choice, never a silent swap.**
   Choosing it keeps the same URLs, the same shell and the same semantic
@@ -478,7 +478,7 @@ static files; the custom 404 still covers genuinely unknown paths.
 
 No textures, models, audio or paid assets are downloaded at runtime. All
 geometry, the sky gradient, the mist falloff, the environment probe and the
-poster illustration are generated locally.
+loading screen are generated locally.
 
 **The music is generated too.** There is no track. `src/lib/world/audio.ts`
 synthesises the score in the browser with the Web Audio API — slow pad chords,

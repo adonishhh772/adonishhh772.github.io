@@ -45,6 +45,7 @@ import {
   type WorldState,
 } from '../world/state';
 import { allowScene, restoreDocumentState, sceneDeclined } from '../world/document-state';
+import { mirrorWorldState, reportProgress } from '../world/progress';
 import {
   currentTheme,
   hideWorldAlert,
@@ -98,6 +99,18 @@ const CELESTIAL_TAP_RADIUS = 34;
  * readable when six names are competing for the same corner of the island.
  */
 const CAPTION_GAP = 10;
+
+/**
+ * How long a caption has to want to leave the screen before it may.
+ *
+ * The occlusion ray is cast from a camera that is itself moving, and the frame
+ * a caption is measured in changes every few frames, so a caption beside
+ * something — the observatory, a caption it nearly touched — flips its answer
+ * constantly. A decision that flips is not information, it is flicker, so
+ * leaving is something a caption has to mean for a moment. Appearing is
+ * immediate: a caption arriving is never the thing that looked broken.
+ */
+const CAPTION_HIDE_DELAY = 260;
 
 /** The caption key for the in-world sun/moon control. */
 const CELESTIAL_KEY = 'celestial:sun';
@@ -479,6 +492,19 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   const hotspots = new Map<string, HTMLElement>();
   const occluded = new Map<string, boolean>();
+  /**
+   * The last decision made about each caption.
+   *
+   * Captions are re-placed every frame against a camera that never sits still,
+   * and without a memory of what was decided a moment ago they hop between
+   * positions and blink in and out as the island turns — which is exactly the
+   * visual noise that makes a scene feel broken rather than alive. These are
+   * that memory: where each caption was put, whether it was on screen, and
+   * since when it has been asking to leave.
+   */
+  const lastSpot = new Map<string, { dy: number; compact: boolean }>();
+  const wasVisible = new Map<string, boolean>();
+  const hideWanted = new Map<string, number>();
   const raycaster = new THREE.Raycaster();
   const occluders: THREE.Object3D[] = [];
   let occlusionClock = 0;
@@ -813,6 +839,9 @@ export function mountShell(root: WorldHost): ShellHandle {
     rig.resetOrbit();
     rebuildHotspots();
     compose(immediate);
+    /* The camera may have moved in the same frame: ask the new view what it
+       hides before the captions are placed in it. */
+    castOcclusion();
     syncChromeLocation();
   }
 
@@ -829,6 +858,15 @@ export function mountShell(root: WorldHost): ShellHandle {
 
     hotspotEl.replaceChildren();
     hotspots.clear();
+    /*
+     * A new set of captions, and nothing is known about any of them yet. This
+     * is what makes a travel calm: the captions of the place being arrived at
+     * are new, so they are not placed until the camera is still, and then they
+     * fade in once instead of strobing through the flight.
+     */
+    lastSpot.clear();
+    wasVisible.clear();
+    hideWanted.clear();
 
     const place = world.places.get(focusPlace);
     const atPlace = focusPlace !== 'campus' && Boolean(place);
@@ -1045,7 +1083,20 @@ export function mountShell(root: WorldHost): ShellHandle {
   function updateOcclusion(delta: number): void {
     occlusionClock -= delta;
     if (occlusionClock > 0) return;
-    occlusionClock = 0.15;
+    castOcclusion();
+  }
+
+  /**
+   * Cast the occlusion ray for every caption.
+   *
+   * This is the expensive half of the pass, so it runs on the slow clock while
+   * the camera is drifting — but it is also run on demand whenever the camera
+   * has just been *put* somewhere. An immediate cut to a destination otherwise
+   * places its captions against the occlusion of the view we just left, so
+   * they appear for a moment and then vanish when the truth catches up: a
+   * flicker on exactly the navigation the visitor asked for.
+   */
+  function castOcclusion(): void {
     /* The reading rule is refreshed on the same slow clock as the occlusion
        pass, so a frame never costs an extra layout read. */
     if (reading) {
@@ -1076,11 +1127,13 @@ export function mountShell(root: WorldHost): ShellHandle {
       const hits = raycaster.intersectObjects(occluders, false);
       occluded.set(key, hits.length > 0);
     }
+    occlusionClock = 0.15;
   }
 
   function projectHotspots(): void {
     const width = stageEl.clientWidth;
     const height = stageEl.clientHeight;
+    const now = performance.now();
     const focused = document.activeElement as HTMLElement | null;
     const projected = new THREE.Vector3();
     const placed: { x: number; y: number; w: number; h: number }[] = [];
@@ -1142,9 +1195,6 @@ export function mountShell(root: WorldHost): ShellHandle {
       const offscreen = projected.z > 1 || x < -40 || x > width + 40 || y < -20 || y > height + 20;
       const isFocused = focused === link;
       const isOccluded = occluded.get(key) === true && !isFocused;
-      /* Read by the caption itself: a destination the island is standing in
-         front of stays up and steps back, rather than vanishing. */
-      link.dataset.behind = occluded.get(key) === true ? 'true' : 'false';
       /* Skip captions the open document is sitting on top of. */
       const underPanel =
         panelRect !== null &&
@@ -1236,8 +1286,14 @@ export function mountShell(root: WorldHost): ShellHandle {
       solid: typeof placed,
       marked: typeof placed,
       avoid: typeof placed,
+      preferred = 0,
     ): { x: number; y: number; w: number; h: number } | null => {
-      for (const dy of [0, -18, 18, -36, 36, -56, 56, -78, 78]) {
+      /*
+       * The position this caption held last frame is tried first, so a caption
+       * that still fits where it was stays where it was: the search is a way
+       * out of a collision, not a reason to move every frame.
+       */
+      for (const dy of [preferred, 0, -18, 18, -36, 36, -56, 56, -78, 78]) {
         const moved = { ...box, y: box.y + dy };
         if (
           !overlapsAny(moved, solid) &&
@@ -1266,14 +1322,47 @@ export function mountShell(root: WorldHost): ShellHandle {
       /* The sun and the light switch are icon-only: they are placed like
          captions but they are not words, so they do not spend the budget. */
       const named = candidate.key !== CELESTIAL_KEY && candidate.key !== LIGHT_SWITCH_KEY;
-      link.dataset.compact = 'false';
+      const before = lastSpot.get(candidate.key);
+      const visibleBefore = wasVisible.get(candidate.key) === true;
 
-      if (candidate.occluded && !isFocused && !isRevealed && !guaranteed) {
+      /*
+       * Nothing is decided while the camera is flying between shots.
+       *
+       * A travel changes the ray, the frame and the reading panel every few
+       * frames, so every caption in turn finds itself occluded, clashing or
+       * past the budget — which is what made selecting a destination flicker.
+       * In flight the screen therefore keeps the captions it already had, and
+       * the place being arrived at brings its own when the camera is still,
+       * where they fade in once instead of strobing all the way there.
+       */
+      const flying = rig.travelling;
+      const wantsOut =
+        !isFocused && !isRevealed && !guaranteed && (flying ? !visibleBefore : candidate.occluded);
+      let leaving = false;
+      if (wantsOut) {
+        const since = hideWanted.get(candidate.key);
+        if (since === undefined) hideWanted.set(candidate.key, now);
+        else leaving = now - since >= CAPTION_HIDE_DELAY;
+      } else {
+        hideWanted.delete(candidate.key);
+      }
+
+      if (leaving) {
+        link.dataset.compact = 'false';
         link.dataset.visible = 'false';
         link.setAttribute('aria-hidden', 'true');
         link.tabIndex = -1;
+        wasVisible.set(candidate.key, false);
+        lastSpot.delete(candidate.key);
         continue;
       }
+
+      /*
+       * A caption that is part of the menu, or that was on screen a frame ago,
+       * is placed whatever the rules below think of it. It is moved out of the
+       * way, or held where it is, before it is ever lost.
+       */
+      const mustPlace = guaranteed || (visibleBefore && !isFocused && !isRevealed);
 
       /*
        * Captions are placed in two weights.
@@ -1293,30 +1382,47 @@ export function mountShell(root: WorldHost): ShellHandle {
        */
       const compactAll = rig.zoomLevel > 1.24;
       let compact = false;
+      /* How far the chosen position sits from the caption's own anchor, so the
+         next frame can offer it the same place first. */
+      let spotDy = 0;
       let box = isFocused || isRevealed ? boxFor(link) : null;
 
       if (!isFocused && !isRevealed) {
         const full = compactAll ? null : boxFor(link);
         /* A menu caption answers to the bar as well as to the card. */
         const solid = guaranteed ? menuBlocked : blocked;
+        /*
+         * Growing back from a marker is the one decision worth asking for more
+         * room than it needs: a pill that only just fits this frame will not
+         * fit the next, and the caption would flicker between the two weights
+         * at exactly the moment the island is turning.
+         */
+        const probe =
+          full && before?.compact
+            ? { x: full.x - 4, y: full.y - 4, w: full.w + 8, h: full.h + 8 }
+            : full;
         const fitsFull =
-          full !== null &&
-          !overlapsAny(full, placed) &&
-          !overlapsAny(full, markers) &&
-          !overlapsAny(full, sunCore) &&
-          !overlapsAny(full, solid) &&
-          (guaranteed || placedLabels < labelLimit);
+          probe !== null &&
+          !overlapsAny(probe, placed) &&
+          !overlapsAny(probe, markers) &&
+          !overlapsAny(probe, sunCore) &&
+          !overlapsAny(probe, solid) &&
+          (mustPlace || placedLabels < labelLimit);
         if (fitsFull) {
           box = full;
-        } else if (guaranteed) {
+        } else if (mustPlace) {
           /* The name if it can be moved clear, its marker if it cannot. */
-          const moved = full ? clearSpot(full, placed, markers, solid) : null;
-          if (moved) {
+          const kept = before?.dy ?? 0;
+          const moved = full ? clearSpot(full, placed, markers, solid, kept) : null;
+          if (moved && full) {
             box = moved;
+            spotDy = moved.y - full.y;
           } else {
             compact = true;
             const marker = boxFor(link);
-            box = marker ? clearSpot(marker, placed, [], solid) ?? marker : null;
+            const keptMarker = marker ? clearSpot(marker, placed, [], solid, kept) ?? marker : null;
+            box = keptMarker;
+            spotDy = marker && keptMarker ? keptMarker.y - marker.y : 0;
           }
         } else if (placed.length + markers.length < labelLimit + 4) {
           compact = true;
@@ -1340,8 +1446,14 @@ export function mountShell(root: WorldHost): ShellHandle {
         link.dataset.visible = 'false';
         link.setAttribute('aria-hidden', 'false');
         link.tabIndex = 0;
+        wasVisible.set(candidate.key, false);
+        lastSpot.delete(candidate.key);
         continue;
       }
+
+      /* Remembered, so the next frame can prefer the answer given here. */
+      lastSpot.set(candidate.key, { dy: spotDy, compact });
+      wasVisible.set(candidate.key, true);
 
       placed.push(box);
       if (compact) markers.push(box);
@@ -1672,6 +1784,9 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (reading) measurePanel();
     syncChromeLocation();
     syncCloseControl();
+    /* Same as a travel: an immediate cut needs the new view's occlusion before
+       its captions are placed, or they appear and then vanish. */
+    castOcclusion();
     projectHotspots();
 
     /*
@@ -2279,7 +2394,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     contextLost = true;
     running = false;
     window.cancelAnimationFrame(frameHandle);
-    root.dataset.worldState = 'error';
+    setWorldState(root, 'error');
     failStartup(
       'The graphics context was lost — this usually happens when the device reclaims GPU memory. It will recover on its own if the browser restores it, or you can try again.',
     );
@@ -2287,7 +2402,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   const onContextRestored = () => {
     if (disposed) return;
     contextLost = false;
-    root.dataset.worldState = 'ready';
+    setWorldState(root, 'ready');
     hideWorldAlert();
     /* Give the restored context a moment before the first frame. */
     window.setTimeout(() => {
@@ -2512,7 +2627,13 @@ export function mountShell(root: WorldHost): ShellHandle {
     };
   };
 
-  root.dataset.worldState = 'ready';
+  setWorldState(root, 'ready');
+  /*
+   * The one thing that can honestly take the rule to 100%: the scene is built,
+   * the first frame is about to be drawn and the canvas is about to cross-fade
+   * in. Everything before this was a milestone on the way here.
+   */
+  reportProgress(100);
   const stats = world.stats();
   root.dataset.triangles = String(stats.triangles);
   root.dataset.drawCalls = String(stats.drawCalls);
@@ -2604,6 +2725,16 @@ function rebuild(): void {
 let retryBound = false;
 
 /**
+ * Set the world's state in the two places that need it: the element that owns
+ * it, and the document — so the interface around the world, including the
+ * loading experience, can be styled from one attribute.
+ */
+function setWorldState(root: HTMLElement, state: string): void {
+  root.dataset.worldState = state;
+  mirrorWorldState(state);
+}
+
+/**
  * Boot the shell once per page load. With the ClientRouter the world element
  * is persisted across navigations, so this must never build a second
  * renderer: it reuses the existing mount and simply re-applies state.
@@ -2632,7 +2763,7 @@ export function bootstrapShell(): void {
 
   /* The visitor answered the failure screen already: keep their choice. */
   if (sceneDeclined() && root.dataset.worldState !== 'ready') {
-    root.dataset.worldState = 'degraded';
+    setWorldState(root, 'degraded');
     hideWorldAlert();
     return;
   }
@@ -2648,20 +2779,20 @@ export function bootstrapShell(): void {
   }
 
   if (!webglAvailable()) {
-    root.dataset.worldState = 'error';
+    setWorldState(root, 'error');
     failStartup(
       'This browser cannot create a WebGL context, which the interactive world needs.',
     );
     return;
   }
 
-  root.dataset.worldState = 'loading';
+  setWorldState(root, 'loading');
   try {
     const handle = mountShell(root);
     root[MOUNT_KEY] = { handle, lost: false };
     hideWorldAlert();
   } catch (error) {
-    root.dataset.worldState = 'error';
+    setWorldState(root, 'error');
     const message = error instanceof Error ? error.message : String(error);
     failStartup(`The renderer could not start (${message}).`);
   }
