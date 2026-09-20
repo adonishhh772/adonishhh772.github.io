@@ -211,12 +211,15 @@ const main = async () => {
      * seconds apart prove the motion is real rather than asserted.
      */
     const beforeTurn = await page.evaluate(`window.__worldDebug().camera.turn`);
+    const beforeFrames = await page.evaluate(`window.__worldDebug().progress.frames`);
     await sleep(6000);
     const afterTurn = await page.evaluate(`window.__worldDebug().camera.turn`);
+    const afterFrames = await page.evaluate(`window.__worldDebug().progress.frames`);
     report.turning = {
       before: beforeTurn,
       after: afterTurn,
       moved: Number((afterTurn - beforeTurn).toFixed(4)),
+      frames: afterFrames - beforeFrames,
       turning: afterTurn - beforeTurn > 0.01,
     };
 

@@ -139,8 +139,10 @@ then the system preference is honoured.
   **light switch standing on the observatory terrace** — a post with a lever and
   a glazed lamp, which a visitor can simply press — and by the sun and the moon,
   which are their own controls. The sun's rays, the moon's craters and the
-  switch's own lever all follow it. There is no day/night button in the bar:
-  the light is something you do to the place, not a setting in a toolbar.
+  switch's own lever all follow it. There is no light control in the world's
+  bar: the light is something you do to the place, not a setting in a toolbar.
+  (The hidden fallback header still carries one, for the no-JavaScript and
+  failed-renderer presentations, where the world's own chrome is never drawn.)
 - **The sky changes, not a filter.** Sky gradient, fog colour and density,
   hemisphere and key lights, the rim light, practical lamps, window and lamp
   emissives, the environment probe, exposure and the shadow tuning all take
