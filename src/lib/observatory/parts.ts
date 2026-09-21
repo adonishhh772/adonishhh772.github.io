@@ -7,6 +7,7 @@
  */
 
 import * as THREE from 'three';
+import { PLATEAU_RADIUS, heightAt, isOnPlateau, radialNormal, ridged } from './terrain';
 
 /** Shorthand for the world's up axis, used all over the path builders. */
 const UP = new THREE.Vector3(0, 1, 0);
@@ -189,17 +190,25 @@ export function islandEnvelopeAt(y: number): number {
 /**
  * The island as one closed, solid body.
  *
- * Built from a single `LatheGeometry` traced round `ISLAND_PROFILE`, so the
- * top, the cliff, the underside and both caps are the same watertight surface.
- * Vertices are then displaced by a per-sector radial bite — flat facets rather
- * than a smooth bulge — and shaded by height and steepness into four bands.
+ * Built from a single outline traced round the axis, so the top, the cliff, the
+ * underside and both caps are the same watertight surface. Three things then
+ * happen to it, in order:
+ *
+ *  1. **The outline is densified.** The profile in `ISLAND_PROFILE` has the
+ *     points a *shape* needs, not the points a *surface* needs: a lathe only
+ *     has vertices where its outline does, so the plateau above the lip would
+ *     otherwise be a dozen flat rings and no amount of vertex colour can hide
+ *     it. The plateau is resampled to roughly a third of a unit.
+ *  2. **The ground is displaced by the terrain height field.** This is the same
+ *     function the stones, the trees and the grass are placed with, so the
+ *     island is not a backdrop the props sit on — it is the surface they are
+ *     standing on, and the two cannot disagree.
+ *  3. **Normals are averaged on the indexed mesh**, before it is flattened for
+ *     the band colours, so the plateau shades as ground rather than as a mosaic
+ *     of its own triangles.
+ *
  * The band colours are recomputed from the live theme, so the same geometry
  * carries the day and the night palette without a second build.
- *
- * `computeVertexNormals` runs after the displacement, on the closed mesh, so
- * every normal is a genuine average of the faces around its vertex. The
- * earlier build re-computed normals on a lathe that had no caps, which is how
- * a surface ends up lit from behind.
  */
 export function islandGeometry(
   options: {
@@ -208,11 +217,14 @@ export function islandGeometry(
     strength?: number;
     /** Radial segments around the axis. */
     segments?: number;
+    /** Whether to displace the plateau with the terrain height field. */
+    detailed?: boolean;
   } = {},
 ): THREE.BufferGeometry {
-  const { seed = 11, sectors = 11, strength = 0.03, segments = 128 } = options;
+  const { seed = 11, sectors = 11, strength = 0.03, segments = 192, detailed = true } = options;
+  const outline = densifyProfile(ISLAND_PROFILE, 2.2, 0.34);
   const geometry = new THREE.LatheGeometry(
-    ISLAND_PROFILE.map(([x, y]) => new THREE.Vector2(Math.max(x, 0.0001), y)),
+    outline.map(([x, y]) => new THREE.Vector2(Math.max(x, 0.0001), y)),
     segments,
   );
 
@@ -229,13 +241,28 @@ export function islandGeometry(
   for (let i = 0; i < position.count; i++) {
     vector.fromBufferAttribute(position, i);
     const radius = Math.hypot(vector.x, vector.z);
-    if (radius < 0.05) continue;
+    if (radius < 0.05) {
+      /* The axis: a single point per cap, already on the centre line. */
+      continue;
+    }
     scratchNormal.fromBufferAttribute(normals, i);
+
     /*
-     * Only the outward-facing shell is bitten. The caps are horizontal, so a
-     * vertical normal means "cap" and a sideways one means "wall"; using the
-     * normal instead of a raw height test keeps the flat plateau perfectly
-     * flat while still cutting the cliff.
+     * The ground. Only the upward-facing plateau is displaced, and only inside
+     * the shelf: the cliff is a wall and has to keep its sharp lip, or the
+     * island loses its silhouette.
+     */
+    if (detailed && scratchNormal.y > 0.35 && radius < PLATEAU_RADIUS) {
+      vector.y = heightAt(vector.x, vector.z);
+      position.setXYZ(i, vector.x, vector.y, vector.z);
+      continue;
+    }
+
+    /*
+     * The cliff. Only the outward-facing shell is bitten. The caps are
+     * horizontal, so a vertical normal means "cap" and a sideways one means
+     * "wall"; using the normal instead of a raw height test keeps the flat
+     * plateau perfectly flat while still cutting the cliff.
      */
     const wall = 1 - Math.min(1, Math.abs(scratchNormal.y));
     if (wall < 0.06) continue;
@@ -246,7 +273,14 @@ export function islandGeometry(
     );
     /* Deeper cuts bite a little harder, so the base is not a turned bowl. */
     const depth = Math.min(1, Math.max(0, (1.1 - vector.y) / 9));
-    const scale = 1 + offsets[sector] * strength * wall * (0.45 + depth * 0.9);
+    /*
+     * A second, high-frequency term on top of the per-sector facets. Split
+     * stone has a broken face, not a faceted one, and the difference between
+     * the two at a distance is entirely this term.
+     */
+    const fracture =
+      1 + ridged(vector.x * 0.34 + 5.1, vector.z * 0.34 - 2.7, 3) * 0.09 * wall - 0.05;
+    const scale = (1 + offsets[sector] * strength * wall * (0.45 + depth * 0.9)) * fracture;
     vector.x *= scale;
     vector.z *= scale;
     /* Sink the very bottom, so the keel is a point rather than a disc. */
@@ -254,6 +288,7 @@ export function islandGeometry(
     position.setXYZ(i, vector.x, vector.y, vector.z);
   }
   position.needsUpdate = true;
+  applyIslandUv(geometry);
 
   /*
    * Normals are averaged on the indexed mesh — where the lathe's seam vertices
@@ -263,10 +298,121 @@ export function islandGeometry(
    * would shade as a mosaic.
    */
   geometry.computeVertexNormals();
+  if (detailed) applyGroundNormals(geometry);
   const flat = geometry.toNonIndexed();
   geometry.dispose();
   flat.computeBoundingSphere();
   return flat;
+}
+
+/**
+ * Replace the plateau's normals with the height field's own.
+ *
+ * `computeVertexNormals` answers a different question from the one the ground
+ * needs. It averages the normals of the triangles that meet at a vertex, which
+ * on a lathe means the answer depends on how the mesh happens to be divided —
+ * producing the faint concentric banding that gives a radial mesh away, and
+ * making the shading disagree with the height field the props are placed on.
+ *
+ * The height field's own gradient is continuous and has no preferred direction,
+ * so the ground shades as a *surface* rather than as a mesh. Two blends keep it
+ * honest: the analytic normal is used in proportion to how level the ground is
+ * (a cliff face has no meaningful gradient normal), and it is mixed toward the
+ * geometry's own normal near the lip, so the silhouette and the shading meet
+ * without a seam.
+ */
+function applyGroundNormals(geometry: THREE.BufferGeometry): void {
+  const position = geometry.attributes.position as THREE.BufferAttribute;
+  const normal = geometry.attributes.normal as THREE.BufferAttribute;
+  const outward = new THREE.Vector3();
+  const analytic = new THREE.Vector3();
+  const existing = new THREE.Vector3();
+
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    const radius = Math.hypot(x, z);
+    if (radius >= PLATEAU_RADIUS - 1.2 || radius < 0.05) continue;
+
+    outward.set(x / radius, 0, z / radius);
+    radialNormal(radius, Math.atan2(z, x), outward, analytic);
+    existing.fromBufferAttribute(normal, i);
+
+    /* The height field is what the ground *is*, so it wins where the ground is
+       level enough for the question to mean anything. */
+    const flatness = THREE.MathUtils.clamp((analytic.y - 0.45) / 0.5, 0, 1);
+    if (flatness <= 0) continue;
+
+    existing.lerp(analytic, flatness).normalize();
+    normal.setXYZ(i, existing.x, existing.y, existing.z);
+    void y;
+  }
+  normal.needsUpdate = true;
+}
+
+/**
+ * Resample an outline so no segment is longer than `maxStep` and no two points
+ * are closer than `minStep`.
+ *
+ * The two bounds do different jobs: `maxStep` adds the density the surface
+ * needs, and `minStep` avoids piling up dozens of degenerate rings where the
+ * profile's own points already crowd together — at the lip, where the shape
+ * turns through ninety degrees in under a unit, and at the keel's tip.
+ */
+export function densifyProfile(
+  profile: [number, number][],
+  maxStep: number,
+  minStep: number,
+): [number, number][] {
+  const out: [number, number][] = [profile[0]];
+  for (let i = 0; i < profile.length - 1; i++) {
+    const [r0, y0] = profile[i];
+    const [r1, y1] = profile[i + 1];
+    const length = Math.hypot(r1 - r0, y1 - y0);
+    const divisions = Math.max(1, Math.ceil(length / maxStep));
+    for (let step = 1; step <= divisions; step++) {
+      const t = step / divisions;
+      const r = r0 + (r1 - r0) * t;
+      const y = y0 + (y1 - y0) * t;
+      const previous = out[out.length - 1];
+      if (step < divisions && Math.hypot(r - previous[0], y - previous[1]) < minStep) continue;
+      out.push([r, y]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Write texture coordinates onto the island.
+ *
+ * Two regimes, because the island's surface has two characters and a single
+ * projection cannot serve both. The plateau is projected from above, in world
+ * units, so a ground texture tiles at a fixed physical scale across the whole
+ * shelf whatever the mesh's own topology is. The cliff and the keel are mapped
+ * by (angle, height), which is the lathe's own parameterisation: around the
+ * face and up it, with no stretching at the lip where the two regimes meet —
+ * which is why the seam is invisible, and why it is invisible *by
+ * construction* rather than by tuning.
+ */
+function applyIslandUv(geometry: THREE.BufferGeometry, groundTile = 7, faceTile = 6): void {
+  const position = geometry.attributes.position as THREE.BufferAttribute;
+  const count = position.count;
+  const uv = new Float32Array(count * 2);
+  for (let i = 0; i < count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    const radius = Math.hypot(x, z);
+    if (isOnPlateau(x, z)) {
+      uv[i * 2] = x / groundTile;
+      uv[i * 2 + 1] = z / groundTile;
+    } else {
+      uv[i * 2] = (Math.atan2(z, x) / (Math.PI * 2)) * ((radius * 2 * Math.PI) / faceTile);
+      uv[i * 2 + 1] = y / faceTile;
+    }
+  }
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
 }
 
 /**
@@ -434,6 +580,7 @@ function mergePositions(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   return merged;
 }
+
 
 /**
  * Bake the cloud's own shading into a vertex colour attribute: bright on the
@@ -847,91 +994,455 @@ export function ridgeGeometry(seed: number, humps = 5): THREE.BufferGeometry {
   return merged;
 }
 
-/* ── Vegetation ──────────────────────────────────────────────────────── */
+/* ── UV mapping ──────────────────────────────────────────────────────── */
 
-export interface ConiferGeometry {
-  trunk: THREE.CylinderGeometry;
-  /** Stacked canopy tiers. Each is rotated differently so the silhouette
-      never reads as one cone sitting on another. */
-  tiers: THREE.ConeGeometry[];
+/**
+ * Wrap texture coordinates round an object about the vertical axis.
+ *
+ * Cylindrical mapping, expressed in *world units* rather than in the geometry's
+ * own normalised space: a trunk two units around and four tall receives UVs
+ * from 0 to 2 across and 0 to 4 up, so a bark texture tiles at the same
+ * physical size on a sapling and on a mature tree. Normalised UVs would stretch
+ * the bark on whichever trunk happened to be a different size, which is the
+ * commonest way procedural trees give themselves away.
+ */
+function wrapCylindrical<T extends THREE.BufferGeometry>(
+  geometry: T,
+  uScale: number,
+  vScale: number,
+): T {
+  const position = geometry.attributes.position as THREE.BufferAttribute;
+  const count = position.count;
+  const uv = new Float32Array(count * 2);
+  for (let i = 0; i < count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    uv[i * 2] = (Math.atan2(z, x) / (Math.PI * 2) + 0.5) * uScale;
+    uv[i * 2 + 1] = y * vScale;
+  }
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return geometry;
+}
+
+/** Spherical mapping, for a rounded canopy. */
+function wrapSpherical<T extends THREE.BufferGeometry>(
+  geometry: T,
+  uScale: number,
+  vScale: number,
+): T {
+  const position = geometry.attributes.position as THREE.BufferAttribute;
+  const count = position.count;
+  const uv = new Float32Array(count * 2);
+  for (let i = 0; i < count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    const radius = Math.hypot(x, y, z) || 1;
+    uv[i * 2] = (Math.atan2(z, x) / (Math.PI * 2) + 0.5) * uScale;
+    uv[i * 2 + 1] = (Math.asin(Math.max(-1, Math.min(1, y / radius))) / Math.PI + 0.5) * vScale;
+  }
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return geometry;
 }
 
 /**
- * A conifer with four staggered tiers instead of two.
+ * Displace a closed shell by noise, keeping shared corners together.
  *
- * The old two-cone tree read as a plain triangle from the island's camera
- * distance. Tiers at decreasing radius, each turned on its own axis, give the
- * stepped silhouette a fir actually has, and the taper is wider at the base
- * so the trees anchor to the ground instead of hovering over it.
+ * The displacement is keyed on the *position* rather than the vertex index, so
+ * faces that meet at a corner move with it and the shell stays closed. Keying it
+ * on the index — which is the obvious way, and the way this first went — splits
+ * every shared edge into two, and the result is a rock with visible cracks
+ * through it wherever the noise disagreed with itself.
  */
-export function coniferGeometry(): ConiferGeometry {
-  const specs: { radius: number; height: number; y: number; yaw: number; squash: number }[] = [
-    { radius: 0.66, height: 1.05, y: 0.8, yaw: 0, squash: 0.94 },
-    { radius: 0.56, height: 0.98, y: 1.28, yaw: Math.PI / 5, squash: 0.9 },
-    { radius: 0.45, height: 0.94, y: 1.76, yaw: (Math.PI * 2) / 5, squash: 0.86 },
-    { radius: 0.32, height: 0.9, y: 2.24, yaw: (Math.PI * 3) / 5, squash: 0.82 },
-    { radius: 0.17, height: 0.84, y: 2.7, yaw: (Math.PI * 4) / 5, squash: 0.78 },
-  ];
-  const tiers = specs.map((spec) => {
-    /* Nine radial segments with a slight squash: faceted enough to catch the
-       key light, round enough not to look cut out. Each tier is a little
-       tighter than the one below, which is what gives a fir its taper. */
-    const cone = new THREE.ConeGeometry(spec.radius, spec.height, 9, 1, false);
-    cone.scale(1, 1, spec.squash);
-    cone.rotateY(spec.yaw);
-    cone.translate(0, spec.y, 0);
-    return cone;
-  });
-  const trunk = new THREE.CylinderGeometry(0.06, 0.12, 0.9, 6);
-  trunk.translate(0, 0.42, 0);
-  return { trunk, tiers };
-}
-
-export interface BroadleafGeometry {
-  trunk: THREE.CylinderGeometry;
-  canopy: THREE.IcosahedronGeometry;
-}
-
-/**
- * A second species. A treeline of identical conifers reads as a texture
- * rather than as planting; a rounded crown beside them makes it a wood.
- */
-export function broadleafGeometry(): BroadleafGeometry {
-  const trunk = new THREE.CylinderGeometry(0.07, 0.12, 1.3, 6);
-  trunk.translate(0, 0.62, 0);
-  const canopy = new THREE.IcosahedronGeometry(0.78, 1);
-  canopy.scale(1.08, 0.94, 1.02);
-  canopy.translate(0, 1.72, 0);
-  return { trunk, canopy };
-}
-
-/*
- * A boulder.
- *
- * Displacement is keyed on the vertex position rather than the vertex index,
- * so faces that share a corner move together and the shell stays closed. The
- * amplitude is small and the proportions stay close to cubic: a rock that has
- * been worn, not a shard — which is what the earlier high-amplitude version
- * produced once it was squashed and laid on the ground.
- */
-export function boulderGeometry(seed: number, squash = 0.72): THREE.BufferGeometry {
-  const geometry = new THREE.IcosahedronGeometry(1, 1);
+function roughen(
+  geometry: THREE.BufferGeometry,
+  frequency: number,
+  amplitude: number,
+  seed: number,
+): THREE.BufferGeometry {
   const position = geometry.attributes.position as THREE.BufferAttribute;
   const vector = new THREE.Vector3();
   for (let i = 0; i < position.count; i++) {
     vector.set(position.getX(i), position.getY(i), position.getZ(i));
-    /* A cheap deterministic hash of the rounded corner. */
-    const key = `${vector.x.toFixed(3)}:${vector.y.toFixed(3)}:${vector.z.toFixed(3)}`;
-    let hash = seed >>> 0;
-    for (let c = 0; c < key.length; c++) {
-      hash = (Math.imul(hash ^ key.charCodeAt(c), 16777619) >>> 0) % 100003;
-    }
-    const scale = 0.84 + ((hash % 1000) / 1000) * 0.28;
-    const lift = 1 + (vector.y > 0 ? 0.05 : 0);
-    position.setXYZ(i, vector.x * scale, vector.y * scale * squash * lift, vector.z * scale);
+    const radius = vector.length() || 1;
+    vector.divideScalar(radius);
+    const noise = ridged(
+      vector.x * frequency + seed * 0.37,
+      vector.z * frequency - seed * 0.21,
+      3,
+    );
+    const scale = 1 + (noise - 0.5) * amplitude;
+    position.setXYZ(
+      i,
+      position.getX(i) * scale,
+      position.getY(i) * scale,
+      position.getZ(i) * scale,
+    );
   }
+  position.needsUpdate = true;
   geometry.computeVertexNormals();
   return geometry;
+}
+
+/* ── Vegetation ──────────────────────────────────────────────────────── */
+
+export interface ConiferGeometry {
+  trunk: THREE.CylinderGeometry;
+  /** Stacked canopy tiers, each turned so the silhouette never repeats. */
+  tiers: THREE.ConeGeometry[];
+  /** The transform that places each tier on the trunk, for per-tree assembly. */
+  tierMatrices: THREE.Matrix4[];
+  /** Short branch arms between the tiers: the structure under the foliage. */
+  branches: THREE.CylinderGeometry;
+  branchMatrices: THREE.Matrix4[];
+}
+
+/**
+ * A conifer.
+ *
+ * Five staggered tiers over a tapered trunk, with branch arms visible in the
+ * gaps between them. Three things separate this from the two-cone tree it
+ * replaces, and all three are about the silhouette:
+ *
+ *  - The tiers **overlap**: each one starts below the top of the one beneath, so
+ *    there is no gap for the sky to show through and the tree reads as one mass
+ *    rather than as a stack of hats.
+ *  - Each tier is **a cone with more sides than it needs and a built-in taper**,
+ *    so it catches the key light along two or three facets instead of one.
+ *  - The trunk is **visible between the tiers** at the bottom, which is what
+ *    gives the tree a base and stops it hovering.
+ *
+ * The light-catching is completed per instance, in `world.ts`, by giving each
+ * tree its own colour and its own noise displacement.
+ */
+export function coniferGeometry(): ConiferGeometry {
+  const specs: { radius: number; height: number; y: number; yaw: number; squash: number }[] = [
+    { radius: 0.78, height: 1.35, y: 0.72, yaw: 0, squash: 0.96 },
+    { radius: 0.68, height: 1.3, y: 1.24, yaw: Math.PI / 5, squash: 0.93 },
+    { radius: 0.57, height: 1.26, y: 1.76, yaw: (Math.PI * 2) / 5, squash: 0.9 },
+    { radius: 0.44, height: 1.22, y: 2.28, yaw: (Math.PI * 3) / 5, squash: 0.87 },
+    { radius: 0.3, height: 1.16, y: 2.8, yaw: (Math.PI * 4) / 5, squash: 0.84 },
+    { radius: 0.15, height: 1.0, y: 3.3, yaw: (Math.PI * 5) / 5, squash: 0.8 },
+  ];
+  const tiers = specs.map((spec) => {
+    /* Twelve sides: enough that a tier reads as round at any angle, faceted
+       enough that the key light breaks across it. */
+    const cone = new THREE.ConeGeometry(spec.radius, spec.height, 12, 3, false);
+    cone.scale(1, 1, spec.squash);
+    cone.rotateY(spec.yaw);
+    cone.translate(0, spec.y, 0);
+    return wrapSpherical(cone, 2, 2);
+  });
+
+  const trunk = new THREE.CylinderGeometry(0.05, 0.17, 2.2, 8, 4);
+  trunk.translate(0, 0.95, 0);
+  wrapCylindrical(trunk, 1, 0.5);
+
+  /*
+   * Branch arms, in the gaps between tiers. They are what makes the canopy read
+   * as something *grown*: without them the tiers float, and a conifer whose
+   * needles have no visible support is the single most common look of a
+   * low-effort procedural tree.
+   */
+  const branch = new THREE.CylinderGeometry(0.028, 0.055, 1, 4);
+  branch.translate(0, 0.5, 0);
+  wrapCylindrical(branch, 1, 1);
+  const branchMatrices: THREE.Matrix4[] = [];
+  const branchRows = [0.95, 1.5, 2.05, 2.6];
+  for (let row = 0; row < branchRows.length; row++) {
+    const arms = 6 - row;
+    for (let i = 0; i < arms; i++) {
+      const angle = (i / arms) * Math.PI * 2 + row * 0.5;
+      /* Out and down, the way a conifer's lower branches actually set. */
+      const tilt = -(0.5 + row * 0.09);
+      const length = 1.5 - row * 0.22;
+      const matrix = new THREE.Matrix4();
+      const quaternion = new THREE.Quaternion()
+        .setFromAxisAngle(new THREE.Vector3(0, 1, 0), -angle)
+        .multiply(
+          new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2 + tilt),
+        );
+      matrix.compose(
+        new THREE.Vector3(0, branchRows[row], 0),
+        quaternion,
+        new THREE.Vector3(1, length, 1),
+      );
+      branchMatrices.push(matrix);
+    }
+  }
+
+  return {
+    trunk,
+    tiers,
+    /* Each tier is one instanced mesh sharing the tree's own transform, so no
+       per-tier offset is needed here; the offsets are baked into the geometry. */
+    tierMatrices: tiers.map(() => new THREE.Matrix4()),
+    branches: branch,
+    branchMatrices,
+  };
+}
+
+export interface BroadleafGeometry {
+  trunk: THREE.CylinderGeometry;
+  /** Three limbs reaching out of the trunk into the crown. */
+  limbs: THREE.CylinderGeometry;
+  limbMatrices: THREE.Matrix4[];
+  /**
+   * The whole crown as one merged, noise-displaced mesh.
+   *
+   * Merged rather than kept as four separate lobes because the world places one
+   * instance per tree: four lobes would mean four instanced meshes per tree
+   * species to keep in step, for a shape that never moves relative to itself.
+   */
+  canopy: THREE.BufferGeometry;
+}
+
+/**
+ * A broadleaf tree.
+ *
+ * A trunk that splits into three limbs, carrying a crown built from four
+ * overlapping lobes of different sizes and at different heights. The lobes are
+ * deliberately *not* concentric: a single sphere scaled into an ellipsoid is a
+ * lollipop, and the difference between a lollipop and a tree is entirely the
+ * asymmetry of the mass and the negative space around it.
+ *
+ * The lobes are noise-displaced, which is what gives the crown the broken edge
+ * that catches light and reads as foliage rather than as geometry.
+ */
+export function broadleafGeometry(): BroadleafGeometry {
+  const trunk = new THREE.CylinderGeometry(0.07, 0.2, 1.9, 9, 4);
+  trunk.translate(0, 0.9, 0);
+  wrapCylindrical(trunk, 1, 0.5);
+
+  const limb = new THREE.CylinderGeometry(0.04, 0.085, 1, 6);
+  limb.translate(0, 0.5, 0);
+  wrapCylindrical(limb, 1, 1);
+  const limbMatrices: THREE.Matrix4[] = [];
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2 + 0.4;
+    const tilt = 0.52 + (i % 2) * 0.12;
+    const quaternion = new THREE.Quaternion()
+      .setFromAxisAngle(new THREE.Vector3(0, 1, 0), -angle)
+      .multiply(
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2 - tilt),
+      );
+    const matrix = new THREE.Matrix4();
+    matrix.compose(
+      new THREE.Vector3(0, 1.72, 0),
+      quaternion,
+      new THREE.Vector3(1, 1.5 + (i % 2) * 0.3, 1),
+    );
+    limbMatrices.push(matrix);
+  }
+
+  const lobeSpecs: { radius: number; x: number; y: number; z: number; seed: number }[] = [
+    { radius: 0.95, x: 0, y: 2.5, z: 0, seed: 3 },
+    { radius: 0.72, x: 0.62, y: 2.28, z: 0.34, seed: 11 },
+    { radius: 0.66, x: -0.52, y: 2.66, z: -0.3, seed: 19 },
+    { radius: 0.56, x: 0.16, y: 2.96, z: -0.44, seed: 27 },
+  ];
+  const lobes = lobeSpecs.map((spec) => {
+    const lobe = new THREE.IcosahedronGeometry(spec.radius, 2);
+    roughen(lobe, 5.5, 0.3, spec.seed);
+    lobe.scale(1.06, 0.86, 1.02);
+    lobe.translate(spec.x, spec.y, spec.z);
+    return wrapSpherical(lobe, 3, 3);
+  });
+  const canopy = mergeGeometries(lobes);
+  for (const lobe of lobes) lobe.dispose();
+  canopy.computeVertexNormals();
+  canopy.computeBoundingSphere();
+
+  return { trunk, limbs: limb, limbMatrices, canopy };
+}
+
+/**
+ * A boulder.
+ *
+ * Displacement is keyed on the vertex position rather than the vertex index, so
+ * faces that share a corner move together and the shell stays closed. Two
+ * details do the work of making it read as stone rather than as a blob: the
+ * displacement is *ridged* rather than smooth, which produces flats and arrises
+ * where a smooth field produces a bulge; and the bottom is flattened, because a
+ * rock that has been sitting on the ground has a base.
+ */
+export function boulderGeometry(seed: number, squash = 0.72): THREE.BufferGeometry {
+  const geometry = new THREE.IcosahedronGeometry(1, 2);
+  const position = geometry.attributes.position as THREE.BufferAttribute;
+  const vector = new THREE.Vector3();
+  const scratch = new THREE.Vector3();
+  for (let i = 0; i < position.count; i++) {
+    vector.set(position.getX(i), position.getY(i), position.getZ(i));
+    const radius = vector.length() || 1;
+    scratch.copy(vector).divideScalar(radius);
+    /* Two scales: broad ones, and one that breaks each face up. */
+    const broad = ridged(scratch.x * 3.4 + seed * 0.11, scratch.z * 3.4 - seed * 0.07, 2);
+    const fine = ridged(scratch.x * 11 + seed * 0.23, scratch.z * 11 + seed * 0.17, 2);
+    const scale = 0.8 + broad * 0.3 + fine * 0.12;
+    const x = vector.x * scale;
+    let y = vector.y * scale * squash;
+    const z = vector.z * scale;
+    /* A flat base: below this the rock is cut off, as if bedded in. */
+    const floor = -0.62;
+    if (y < floor) y = floor + (y - floor) * 0.18;
+    position.setXYZ(i, x, y, z);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  wrapSpherical(geometry, 2.5, 2.5);
+  return geometry;
+}
+
+/**
+ * Squash a rock into a shard.
+ *
+ * Scree is not made of small boulders: it is made of the flat, angular pieces a
+ * face sheds, which are flatter and sharper than the rock they came off.
+ * Scaling a boulder down gives a pebble; the silhouette has to be *reshaped*,
+ * which is what this does once, for every fragment instance to share.
+ */
+export function reduceBoulder(
+  geometry: THREE.BufferGeometry,
+  roundness: number,
+): THREE.BufferGeometry {
+  const position = geometry.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    /*
+     * Pull each vertex toward the box that just contains it. The flat faces grow
+     * at the expense of the corners, which is what makes an angular shard;
+     * blending rather than snapping keeps the shell closed.
+     */
+    const longest = Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) || 1;
+    position.setXYZ(
+      i,
+      x + (Math.sign(x) * longest - x) * roundness,
+      y + (Math.sign(y) * longest * 0.6 - y) * roundness,
+      z + (Math.sign(z) * longest - z) * roundness,
+    );
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * A grass clump, as a small rosette of crossed cards.
+ *
+ * The geometry is three quads at 60° to one another, each the full height of the
+ * clump, plus a quadratic **bend** attribute that the vertex shader uses to
+ * curve the tips. That bend is the whole trick: a clump of flat cards standing
+ * perfectly upright reads as a paper flower, and the same cards with their tops
+ * displaced and swaying read as grass.
+ *
+ * The cards taper to the top as well, so the silhouette narrows the way a tuft
+ * does instead of ending in a square edge.
+ */
+export function grassClumpGeometry(height = 1, width = 0.42): THREE.BufferGeometry {
+  const cards = 3;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const bends: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+
+  for (let card = 0; card < cards; card++) {
+    const angle = (card / cards) * Math.PI;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const half = width / 2;
+    const base = card * 4;
+    /*
+     * Four vertices: bottom-left, bottom-right, top-right, top-left. The top
+     * pair is narrower than the base, which tapers the card.
+     */
+    const taper = 0.62;
+    const corners: [number, number, number][] = [
+      [-half, 0, 0],
+      [half, 0, 0],
+      [half * taper, 1, 0],
+      [-half * taper, 1, 0],
+    ];
+    for (const [lx, ly] of corners) {
+      positions.push(lx * cos, ly * height, lx * sin);
+      normals.push(-sin, 0, cos);
+      uvs.push(lx / width + 0.5, ly);
+      /* Only the top of the card bends. */
+      bends.push(ly * ly);
+    }
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute('aBend', new THREE.Float32BufferAttribute(bends, 1));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/**
+ * A low shrub: several noise-displaced spheres fused into one mass.
+ *
+ * A shrub is the cheapest thing in the scene to get wrong, because a single
+ * sphere is instantly recognisable as one. Three or four overlapping blobs of
+ * different sizes, noise-displaced and squashed, read as a bush at any distance
+ * the camera can reach them from.
+ */
+export function shrubGeometry(seed: number): THREE.BufferGeometry {
+  const random = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const count = 3 + Math.floor(random() * 2);
+  for (let i = 0; i < count; i++) {
+    const radius = 0.4 + random() * 0.36;
+    const blob = new THREE.IcosahedronGeometry(radius, 2);
+    roughen(blob, 5 + random() * 5, 0.34, seed + i * 13);
+    blob.scale(1 + random() * 0.3, 0.62 + random() * 0.3, 1 + random() * 0.3);
+    blob.translate(
+      (random() - 0.5) * 0.62,
+      0.24 + random() * 0.36,
+      (random() - 0.5) * 0.62,
+    );
+    parts.push(blob);
+  }
+  const merged = mergeGeometries(parts);
+  for (const part of parts) part.dispose();
+  merged.computeVertexNormals();
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+/** Merge geometries position-by-position, keeping UVs where every part has them. */
+function mergeGeometries(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const hasUv = parts.every((part) => part.attributes.uv);
+  const push = (geometry: THREE.BufferGeometry, index: number) => {
+    const position = geometry.attributes.position as THREE.BufferAttribute;
+    positions.push(position.getX(index), position.getY(index), position.getZ(index));
+    if (hasUv) {
+      const uv = geometry.attributes.uv as THREE.BufferAttribute;
+      uvs.push(uv.getX(index), uv.getY(index));
+    }
+  };
+  for (const geometry of parts) {
+    const index = geometry.index;
+    if (index) {
+      const array = index.array as ArrayLike<number>;
+      for (let i = 0; i < array.length; i++) push(geometry, array[i]);
+    } else {
+      for (let i = 0; i < geometry.attributes.position.count; i++) push(geometry, i);
+    }
+  }
+  const merged = new THREE.BufferGeometry();
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  if (hasUv) merged.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  return merged;
 }
 
 /* ── Textures ────────────────────────────────────────────────────────── */

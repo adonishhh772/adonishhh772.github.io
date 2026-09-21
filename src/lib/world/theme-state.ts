@@ -21,10 +21,37 @@ import type { ThemeName } from '../observatory/theme';
  */
 export const THEME_KEY = 'theme';
 export const AMBIENT_KEY = 'world:ambient';
+/**
+ * A pinned hour of the day, or absent while the world follows the clock.
+ *
+ * Absent is the default and the interesting case: a visitor who has never
+ * touched the time dial sees their own sky. Only an explicit choice is written,
+ * so the world does not acquire a stale hour that outlives its season.
+ */
+export const SKY_HOUR_KEY = 'world:sky-hour';
 
 /** Fired on `document` whenever the shared state changes. */
 export const THEME_EVENT = 'world:themechange';
 export const AMBIENT_EVENT = 'world:ambientchange';
+export const SKY_TIME_EVENT = 'world:skytimechange';
+/**
+ * The world's own reading of the clock, published back to the interface.
+ *
+ * The request travels one way and the answer the other, because the interface
+ * must not import three.js: it asks for an hour, and it shows the hour the world
+ * actually computed. The two are usually the same and are allowed not to be —
+ * a request with no renderer listening is a no-op, and the dial must not claim
+ * otherwise.
+ */
+export const SKY_STATE_EVENT = 'world:skystate';
+
+/** What the time dial and the URL parameter ask for. */
+export interface SkyTimeDetail {
+  /** Local hour in `[0, 24)`, or null to follow the clock. */
+  hour: number | null;
+  /** Where the request came from, for the persistence rule. */
+  persist?: boolean;
+}
 
 /**
  * How long the coordinated environment + interface change takes.
@@ -214,6 +241,98 @@ export function subscribeAmbient(onChange: (paused: boolean) => void): () => voi
   };
   document.addEventListener(AMBIENT_EVENT, listener);
   return () => document.removeEventListener(AMBIENT_EVENT, listener);
+}
+
+/* ── The time of day ─────────────────────────────────────────────────── */
+
+/**
+ * The pinned hour, or null while the world follows the visitor's clock.
+ *
+ * Read once at boot so a pinned hour survives a reload. It is deliberately a
+ * *nullable* value rather than a number with a "now" sentinel: following the
+ * clock and standing at one hour are different states, and the second one has
+ * to be something the visitor can leave.
+ */
+export function pinnedSkyHour(): number | null {
+  const store = storage();
+  if (!store) return null;
+  try {
+    const raw = store.getItem(SKY_HOUR_KEY);
+    if (raw === null || raw === '') return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? ((value % 24) + 24) % 24 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The world's own clock reading, published back to the interface.
+ *
+ * It carries the astronomy as well as the label because the interface has other
+ * readers than the dial: the sky body's caption names the phase, and a support
+ * question of the form "why is it dark at lunchtime?" is answered by the numbers
+ * rather than by the words.
+ */
+export interface PublishedSkyState {
+  label: string;
+  hours: number;
+  overridden: boolean;
+  dayness: number;
+  sunAltitude: number;
+  moonAltitude: number;
+  moonPhase: string;
+}
+
+/**
+ * Ask the world for a particular hour.
+ *
+ * Raised as a request rather than applied directly, for the same reason the
+ * camera reset is: this module must not import three.js, so the chrome states
+ * what it wants and the shell, which owns the clock, answers.
+ */
+export function requestSkyTime(hour: number | null, options: { persist?: boolean } = {}): void {
+  if (typeof document === 'undefined') return;
+  const store = storage();
+  if (options.persist !== false) {
+    try {
+      if (hour === null) store?.removeItem(SKY_HOUR_KEY);
+      else store?.setItem(SKY_HOUR_KEY, String(hour));
+    } catch {
+      /* storage unavailable — the choice lasts for this page only */
+    }
+  }
+  document.dispatchEvent(
+    new CustomEvent(SKY_TIME_EVENT, { detail: { hour, persist: options.persist } }),
+  );
+}
+
+export function subscribeSkyTime(
+  onChange: (detail: SkyTimeDetail) => void,
+): () => void {
+  if (typeof document === 'undefined') return () => {};
+  const listener = (event: Event) => {
+    onChange((event as CustomEvent<SkyTimeDetail>).detail);
+  };
+  document.addEventListener(SKY_TIME_EVENT, listener);
+  return () => document.removeEventListener(SKY_TIME_EVENT, listener);
+}
+
+/** Announced by the shell once its clock has moved. */
+export function announceSkyState(state: PublishedSkyState): void {
+  if (typeof document === 'undefined') return;
+  document.dispatchEvent(new CustomEvent(SKY_STATE_EVENT, { detail: state }));
+}
+
+export function subscribeSkyState(
+  onChange: (state: PublishedSkyState) => void,
+): () => void {
+  if (typeof document === 'undefined') return () => {};
+  const listener = (event: Event) => {
+    onChange((event as CustomEvent<PublishedSkyState>).detail);
+  };
+  document.addEventListener(SKY_STATE_EVENT, listener);
+  return () => document.removeEventListener(SKY_STATE_EVENT, listener);
 }
 
 /**

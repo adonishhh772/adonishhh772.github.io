@@ -17,6 +17,17 @@ export interface QualitySettings {
   shadowMapSize: number;
   /** Rings of instanced vegetation around the island edge. */
   treeRings: number;
+  /**
+   * Whether the grass layer is built at all.
+   *
+   * Grass is the one thing here whose cost is almost entirely fill rate: a
+   * thousand alpha-tested cards near the camera will bring a weak GPU to its
+   * knees in a way no amount of geometry reduction elsewhere compensates for.
+   * It is therefore all-or-nothing at the bottom tier rather than thinned.
+   */
+  grassDensity: boolean;
+  /** How many clumps the field is grown from. */
+  grassTufts: number;
   /** Drifting mist layers under the island. */
   mistLayers: number;
   /** Travelling signal pulses along the pathway. */
@@ -37,6 +48,8 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     shadows: true,
     shadowMapSize: 2048,
     treeRings: 3,
+    grassDensity: true,
+    grassTufts: 7000,
     mistLayers: 5,
     signalCount: 5,
     droneLight: true,
@@ -50,6 +63,8 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     shadows: true,
     shadowMapSize: 1024,
     treeRings: 2,
+    grassDensity: true,
+    grassTufts: 2400,
     mistLayers: 3,
     signalCount: 3,
     droneLight: false,
@@ -63,6 +78,8 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     shadows: false,
     shadowMapSize: 512,
     treeRings: 1,
+    grassDensity: false,
+    grassTufts: 900,
     mistLayers: 2,
     signalCount: 2,
     droneLight: false,

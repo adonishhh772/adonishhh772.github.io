@@ -191,6 +191,49 @@ const captionIcons = [
       and pausing the world is something you set once.
     */}
     <div class="world-map-settings">
+      {/*
+        The hour.
+        
+        The world's light comes from the visitor's own clock, which is the honest
+        default but a poor demonstration: nobody can see the golden hour at four
+        in the afternoon. This is the one control that makes the sky legible as a
+        *system* rather than as a picture — drag it to any hour of the day, and
+        the sun, the moon, the stars, the shadows and the colour of the air all
+        follow, because that is what they are functions of.
+        
+        It is deliberately a dial and not a selection of presets: the whole point
+        is that the sky is continuous, and four buttons would hide the thing that
+        makes it worth having.
+      */}
+      <div class="world-map-setting world-map-setting--time">
+        <label class="world-time-label" for="world-sky-hour">
+          <span class="world-map-setting-text">
+            <span class="world-map-setting-label">Time of day</span>
+            <span class="world-map-setting-state" data-world-sky-state>Following your clock</span>
+          </span>
+        </label>
+        <input
+          class="world-time-range"
+          id="world-sky-hour"
+          type="range"
+          min="0"
+          max="1439"
+          step="5"
+          value="720"
+          data-world-sky-hour
+          aria-label="Hour of the day"
+          aria-describedby="world-sky-hint"
+        />
+        <button
+          class="world-time-follow"
+          type="button"
+          data-world-sky-follow
+          aria-pressed="true"
+        >
+          Follow your clock
+        </button>
+      </div>
+
       <button
         class="world-map-setting"
         type="button"
@@ -207,9 +250,10 @@ const captionIcons = [
       </button>
     </div>
 
-    <p class="world-map-hint">
+    <p class="world-map-hint" id="world-sky-hint">
       Selecting a place moves the camera there; selecting an object opens its
-      document without leaving the world.
+      document without leaving the world. Drag the time dial to see the sun,
+      moon and stars at any hour.
     </p>
   </nav>
 
@@ -929,6 +973,119 @@ const captionIcons = [
 
   .world-map-setting[aria-pressed='true'] .world-map-setting-state {
     color: var(--signal);
+  }
+
+  /*
+    The time dial.
+
+    Styled as a rule with a handle rather than as a browser slider, because the
+    thing it represents is a *day*: the track is the twenty-four hours and the
+    handle is the moment. The default control would read as a form field.
+  */
+  .world-map-setting--time {
+    display: block;
+    cursor: default;
+    padding-bottom: 0.6rem;
+  }
+
+  .world-time-label {
+    display: block;
+    cursor: default;
+  }
+
+  .world-time-range {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    height: 28px;
+    margin: 0.35rem 0 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .world-time-range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(
+      to right,
+      #0a1024 0%,
+      #16233f 18%,
+      #ff9a52 26%,
+      #bcd6ef 42%,
+      #bcd6ef 62%,
+      #ff8a44 76%,
+      #16233f 86%,
+      #0a1024 100%
+    );
+  }
+
+  .world-time-range::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(
+      to right,
+      #0a1024 0%,
+      #16233f 18%,
+      #ff9a52 26%,
+      #bcd6ef 42%,
+      #bcd6ef 62%,
+      #ff8a44 76%,
+      #16233f 86%,
+      #0a1024 100%
+    );
+  }
+
+  .world-time-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -6px;
+    border: 2px solid var(--bg);
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-line);
+  }
+
+  .world-time-range::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--bg);
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .world-time-range:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: 4px;
+  }
+
+  .world-time-follow {
+    margin-top: 0.35rem;
+    padding: 0.3rem 0.55rem;
+    min-height: 32px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-soft);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color var(--dur-2) var(--ease-out);
+  }
+
+  .world-time-follow:hover,
+  .world-time-follow:focus-visible {
+    background: var(--accent-soft);
+  }
+
+  .world-time-follow[aria-pressed='true'] {
+    color: var(--signal);
+    border-color: var(--accent-line);
   }
 
   /* ── The failure screen ───────────────────────────────────────────── */

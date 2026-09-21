@@ -212,21 +212,29 @@ export class CameraRig {
     const distance = target.distanceTo(wanted);
     if (distance < 0.001) return this.clearance(wanted);
     const steps = Math.max(6, Math.min(40, Math.ceil(distance * 3)));
+
     /*
-     * What to keep when the walk finds no clear air at all: the composed
-     * position, not a point just off the target.
+     * The endpoint.
      *
-     * The target is a framing anchor, not a place, and `readingShot` is free to
-     * slide it below the plateau or into a building — that is how the subject
-     * is lifted in a short frame. A walk that starts there can legitimately
-     * find nothing clear, and answering that by collapsing the camera to the
-     * near end of the line buries it in the island the target was slid under.
-     * The composed position is what the composition asked for; `clearance`
-     * below still lifts it out of the ground and out of every building.
+     * The composed position is already checked for clearance where it matters,
+     * and when it is clear it is *always* the right answer — the walk exists to
+     * stop the camera passing through a building on the way out, not to second
+     * guess a shot that is already in clear air.
+     *
+     * Taking the endpoint up front also removes a failure that is invisible from
+     * the outside and catastrophic when it happens. The walk starts at the
+     * look-at target, which `readingShot` is free to slide inside the
+     * observatory; the samples then have to climb out of a building, and any
+     * single sample that reports itself blocked — a floating-point edge, a
+     * volume whose lid is exactly at the sample's height — used to end the walk
+     * and hand back a camera position a few units from the target. The measured
+     * result was an overview composed at 51 units and rendered at 3.9: the whole
+     * island behind the camera, and no sky in the frame at any hour of the day.
      */
+    if (this.clears(wanted)) return this.clearance(wanted);
+
+    /* Otherwise keep the furthest reachable sample, walking outward. */
     let lastClear = this.clearance(wanted);
-    /* The near end of the line is inside the building; start from the first
-       clear sample and keep the furthest one after that. */
     let started = false;
     for (let step = 1; step <= steps; step++) {
       const t = step / steps;

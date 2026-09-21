@@ -11,6 +11,7 @@
     "check": "astro check",
     "astro": "astro",
     "verify:world": "node tools/worldcheck/run.mjs",
+    "verify:sky": "node tools/worldcheck/sky.mjs",
     "verify:a11y": "node tools/worldcheck/a11y.mjs",
     "verify:content": "node tools/worldcheck/content.mjs",
     "verify:music": "node tools/worldcheck/music.mjs",

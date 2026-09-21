@@ -48,17 +48,23 @@ import { allowScene, restoreDocumentState, sceneDeclined } from '../world/docume
 import { mirrorWorldState, reportProgress } from '../world/progress';
 import {
   currentTheme,
+  announceSkyState,
   hideWorldAlert,
   isAmbientPaused,
+  pinnedSkyHour,
   prefersReducedMotion,
   RESET_VIEW_EVENT,
   showWorldAlert,
   subscribeAmbient,
+  subscribeSkyTime,
   subscribeTheme,
   THEME_TRANSITION_MS,
   toggleTheme,
+  type PublishedSkyState,
 } from '../world/theme-state';
 import { blendTheme, mixColor, readWorldTheme, type WorldTheme } from '../observatory/theme';
+import { SkyClock, phaseName, siderealTime, type SkyState } from '../observatory/sky';
+import { buildTextures, type TextureLibrary } from '../observatory/textures';
 import { Atmosphere } from '../observatory/lighting';
 import { Materials } from '../observatory/materials';
 import {
@@ -78,6 +84,15 @@ import { CameraRig } from '../observatory/camera';
 export interface ShellHandle {
   applyState(): void;
   dispose(): void;
+  /**
+   * Pin the world's sky to a local hour, or release it back to the clock.
+   *
+   * This is the world's one time control. The verification harness drives it to
+   * get a deterministic noon or midnight instead of depending on when the suite
+   * happens to run, and it is the hook a "see this world at dawn" affordance
+   * would call. It never changes the date, so the season stays real.
+   */
+  setSkyTime(hour: number | null): void;
 }
 
 /** How far a pointer may travel before it counts as a drag, in CSS pixels. */
@@ -268,42 +283,137 @@ const CAMPUS_CENTRE = new THREE.Vector3(0, 3.4, 0);
  * with the top of the dome cut off. Here each axis is fitted on its own and
  * the further constraint wins.
  */
+/**
+ * The overview's field of view, and how high above the island's centre of mass
+ * it aims.
+ *
+ * These two numbers are a single decision and were arrived at together, because
+ * the frame has to hold two things at once: the campus, and the sky the campus
+ * stands under.
+ *
+ * The original 38° was chosen to fill the frame with the island, and it did —
+ * but a 38° frame is 19° either side of where it points, and the island is close
+ * enough and small enough that the fitted shot aimed 32° down at it. The top of
+ * that frame was therefore thirteen degrees *below* the horizon: a composition
+ * with no sky in it at all. Every sunrise, every phase of the moon and every
+ * hour of the night sky were being computed correctly and then aimed at the
+ * ground, which is why the world's light could only ever be seen as a change of
+ * colour on the terrain.
+ *
+ * Widening the lens is what fixes it, and the amount is set by the *sun* rather
+ * than by taste. A northern-hemisphere sun spends the day between the horizon and
+ * about 46°, so holding its whole arc needs the frame to reach roughly 35° above
+ * the horizon; with the camera aimed about 35° down at the island, that is a
+ * field of view of about 72°. Anything narrower shows a sky with nothing in it:
+ * at 50° the top of the frame reached 6°, and since a low sun below 6° is behind
+ * the island's own horizon and a high one is above the frame, there was no hour
+ * of any day at which a visitor could see the sun they were controlling.
+ *
+ * A 72° lens is wide — the island sits in the middle distance rather than filling
+ * the frame — and that is the honest trade: a world whose light comes from the
+ * sky has to show the sky.
+ */
+const OVERVIEW_FOV_LANDSCAPE = 72;
+const OVERVIEW_FOV_PORTRAIT = 78;
+/**
+ * How much higher than the island's centre of mass the camera aims.
+ *
+ * This is the camera's *height*, and so the angle it looks down at, and it is
+ * the number that decides how much sky the frame holds. At 3 the camera sits
+ * about nineteen units above the island's centre at a distance of thirty-four,
+ * which is a thirty-degree depression: with the wide lens above, the frame spans
+ * from about 6° above the horizon down to well past the keel, so the island sits
+ * in the lower half and the sky above it holds both a low sun and a rising moon.
+ *
+ * Both of its neighbours are wrong in instructive ways. At zero the camera comes
+ * down to the horizon's own level and the island is seen edge-on, with its
+ * underside hidden and the campus flattened into a strip. At 8.6 it sits
+ * twenty-seven units up and looks down at 35°, which pushes the horizon out of
+ * the top of the frame entirely — the island ends up small and low with nothing
+ * above it but empty air.
+ */
+const OVERVIEW_LIFT = 4.5;
+
 function overviewShot(usable: { aspect: number }): Shot {
   const portrait = usable.aspect < 1.15;
-  const fov = portrait ? 44 : 38;
+  const fov = portrait ? OVERVIEW_FOV_PORTRAIT : OVERVIEW_FOV_LANDSCAPE;
   const vFov = THREE.MathUtils.degToRad(fov);
   const halfV = Math.tan(vFov / 2);
   const halfH = halfV * Math.max(usable.aspect, 0.35);
 
-  /* How much of the free region the island is allowed to fill. */
-  const widthFraction = portrait ? 0.92 : 0.84;
-  const heightFraction = 0.86;
+  /* How much of the frame the island is allowed to fill. */
+  const widthFraction = portrait ? 0.92 : 0.98;
+  const heightFraction = 0.82;
   const distanceForWidth = CAMPUS_EXTENT.horizontal / widthFraction / halfH;
   const distanceForHeight = CAMPUS_EXTENT.vertical / heightFraction / halfV;
   const distance = Math.max(distanceForWidth, distanceForHeight);
 
   /*
-   * The bearing. Portrait gets its own: a phone is so much narrower than it is
-   * tall that the island, seen from the desktop's three-quarter angle, runs off
-   * the right edge while leaving a wide band of empty sky on the left. Turning
-   * the camera round the island swings it back into the middle without moving
-   * it any further away.
+   * The bearing.
+   *
+   * Two things constrain it, and they pull in the same direction. A phone is so
+   * much narrower than it is tall that the island, seen from the desktop's
+   * three-quarter angle, runs off the right edge while leaving a wide band of
+   * empty sky on the left — so portrait gets its own three-quarter angle.
+   *
+   * And the camera has to face the part of the sky the sun actually crosses. The
+   * bearing below was a north-east one, which pointed the camera at 41° while
+   * the sun sweeps the *southern* half of the sky: the two never met, so no hour
+   * of any day had the sun in frame and the whole time-of-day system showed up
+   * only as a change of light on the ground.
+   *
+   * Getting this right is a question of arithmetic, not taste. At this latitude
+   * the sun rises in the east, is due south at noon and sets in the west — a
+   * sweep of roughly 90° to 290° — and the moon covers a similar arc. A frame
+   * 72° wide cannot hold all of that, so the camera is aimed at the middle of it:
+   * about 225°, which puts the whole of the sun's afternoon and the whole of the
+   * moon's evening rise inside the frame, with the noon sun just off its left
+   * edge.
+   *
+   * Every narrower answer was tried and each one failed the same way. At 139° the
+   * moon that rises at 180° and climbs to twenty degrees sat forty degrees off
+   * centre, just outside the frame; at 105° the evening moon was not merely
+   * outside it but *behind* the camera, which is why pressing it did nothing. A
+   * sky you cannot see is a sky you cannot press, and the sun and the moon are
+   * the controls for the world's light.
+   *
+  /*
+   * The camera is composed from a fixed *facing*, and the offset that produces
+   * it is `(-sin facing, ·, -cos facing)` — the opposite end of the line — turned
+   * about the island's vertical axis until the shot reads as a three-quarter
+   * view. The turn is a separate, explicit number rather than being folded into
+   * the facing, because the two got confused twice while this was being written:
+   * the offset bearing and the view bearing differ by 180°, and rotating the
+   * offset by +θ turns the view by −θ.
    */
-  const direction = portrait
-    ? new THREE.Vector3(0.4, 0.36, 0.68).normalize().applyAxisAngle(
-        new THREE.Vector3(0, 1, 0),
-        0.6,
-      )
-    : new THREE.Vector3(0.58, 0.44, 0.67).normalize();
+  /*
+   * The offset that puts the camera where it should stand.
+   *
+   * `OFFSET_BEARING` is the compass bearing from the *island out to the camera*,
+   * which is not the direction the camera looks: the camera looks back down that
+   * line at the island, so the two differ by 180°. The view it produces is
+   * checked rather than derived — the diagnostics report the bearing the camera
+   * actually faces, and `225°` there is the number this constant has to produce.
+   *
+   * That check is not ceremony. This constant was wrong three times while it was
+   * being written, every time by 180°, and each wrong value put the camera in
+   * front of a different quarter of the sky: at 45° the sun set behind it, and
+   * the moon — the world's only night-time light control — was unreachable for
+   * the whole of the evening.
+   */
+  const OFFSET_BEARING = 135;
+  const offset = THREE.MathUtils.degToRad(OFFSET_BEARING);
+  const direction = new THREE.Vector3(Math.sin(offset), 0.5, Math.cos(offset)).normalize();
   const target = CAMPUS_CENTRE.clone();
+  target.y += OVERVIEW_LIFT;
   /*
    * A portrait frame is tall and narrow, and the island is a wide disc: the
    * width is what limits it, which leaves a band of empty sky above and below,
    * with the identity card and the control bar already claiming the top. On a
-   * phone the aim is therefore lifted a little, so that empty band sits above
-   * the campus where the card is rather than below it.
+   * phone the aim is lifted a little further, so that empty band sits above the
+   * campus where the card is rather than below it.
    */
-  if (portrait) target.y += 2.6;
+  if (portrait) target.y += 2.2;
   return { position: target.clone().addScaledVector(direction, distance), target, fov };
 }
 
@@ -372,11 +482,26 @@ function readingShot(
     .normalize();
   const up = new THREE.Vector3().crossVectors(right, forward).normalize();
 
-  /* Sliding the look-at point moves the subject the opposite way on screen;
-     screen Y grows downwards, hence the sign flip. */
+  /*
+   * Sliding the look-at point moves the subject the opposite way on screen.
+   *
+   * The Y term carries a sign that is easy to get backwards, and getting it
+   * backwards is not a small error: the subject is placed on the wrong side of
+   * its target, so a frame composed to centre the island in the space the
+   * interface leaves free centres it *below* that space instead. That reads as a
+   * large empty sky above a small island low in the frame, and it is what pushed
+   * the horizon out of view even after the field of view had been widened enough
+   * to hold it.
+   *
+   * The two axes genuinely differ. Screen X grows to the right, so moving the
+   * target right moves the subject left — a positive X offset is subtracted.
+   * Screen Y grows *downwards* while the camera's up axis points up, so the same
+   * reasoning flips: a subject that must sit below the frame's centre needs the
+   * target raised, not lowered.
+   */
   target
-    .add(right.multiplyScalar(offsetX * worldPerPixel))
-    .add(up.multiplyScalar(-offsetY * worldPerPixel));
+    .add(right.multiplyScalar(-offsetX * worldPerPixel))
+    .add(up.multiplyScalar(offsetY * worldPerPixel));
 
   return { position, target, fov: base.fov };
 }
@@ -413,7 +538,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   const hotspotLayer = root.querySelector<HTMLElement>('[data-world-hotspots]');
   const status = root.querySelector<HTMLElement>('[data-world-status]');
   if (!stage || !canvas || !hotspotLayer) {
-    return { applyState() {}, dispose() {} };
+    return { applyState() {}, dispose() {}, setSkyTime() {} };
   }
   const stageEl: HTMLElement = stage;
   const canvasEl: HTMLCanvasElement = canvas;
@@ -427,7 +552,36 @@ export function mountShell(root: WorldHost): ShellHandle {
   let reducedMotion = reducedMotionQuery;
   let ambientAllowed = !reducedMotionQuery && !isAmbientPaused();
   let settings: QualitySettings = settingsFor(tier, ambientAllowed);
-  let theme: WorldTheme = readWorldTheme(currentTheme());
+
+  /*
+   * ── The clock ─────────────────────────────────────────────────────
+   *
+   * The world's light comes from the visitor's own clock, read once here and
+   * then re-read as the minute turns. Nothing below this line invents a time:
+   * `skyClock.current` is the only source, and `readWorldTheme` turns it into
+   * the palette and the light rig.
+   */
+  const skyClock = new SkyClock();
+  let skyState: SkyState = skyClock.current;
+  /*
+   * A pinned hour from a previous visit. The world follows the clock by default
+   * and only departs from it when the visitor has said so, so this is read once
+   * and applied once — anything else would need a way to tell a pin from a
+   * coincidence, and there is no such way.
+   */
+  const rememberedHour = pinnedSkyHour();
+  if (rememberedHour !== null) skyClock.setOverride({ hour: rememberedHour });
+  skyState = skyClock.current;
+  let theme: WorldTheme = readWorldTheme(currentTheme(), skyState);
+  /**
+   * How far the star field has turned, in degrees.
+   *
+   * The sky turns once per *sidereal* day — 366.25 turns a year rather than
+   * 365.25, the extra one being the turn the Earth makes beneath the sun. Taken
+   * from the local sidereal time so the stars stay in step with the moon and the
+   * sun, instead of drifting against them by four minutes a day.
+   */
+  let siderealAngle = siderealTime(skyState.jd, skyState.longitude);
 
   /* ── Renderer, scene, world ──────────────────────────────────────── */
   const renderer = new THREE.WebGLRenderer({
@@ -447,6 +601,47 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   const scene = new THREE.Scene();
   const materials = new Materials(theme, settings);
+
+  /*
+   * The generated surface maps.
+   *
+   * Built once, before the world, because the world's materials want them at
+   * construction and its grass wants them immediately afterwards. They are the
+   * most expensive thing at boot — a few dozen milliseconds of canvas work — and
+   * the one thing that turns a coloured mesh into a *surface*.
+   */
+  let textures: TextureLibrary | null = null;
+  try {
+    textures = buildTextures({
+      grass: theme.grass,
+      dry: theme.dryGrass,
+      soil: theme.earth,
+      stoneAlt: theme.stoneAlt,
+      moss: theme.moss,
+      stoneDeep: theme.stoneDeep,
+      stone: theme.stone,
+      mineral: theme.mineral,
+      bark: theme.bark,
+      barkDeep: theme.barkDeep,
+      leafLight: theme.snow,
+      leafMid: theme.grass,
+      leafDark: theme.moss,
+      grassBase: theme.moss,
+      grassMid: theme.grass,
+      grassTip: theme.dryGrass,
+    });
+    materials.setTextures(textures);
+  } catch (error) {
+    /*
+     * A canvas that will not give up a 2D context is a real possibility on a
+     * locked-down browser. The world is entirely able to run without the maps —
+     * flat-shaded, but running — so a failure here degrades instead of stopping
+     * the scene. (In practice a 2D context is unavailable only where WebGL is
+     * too, so this is belt and braces.)
+     */
+    void error;
+    textures = null;
+  }
   /*
    * A paper-thin bright shell around everything.
    *
@@ -477,6 +672,8 @@ export function mountShell(root: WorldHost): ShellHandle {
 
   const world = new ObservatoryWorld(theme, settings, materials, atmosphere, index);
   scene.add(world.group);
+  if (textures) world.setTextures(textures);
+  atmosphere.setSiderealAngle(siderealAngle);
   world.loadPortrait(portraitUrl);
 
   const rig = new CameraRig(1, overviewShot({ aspect: 1 }), reducedMotion);
@@ -618,6 +815,7 @@ export function mountShell(root: WorldHost): ShellHandle {
   let themeT = 0;
   let themeBlending = false;
   let envClock = 0;
+  let skyEnvClock = 0;
   const themeScratch = {} as WorldTheme;
 
   /**
@@ -694,9 +892,103 @@ export function mountShell(root: WorldHost): ShellHandle {
   }
 
   const stopThemes = subscribeTheme((detail) => {
-    startThemeTransition(readWorldTheme(detail.theme), detail.animate);
+    startThemeTransition(readWorldTheme(detail.theme, skyState), detail.animate);
     updateCelestialHotspot();
+    publishSkyState();
     if (!running) renderOnce();
+  });
+
+  /**
+   * Adopt a new reading of the clock.
+   *
+   * The sky moves on its own — it is not something the visitor asked for — so
+   * it is applied immediately rather than through the page-theme transition. A
+   * slow blend of a minute's worth of change would be invisible anyway, and
+   * blending it through `themeFrom`/`themeTo` would collide with a page-theme
+   * transition that happened to be in flight.
+   */
+  function applySkyState(next: SkyState, environment: boolean): void {
+    skyState = next;
+    siderealAngle = siderealTime(next.jd, next.longitude);
+    atmosphere.setSiderealAngle(siderealAngle);
+    liveTheme = readWorldTheme(currentTheme(), next, themeScratch);
+    applyTheme(liveTheme, environment);
+    themeFrom = null;
+    themeTo = null;
+    themeBlending = false;
+    updateCelestialHotspot();
+    publishSkyState();
+    if (!running) renderOnce();
+  }
+
+  /**
+   * Publish the world's clock for the chrome.
+   *
+   * The interface must not import three.js, so the shell writes its reading onto
+   * the stage element as data and the chrome reads it. That keeps the two in
+   * step without a second clock: the dial shows what the world is actually
+   * computing, not what the last request happened to ask for.
+   */
+  function publishSkyState(): void {
+    stageEl.dataset.skyState = JSON.stringify({
+      label: skyState.label,
+      hours: skyState.hours,
+      overridden: skyState.overridden,
+      dayness: skyState.dayness,
+      sunAltitude: skyState.sun.altitude,
+      moonAltitude: skyState.moon.altitude,
+      moonPhase: phaseName(skyState.moon.elongation),
+    } satisfies PublishedSkyState & Record<string, unknown>);
+    for (const readout of document.querySelectorAll<HTMLElement>('[data-world-sky-readout]')) {
+      readout.textContent = skyState.label;
+    }
+    announceSkyState({
+      label: skyState.label,
+      hours: skyState.hours,
+      overridden: skyState.overridden,
+      dayness: skyState.dayness,
+      sunAltitude: skyState.sun.altitude,
+      moonAltitude: skyState.moon.altitude,
+      moonPhase: phaseName(skyState.moon.elongation),
+    });
+  }
+
+  /**
+   * Pin the world to an hour, or hand it back to the clock.
+   *
+   * `hour` is a local hour in `[0, 24)`; `null` releases the override. This is
+   * the world's public time control: it backs the debug hook the verification
+   * harness drives, and it is what a "look at this world at dawn" affordance
+   * would call. The date is never replaced, so the season stays real.
+   */
+  function setSkyTime(hour: number | null, date?: Date): SkyState {
+    const next = skyClock.setOverride(
+      hour === null ? null : { hour },
+      hour === null ? { hour: 0 } : { hour, date },
+      date,
+    );
+    applySkyState(next, true);
+    return next;
+  }
+
+  /**
+   * Hold the sky where it is when the light is switched.
+   *
+   * The sun and the moon are the world's light switch, and a switch has to
+   * *stay* switched. Until this existed, pressing the sun changed the page to
+   * dark mode and then the world went on following the wall clock — so at six in
+   * the evening the sun kept setting, the moon kept rising, and the light the
+   * visitor had just chosen drifted away underneath them within the hour. What
+   * they were looking at was a switch that turned itself back off.
+   *
+   * So a change of light pins the hour the world is already at. The sun and the
+   * moon keep the positions they had, the stars keep their places, and nothing
+   * moves until the visitor moves the time dial — which is the difference
+   * between a control and an ornament.
+   */
+  const stopLightPin = subscribeTheme(() => {
+    if (disposed || skyClock.pinned) return;
+    skyClock.setOverride({ hour: skyState.hours });
   });
 
   const stopAmbient = subscribeAmbient((paused) => {
@@ -705,6 +997,16 @@ export function mountShell(root: WorldHost): ShellHandle {
     materials.setQuality(settings);
     atmosphere.setQuality(settings);
     world.setQuality(settings);
+  });
+
+  /*
+   * The time dial. The chrome raises a request and the shell, which owns the
+   * clock, answers it — the same arrangement as the camera reset, and for the
+   * same reason.
+   */
+  const stopSkyTime = subscribeSkyTime((detail) => {
+    if (disposed) return;
+    setSkyTime(detail.hour ?? null);
   });
 
   /* ── Captions ────────────────────────────────────────────────────── */
@@ -999,15 +1301,25 @@ export function mountShell(root: WorldHost): ShellHandle {
   }
 
   /**
-   * The sun's caption is icon-only: the body it names is already plain, so it
-   * carries an accessible label and a title instead of a visible word, and the
-   * icon inside the circle is the whole control.
+   * The sky body's caption.
+   *
+   * Icon-only: the body it names is already plain, so it carries an accessible
+   * label and a title instead of a visible word, and the icon inside the circle
+   * is the whole control.
+   *
+   * The label names what is actually up — the sun by day, and at night the moon
+   * *with its phase*, because "waning crescent" is a fact about the sky the
+   * visitor is looking at and a rendering that gets the phase right has earned
+   * the right to say so.
    */
   function updateCelestialHotspot(): void {
     const link = hotspots.get(CELESTIAL_KEY);
     if (link) {
-      const day = currentTheme() === 'light';
-      const label = day ? 'Sun — switch to night lighting' : 'Moon — switch to daylight';
+      const day = liveTheme.dayness > 0.5;
+      const phase = phaseName(skyState.moon.elongation);
+      const label = day
+        ? `The sun — up at ${skyState.label}, ${Math.round(skyState.sun.altitude)}° above the horizon`
+        : `The moon — ${phase}, up at ${skyState.label}`;
       link.setAttribute('aria-pressed', day ? 'true' : 'false');
       link.setAttribute('aria-label', label);
       link.setAttribute('title', label);
@@ -1016,11 +1328,12 @@ export function mountShell(root: WorldHost): ShellHandle {
     }
     const physical = hotspots.get(LIGHT_SWITCH_KEY);
     if (physical) {
-      const day = currentTheme() === 'light';
-      const label = day
-        ? 'The observatory light switch — turn the lamps on'
-        : 'The observatory light switch — turn the lamps off';
-      physical.setAttribute('aria-pressed', day ? 'true' : 'false');
+      /* The switch drives the world's lamps, which the hour decides. */
+      const lampsOn = liveTheme.practicalIntensity > 1;
+      const label = lampsOn
+        ? 'The observatory light switch — turn the lamps off'
+        : 'The observatory light switch — turn the lamps on';
+      physical.setAttribute('aria-pressed', lampsOn ? 'true' : 'false');
       physical.setAttribute('aria-label', label);
       physical.setAttribute('title', label);
       const mark = physical.querySelector<HTMLElement>('.world-hotspot-mark');
@@ -1819,9 +2132,31 @@ export function mountShell(root: WorldHost): ShellHandle {
     const freeWidth = Math.max(free.right - free.left, 200);
     const freeHeight = Math.max(free.bottom - free.top, 200);
     const aspect = freeWidth / freeHeight;
-    const overview = overviewShot({ aspect });
-    /* Where the subject should end up: the middle of what is not covered. */
-    const screen = {
+    /*
+     * The overview is fitted to the *stage's* shape, not to the free strip's.
+     *
+     * The distinction decides how big the island is. The free strip is what the
+     * reading surface leaves over — a wide, short band — and its aspect is much
+     * wider than the screen's, so fitting the island to it computes a distance
+     * for a frame that does not exist and then stands the camera far enough back
+     * to fill a letterbox nobody is looking through. Measured, that shrank the
+     * island to about two fifths of the frame's width with the rest given over to
+     * empty sky.
+     *
+     * Fitting the real frame and then *sliding* the subject into the free strip is
+     * what `readingShot` is for, so the two jobs are now separated: the overview
+     * decides how big, and the framing decides where.
+     */
+    const stageAspect = Math.max(view.stageWidth / Math.max(view.stageHeight, 1), 0.35);
+    const overview = overviewShot({ aspect: stageAspect });
+    /*
+     * Where the subject should end up: the middle of what is not covered.
+     *
+     * Note that this is the middle of the *free* region, not of the frame — on a
+     * phone with a document open the free region is a strip, and the subject
+     * belongs in the middle of the strip. `readingShot` is what puts it there.
+     */
+    const subject = {
       x: (free.left + free.right) / 2,
       y: (free.top + free.bottom) / 2,
     };
@@ -1829,7 +2164,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     /* The campus *is* the overview: whatever is open there, the visitor
        should still be looking at the whole place. */
     if (focusPlace === 'campus') {
-      return readingShot(overview, view, screen);
+      return readingShot(overview, view, subject);
     }
     /*
      * A destination is framed close, from its own composed shot. The reach is
@@ -1838,9 +2173,9 @@ export function mountShell(root: WorldHost): ShellHandle {
      */
     const band = freeHeight < view.stageHeight * 0.5;
     const node = world.places.get(focusPlace);
-    if (!node) return readingShot(overview, view, screen);
+    if (!node) return readingShot(overview, view, subject);
     const base = placeShot(node.shot, aspect, band ? 1.45 : 1);
-    return readingShot(base, view, screen);
+    return readingShot(base, view, subject);
   }
 
   function compose(immediate: boolean): void {
@@ -2120,20 +2455,16 @@ export function mountShell(root: WorldHost): ShellHandle {
        * the control, and nothing else in the sky is clickable.
        */
       if (!pointers.has(event.pointerId) && event.pointerType === 'mouse') {
-        const body = atmosphere.activeCelestialPosition();
+        const body = celestialTarget();
         let over = false;
         if (body) {
-          const p = body.clone().project(rig.camera);
-          if (p.z < 1) {
-            const rect = canvasEl.getBoundingClientRect();
-            const sx = (p.x * 0.5 + 0.5) * rect.width + rect.left;
-            const sy = (-p.y * 0.5 + 0.5) * rect.height + rect.top;
-            const reach = Math.max(
-              CELESTIAL_TAP_RADIUS,
-              atmosphere.activeCelestialRadius(rig.camera) * rect.height,
-            );
-            over = Math.hypot(event.clientX - sx, event.clientY - sy) <= reach;
-          }
+          const rect = canvasEl.getBoundingClientRect();
+          /* `celestialTarget` answers in stage pixels; the pointer arrives in
+             viewport ones. */
+          over = Math.hypot(
+            event.clientX - (rect.left + body.x),
+            event.clientY - (rect.top + body.y),
+          ) <= body.reach;
         }
         canvasEl.style.cursor = over ? 'pointer' : '';
       }
@@ -2303,20 +2634,23 @@ export function mountShell(root: WorldHost): ShellHandle {
       return;
     }
 
-    if (atmosphere.activeCelestialPosition()) {
-      const projected = atmosphere.activeCelestialPosition()!.clone().project(rig.camera);
-      if (projected.z < 1) {
-        const width = stageEl.clientWidth;
-        const height = stageEl.clientHeight;
-        const sx = (projected.x * 0.5 + 0.5) * width;
-        const sy = (-projected.y * 0.5 + 0.5) * height;
-        /* The body is large, so its own on-screen size sets the target. */
-        const reach = Math.max(CELESTIAL_TAP_RADIUS, atmosphere.activeCelestialRadius(rig.camera) * height);
-        if (Math.hypot(x - sx, y - sy) <= reach) {
-          toggleTheme({ animate: true });
-          return;
-        }
-      }
+    /*
+     * The sky body, resolved by casting a ray at the sprites themselves.
+     *
+     * The obvious way is to project the body to a screen point and compare that
+     * with the tap, which is what this used to do — and it does not survive a
+     * moving camera. The campus turns itself on arrival, so between the frame the
+     * visitor aimed at and the frame their finger came down on, the sun has slid
+     * across the sky; measured, the tap landed forty-two pixels from where the
+     * handler thought the body was, against a thirty-four pixel target. The thing
+     * the visitor pressed was where the moon was *drawn*, and only a raycast
+     * against the drawn sprites answers that.
+     */
+    const ndcX = (x / stageEl.clientWidth) * 2 - 1;
+    const ndcY = -(y / stageEl.clientHeight) * 2 + 1;
+    if (atmosphere.probeBody(ndcX, ndcY, rig.camera)) {
+      toggleTheme({ animate: true });
+      return;
     }
 
     const caption = hotspotAt(x, y);
@@ -2383,6 +2717,10 @@ export function mountShell(root: WorldHost): ShellHandle {
     autoTurnAllowed = true;
     lastInteraction = performance.now();
     rig.resetOrbit();
+    /* The island goes back to the bearing it was composed at as well: the turn
+       is the world's now, not the camera's, so a reset has to undo both. */
+    world.setTurn(0);
+    rig.setSolids(world.turnedSolids());
     compose(true);
     renderOnce();
   };
@@ -2441,14 +2779,45 @@ export function mountShell(root: WorldHost): ShellHandle {
      * The campus turns itself while the visitor is only looking. It yields the
      * moment they take the camera — a press on the scene, a wheel, or any
      * travel — and stays stopped: see `autoTurnAllowed`.
+     *
+     * The turn is applied to the *island*, not to the camera. Orbiting the camera
+     * achieved the same thing on screen and had one consequence that made the
+     * whole sky feel wrong: the camera swung through the sky, so the sun slid
+     * out towards the edge of the frame while the island sat still — a turning
+     * world seen from a moving seat rather than a world turning in place. With
+     * the island doing the turning, the camera holds its bearing, the horizon
+     * stays put, and the sun stays where it was put.
      */
     const idling = performance.now() - lastInteraction > AUTO_TURN_RESUME_MS;
-    rig.setAutoTurn(animate && autoTurnAllowed && idling ? AUTO_TURN_RATE : 0);
+    const turning = animate && autoTurnAllowed && idling;
+    world.setTurn(turning ? world.turn + AUTO_TURN_RATE * realDelta : world.turn);
+    /* The camera's clearance volumes go round with the buildings, so a swung
+       camera is still kept out of the walls it can see. */
+    rig.setSolids(world.turnedSolids());
 
     rig.update(delta, realDelta);
     world.update(clock, step);
     /* The day/night blend runs on real time, so it finishes while reading. */
     advanceTheme(delta);
+
+    /*
+     * The sky. Re-read on the minute, and applied at once — see `applySkyState`
+     * for why this does not go through the page-theme blend.
+     *
+     * The image-based probe is the one part of this that is too expensive to
+     * refresh on every change: it is a cube render plus a prefilter. It is
+     * therefore refreshed on its own much slower clock, which is invisible
+     * because the probe only carries the *ambient* colour and that changes far
+     * more slowly than the sun's position does.
+     */
+    skyEnvClock += realDelta;
+    const next = skyClock.poll();
+    if (next) {
+      const environment = skyEnvClock >= 240;
+      skyEnvClock = 0;
+      applySkyState(next, environment);
+    }
+
     atmosphere.follow(rig.camera, rig.focus);
     renderer.render(scene, rig.camera);
 
@@ -2609,17 +2978,76 @@ export function mountShell(root: WorldHost): ShellHandle {
    * A small, read-only view of the live world. It exists for verification and
    * for support ("where is the camera?"), and it never mutates anything.
    */
-  (window as unknown as { __worldDebug?: () => unknown }).__worldDebug = () => {
-    const celestial = atmosphere.activeCelestialPosition();
-    const projected = celestial ? celestial.clone().project(rig.camera) : null;
+  /**
+   * Bring the camera's own matrices up to date.
+   *
+   * The renderer is what normally does this, so a question asked between frames
+   * is otherwise answered against the previous pose — and, worse, against a
+   * projection matrix from before the last resize. That matters because every
+   * sky diagnostic projects a world direction through the camera: a stale
+   * projection answers with a scale that is simply wrong, which is exactly the
+   * kind of wrong that looks like a bug in the astronomy.
+   */
+  function refreshCamera(): void {
+    rig.camera.updateMatrix();
+    rig.camera.updateMatrixWorld();
+    rig.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * Where the sky body that is up can be pressed, in CSS pixels of the stage, or
+   * null when there is nothing to press.
+   *
+   * One function, used by the tap handler, the hover cursor and the diagnostics,
+   * because getting this wrong is invisible in every one of them separately. Two
+   * things had to be right and both were wrong when it was written out by hand at
+   * each call site:
+   *
+   *  - The camera's own matrices have to be refreshed first. The renderer is what
+   *    normally updates them, so a projection taken between frames used the
+   *    previous pose — and the pose is precisely what a visitor has just changed
+   *    by dragging, which is exactly when they go to press the sun. The disc was
+   *    drawn in one place and tested for in another.
+   *  - A point behind the camera still projects to a plausible x and y, because
+   *    the perspective divide flips it through the origin. `projectBody` handles
+   *    that with a view-space depth test; `z < 1` does not, and would have made a
+   *    body at the camera's back pressable.
+   */
+  function celestialTarget(): { x: number; y: number; reach: number; kind: 'sun' | 'moon' } | null {
+    const kind = atmosphere.celestialKind();
+    if (!kind) return null;
+    refreshCamera();
+    const ndc = atmosphere.projectBody(kind, rig.camera);
+    if (!ndc) return null;
     const width = stageEl.clientWidth;
     const height = stageEl.clientHeight;
-    const toScreen = (point: THREE.Vector3 | null) =>
+    /* The body is large, so its own on-screen size sets the target. */
+    const reach = Math.max(
+      CELESTIAL_TAP_RADIUS,
+      atmosphere.activeCelestialRadius(rig.camera) * height,
+    );
+    return {
+      x: (ndc.x * 0.5 + 0.5) * width,
+      y: (-ndc.y * 0.5 + 0.5) * height,
+      reach,
+      kind,
+    };
+  }
+
+  /* A small, read-only view of the live world. It exists for verification and
+   * for support ("where is the camera?"), and it never mutates anything. */
+  (window as unknown as { __worldDebug?: () => unknown }).__worldDebug = () => {
+    const celestial = atmosphere.activeCelestialPosition();
+    const kind = atmosphere.celestialKind();
+    const ndc = celestial && kind ? atmosphere.projectBody(kind, rig.camera) : null;
+    const width = stageEl.clientWidth;
+    const height = stageEl.clientHeight;
+    const toScreen = (point: { x: number; y: number } | null) =>
       point
         ? {
             x: (point.x * 0.5 + 0.5) * width,
             y: (-point.y * 0.5 + 0.5) * height,
-            onScreen: point.z < 1,
+            onScreen: Math.abs(point.x) <= 1 && Math.abs(point.y) <= 1,
           }
         : null;
     return {
@@ -2645,6 +3073,32 @@ export function mountShell(root: WorldHost): ShellHandle {
        * a verification run can prove that rather than trust it.
        */
       camera: rig.debug(),
+      /**
+       * How far the island has turned. The turn belongs to the world now — the
+       * camera holds its bearing so the sky does not slide past — so this is the
+       * number a check about "is the campus turning?" has to read.
+       */
+      islandTurn: Number(world.turn.toFixed(4)),      /**
+       * Where the camera is actually pointing.
+       *
+       * Both matrices are brought up to date first. `refreshCamera` is the same
+       * call the sky probes make, and it exists because the renderer is what
+       * normally updates them: a question asked between frames would otherwise
+       * be answered against the previous pose, or against a projection matrix
+       * from before the last resize.
+       */
+      rotation: (() => {
+        refreshCamera();
+        const forward = rig.camera.getWorldDirection(new THREE.Vector3());
+        const bearing = ((Math.atan2(forward.x, -forward.z) * 180) / Math.PI + 360) % 360;
+        return {
+          bearing: Math.round(bearing),
+          pitch: Math.round((Math.asin(THREE.MathUtils.clamp(forward.y, -1, 1)) * 180) / Math.PI),
+          fov: rig.camera.fov,
+          aspect: Number(rig.camera.aspect.toFixed(3)),
+          distance: Number(rig.camera.position.distanceTo(rig.focus).toFixed(2)),
+        };
+      })(),
       /** The solid volumes the camera's clearance rule tests against. */
       solids: world.cameraSolids().map((solid) => ({ ...solid })),
       /**
@@ -2660,10 +3114,49 @@ export function mountShell(root: WorldHost): ShellHandle {
        * The sky body that is currently up — the sun by day, the moon by night
        * — as a screen point and the tap radius it deserves.
        */
-      celestial: toScreen(projected),
+      celestial: toScreen(ndc),
       celestialRadius: atmosphere.activeCelestialRadius(rig.camera) * height,
       /** Why the body may be missing: it is only ever a blend or a distance. */
       celestialHidden: atmosphere.celestialDiagnostics(),
+      /**
+       * The sky, as the world currently believes it to be.
+       *
+       * Everything here is read from the same `SkyState` the light and the sky
+       * dome were built from, so a verification run can assert against the
+       * world's own reading rather than against a second calculation that might
+       * disagree with it.
+       */
+      sky: {
+        label: skyState.label,
+        hours: skyState.hours,
+        overridden: skyState.overridden,
+        sunAltitude: skyState.sun.altitude,
+        sunAzimuth: skyState.sun.azimuth,
+        moonAltitude: skyState.moon.altitude,
+        moonAzimuth: skyState.moon.azimuth,
+        moonIllumination: skyState.moon.illumination,
+        moonElongation: skyState.moon.elongation,
+        moonPhase: phaseName(skyState.moon.elongation),
+        dayness: skyState.dayness,
+        twilight: skyState.twilight,
+        golden: skyState.golden,
+        blueHour: skyState.blueHour,
+        exposure: liveTheme.exposure,
+        fogDensity: liveTheme.fogDensity,
+        keyDirection: {
+          x: atmosphere.keyDirectionX,
+          y: atmosphere.keyDirectionY,
+          z: atmosphere.keyDirectionZ,
+        },
+        /**
+         * The sun's own direction, unclamped.
+         *
+         * The key light's elevation is clamped to keep its shadows sane, so it
+         * is not a report of where the sun is; this is.
+         */
+        sunDirectionY: atmosphere.sunDirectionY,
+        siderealAngle,
+      },
       /** Every caption the shell is currently projecting, with its placement. */
       captions: [...hotspots.entries()].map(([key, link]) => ({
         key,
@@ -2690,7 +3183,151 @@ export function mountShell(root: WorldHost): ShellHandle {
     };
   };
 
+  /**
+   * Turn the camera to look at a point in the sky.
+   *
+   * This is the world's public "look there" control, and the sky suite needs it
+   * for a reason that is worth stating: a body can be in the *sky* and outside
+   * the *frame*, and those are different claims. The overview camera faces
+   * south-east, so a noon sun due south and forty-six degrees up is simply not
+   * in shot — correctly. Rather than weaken the verification to "the numbers are
+   * right", the suite can point the camera at the body and check that the disc
+   * lands exactly where the bearing says it should, which is the claim that
+   * matters to a visitor: the thing you can see is the thing you can press.
+   *
+   * `bearing` is compass degrees and `altitude` is degrees above the horizon,
+   * both the same convention `__worldDebug().sky` reports.
+   */
+  (window as unknown as {
+    __worldLookAt?: (bearing: number, altitude: number) => unknown;
+  }).__worldLookAt = (bearing: number, altitude: number) => {
+    if (disposed) return null;
+    refreshCamera();
+    const forward = rig.camera.getWorldDirection(new THREE.Vector3());
+    const currentBearing = ((Math.atan2(forward.x, -forward.z) * 180) / Math.PI + 360) % 360;
+    /* Signed shortest turn from where the camera looks to where the body is. */
+    let turnDegrees = ((bearing - currentBearing + 540) % 360) - 180;
+    /*
+     * The rig swings by moving its offset *around* the subject, so turning the
+     * view right means turning the offset left — hence the sign. Six degrees of
+     * vertical swing per ten of horizontal is the rig's own ratio, converted
+     * here rather than passed through as pixels.
+     */
+    turnDegrees = THREE.MathUtils.clamp(turnDegrees, -105, 105);
+    /*
+     * Asked for as a *change* to the look-around, not as an absolute orbit, so
+     * the turn is measured from where the camera actually is — which is what
+     * makes this usable on a view the visitor has already dragged.
+     *
+     * The two signs are not the same, and both were derived from the rig's own
+     * arithmetic rather than guessed. Turning the view clockwise means turning
+     * the offset anticlockwise, so the azimuth delta is the negative of the
+     * turn. Vertically it is the *positive*: the rig measures its polar angle
+     * from straight up, and it adds that to the camera's own offset, so a larger
+     * polar angle lifts the camera and tips the view down toward the subject —
+     * which is to say that looking *up* at a body takes a positive delta.
+     */
+    const azimuthDelta = -(turnDegrees * (Math.PI / 180));
+    /*
+     * A few degrees of overshoot, so the body ends up near the top of the frame
+     * rather than exactly on its edge. The rig's vertical swing is bounded — it
+     * is a look-around, not a neck brace — so a body that is barely inside the
+     * frame is one a viewer would describe as outside it.
+     *
+     * Note that the swing is also *clamped* at the top by the rig, at about
+     * twenty-five degrees above the composed aim. A body higher than that cannot
+     * be brought into the centre of the frame by turning, which is honest: the
+     * visitor's own look-around is limited in exactly the same way.
+     */
+    const polarDelta = (altitude + 4) * (Math.PI / 180);
+    const current = rig.orbitState;
+    rig.setOrbitState({
+      azimuth: current.azimuth + azimuthDelta,
+      polar: current.polar + polarDelta,
+    });
+    if (!running) renderOnce();
+    refreshCamera();
+    const rotated = rig.camera.getWorldDirection(new THREE.Vector3());
+    return {
+      bearing: Number((((Math.atan2(rotated.x, -rotated.z) * 180) / Math.PI + 360) % 360).toFixed(1)),
+      pitch: Number(((Math.asin(THREE.MathUtils.clamp(rotated.y, -1, 1)) * 180) / Math.PI).toFixed(1)),
+      requested: { bearing, altitude },
+    };
+  };
+
   /* The same resolution a tap uses, exposed for diagnostics. */
+  (window as unknown as { __worldSky?: () => unknown }).__worldSky = () =>
+    atmosphere.skyDiagnostics();
+
+  /**
+   * What is in the sky at a given compass bearing and altitude.
+   *
+   * The verification suite's question — "is the sun where the astronomy says it
+   * is?" — cannot be answered from a screenshot, because a sun in the wrong half
+   * of the sky still looks like a sun. This resolves the bearing against the
+   * scene itself and reports which body is there, so the answer is a fact about
+   * the built world rather than about a picture of it.
+   *
+   * `bearing` is degrees from north, clockwise; `altitude` is degrees above the
+   * horizon. Both are the same convention `__worldDebug().sky` reports.
+   */
+  (window as unknown as {
+    __worldSkyAt?: (bearing: number, altitude: number) => unknown;
+  }).__worldSkyAt = (bearing: number, altitude: number) => {
+    if (disposed) return null;
+    refreshCamera();
+    /*
+     * A bearing and an altitude, as a direction. The same convention the sky
+     * itself uses: north is `-Z`, and a bearing increases toward the east.
+     */
+    const alt = (altitude * Math.PI) / 180;
+    const az = (bearing * Math.PI) / 180;
+    const direction = new THREE.Vector3(
+      Math.cos(alt) * Math.sin(az),
+      Math.sin(alt),
+      -Math.cos(alt) * Math.cos(az),
+    );
+    const point = rig.camera.position.clone().addScaledVector(direction, 380);
+    /*
+     * Whether the point is in front of the camera, tested on the view-space
+     * depth. A point behind the camera still projects to a plausible x and y —
+     * the perspective divide flips it through the origin — so testing the
+     * normalized depth is how a body at the camera's back gets reported as on
+     * screen.
+     *
+     * The matrix is refreshed first: the renderer is what normally updates it,
+     * so between frames the camera's pose would otherwise be one frame stale.
+     */
+    rig.camera.updateMatrixWorld();
+    const forward = rig.camera.getWorldDirection(new THREE.Vector3());
+    const inFront = direction.dot(forward) > 0.01;
+    const ndc = point.project(rig.camera);
+    const onScreen = inFront && Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1;
+    return {
+      bearing,
+      altitude,
+      onScreen,
+      ndc: { x: ndc.x, y: ndc.y, z: ndc.z },
+      camera: {
+        position: rig.camera.position.toArray().map((n) => Number(n.toFixed(2))),
+        forward: forward.toArray().map((n) => Number(n.toFixed(3))),
+        direction: direction.toArray().map((n) => Number(n.toFixed(3))),
+        dot: direction.dot(forward),
+      },
+      // Where that bearing lands on the frame, in CSS pixels.
+      screen: {
+        x: (ndc.x * 0.5 + 0.5) * stageEl.clientWidth,
+        y: (-ndc.y * 0.5 + 0.5) * stageEl.clientHeight,
+      },
+      // And which body the scene actually has there.
+      body: onScreen ? atmosphere.probeBody(ndc.x, ndc.y, rig.camera) : null,
+      sunAltitude: skyState.sun.altitude,
+      sunAzimuth: skyState.sun.azimuth,
+      moonAltitude: skyState.moon.altitude,
+      moonAzimuth: skyState.moon.azimuth,
+    };
+  };
+
   (window as unknown as { __worldProbe?: (x: number, y: number) => string | null }).__worldProbe = (
     x: number,
     y: number,
@@ -2717,10 +3354,71 @@ export function mountShell(root: WorldHost): ShellHandle {
   (window as unknown as { __worldResetTurn?: () => void }).__worldResetTurn = () => {
     autoTurnAllowed = false;
     rig.resetOrbit();
+    world.setTurn(0);
+    rig.setSolids(world.turnedSolids());
     lastInteraction = performance.now();
     compose(true);
     renderOnce();
   };
+
+  /**
+   * Set the world's hour, or hand it back to the clock.
+   *
+   * `__worldSkyTime(18.5)` pins the sky to half past six in the evening;
+   * `__worldSkyTime(null)` releases it. Everything downstream — the sun's and
+   * the moon's positions, the palette, the exposure, the fog, the key light's
+   * direction, the stars — follows from the `SkyState` this produces, so a
+   * harness that sets the hour has set the whole sky rather than one part of it.
+   *
+   * The date is never replaced: only the hour moves, so the season stays real.
+   */
+  (window as unknown as { __worldSkyTime?: (hour: number | null) => unknown }).__worldSkyTime = (
+    hour: number | null,
+  ) => {
+    if (disposed) return null;
+    const next = setSkyTime(hour === null || !Number.isFinite(hour) ? null : hour);
+    return { label: next.label, overridden: next.overridden, dayness: next.dayness };
+  };
+
+  /**
+   * Move the world's *date*, keeping the hour.
+   *
+   * The moon's phase is a property of the day and not of the hour, so this is
+   * the only lever that can answer "does the phase really change?" — and it is
+   * the reason the override carries a date at all. Nothing in the visitor's own
+   * interface moves the date: the world is always today.
+   */
+  (window as unknown as { __worldSkyDay?: (dayOffset: number) => unknown }).__worldSkyDay = (
+    dayOffset: number,
+  ) => {
+    if (disposed) return null;
+    const when = new Date();
+    when.setDate(when.getDate() + Math.round(dayOffset));
+    const hour = skyClock.pinned?.hour ?? skyState.hours;
+    const next = setSkyTime(hour, when);
+    return {
+      label: next.label,
+      phase: phaseName(next.moon.elongation),
+      elongation: next.moon.elongation,
+      illumination: next.moon.illumination,
+    };
+  };
+
+  /*
+   * A time in the URL, for photography and for sharing a particular light.
+   *
+   * `?sky=18.5` opens the world at half past six in the evening, and
+   * `?sky=now` is the clock. Deep-linking a *look* is the point: a sunset this
+   * specific is not something a visitor can otherwise ask for, and a link that
+   * reproduces one exactly is worth more than a slider.
+   */
+  if (typeof location !== 'undefined') {
+    const requested = new URLSearchParams(location.search).get('sky');
+    if (requested && requested !== 'now') {
+      const hour = Number(requested);
+      if (Number.isFinite(hour)) setSkyTime(((hour % 24) + 24) % 24);
+    }
+  }
 
   /**
    * Geometry diagnostics.
@@ -2834,11 +3532,18 @@ export function mountShell(root: WorldHost): ShellHandle {
   resize();
   wireInteraction();
   applyState();
+  /* Publish the clock before the first frame, so the dial opens on the right
+     hour rather than on whatever the markup was authored with. */
+  publishSkyState();
   renderOnce();
   syncLoop();
 
   const handle: ShellHandle = {
     applyState,
+    setSkyTime(hour: number | null) {
+      if (disposed) return;
+      setSkyTime(hour);
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
@@ -2848,6 +3553,9 @@ export function mountShell(root: WorldHost): ShellHandle {
       intersectionObserver.disconnect();
       stopThemes();
       stopAmbient();
+      stopSkyTime();
+      stopLightPin();
+      textures?.dispose();
       for (const cleanup of cleanups) cleanup();
       world.dispose();
       materials.dispose();

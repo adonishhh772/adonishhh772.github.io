@@ -16,12 +16,19 @@ import {
   currentTheme,
   hideWorldAlert,
   isAmbientPaused,
+  pinnedSkyHour,
   requestResetView,
+  requestSkyTime,
   setAmbientPaused,
+  showWorldAlert,
   subscribeAmbient,
+  subscribeSkyState,
+  subscribeSkyTime,
   subscribeTheme,
+  THEME_TRANSITION_MS,
   toggleTheme,
   watchSystemTheme,
+  type PublishedSkyState,
 } from './theme-state';
 const BOOT_KEY = '__abdWorldChrome';
 
@@ -83,6 +90,65 @@ export function syncAmbientControls(): void {
   }
 }
 
+/**
+ * The time dial.
+ *
+ * Its state lives in two places by necessity. The *dial position* is the
+ * visitor's or the world's current hour, which the world publishes; the
+ * *pressed* state is whether they have pinned one at all. Reading the second
+ * from storage rather than from the slider matters: a slider always has a
+ * position, so a slider alone cannot say "I am following the clock".
+ */
+export function syncSkyTimeControls(state?: PublishedSkyState): void {
+  const pinned = pinnedSkyHour();
+  const published = state ?? readPublishedSky();
+
+  for (const range of document.querySelectorAll<HTMLInputElement>('[data-world-sky-hour]')) {
+    const hours = published ? published.hours : minutesFromClock();
+    const minutes = Math.round(((hours % 24) + 24) % 24 * 60);
+    range.value = String(((minutes % 1440) + 1440) % 1440);
+    range.setAttribute('aria-valuetext', published ? published.label : clockLabel(hours));
+  }
+  for (const button of document.querySelectorAll<HTMLElement>('[data-world-sky-follow]')) {
+    /* Following the clock and standing at one hour are different states, and
+       only storage can tell them apart: a slider always has a position. */
+    button.setAttribute('aria-pressed', pinned === null ? 'true' : 'false');
+  }
+  for (const label of document.querySelectorAll<HTMLElement>('[data-world-sky-state]')) {
+    if (published) {
+      label.textContent = published.overridden
+        ? `${published.label} — pinned`
+        : `${published.label} — following your clock`;
+    } else {
+      label.textContent = pinned === null ? 'Following your clock' : `Pinned to ${clockLabel(pinned)}`;
+    }
+  }
+}
+
+/** The world's own reading, as it publishes it onto the stage element. */
+export function readPublishedSky(): PublishedSkyState | null {
+  const raw = document.querySelector<HTMLElement>('[data-world-stage]')?.dataset.skyState;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PublishedSkyState;
+  } catch {
+    return null;
+  }
+}
+
+function minutesFromClock(): number {
+  const now = new Date();
+  return now.getHours() + now.getMinutes() / 60;
+}
+
+/** `18:42` from fractional hours. */
+function clockLabel(hours: number): string {
+  const wrapped = ((hours % 24) + 24) % 24;
+  const h = Math.floor(wrapped);
+  const m = Math.floor((wrapped - h) * 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 /* ── The map menu ────────────────────────────────────────────────────── */
 
 let menuOpen = false;
@@ -135,6 +201,18 @@ function onDocumentClick(event: MouseEvent): void {
   }
 
   /*
+   * Handing the world back to the visitor's own clock. The dial's own movement
+   * is handled on `input`, which fires continuously while a pointer is down —
+   * this is the way *out* of a pinned hour, and it is a separate control
+   * precisely because dragging a slider to "now" would be a coincidence rather
+   * than a request.
+   */
+  if (target.closest('[data-world-sky-follow]')) {
+    requestSkyTime(null);
+    return;
+  }
+
+  /*
    * Reset view. The shell owns the camera, so this is a request rather than a
    * command: the chrome does not import three.js and keeps working when the
    * renderer is the thing that failed.
@@ -166,6 +244,41 @@ function onDocumentKeydown(event: KeyboardEvent): void {
 }
 
 /**
+ * The time dial, moved.
+ *
+ * Dragging fires a great many `input` events, and each one is a full sky
+ * recomputation: the astronomy, the palette, the light rig and the environment
+ * probe. That is cheap enough to do per event — the trigonometry is a few
+ * hundred flops — but the *probe* is a render pass, so it is throttled inside
+ * the shell rather than here. What this handler must not do is persist on every
+ * event: a drag across the dial would write a hundred times to storage, so the
+ * value is written when the gesture ends instead.
+ */
+function onDocumentInput(event: Event): void {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  if (!target.matches('[data-world-sky-hour]')) return;
+  const minutes = Number(target.value);
+  if (!Number.isFinite(minutes)) return;
+  const hour = (minutes / 60) % 24;
+  requestSkyTime(hour, { persist: false });
+  /* The label follows the handle, so the dial reads while it is being dragged. */
+  for (const label of document.querySelectorAll<HTMLElement>('[data-world-sky-state]')) {
+    label.textContent = `${clockLabel(hour)} — pinned`;
+  }
+}
+
+/** Committing the drag: this is the write that outlives the page. */
+function onDocumentChange(event: Event): void {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  if (!target.matches('[data-world-sky-hour]')) return;
+  const minutes = Number(target.value);
+  if (!Number.isFinite(minutes)) return;
+  requestSkyTime((minutes / 60) % 24, { persist: true });
+}
+
+/**
  * Start the chrome. Idempotent: the persisted element survives navigation, and
  * the guard means a second inline execution cannot bind a second set of
  * listeners.
@@ -175,6 +288,7 @@ export function bootstrapChrome(): void {
   restoreDocumentState();
   syncThemeControls();
   syncAmbientControls();
+  syncSkyTimeControls();
 
   /* If the visitor already chose to read without the 3D scene, that choice
      stands for the rest of the session: the controls still work, the failure
@@ -192,6 +306,16 @@ export function bootstrapChrome(): void {
 
   document.addEventListener('click', onDocumentClick);
   document.addEventListener('keydown', onDocumentKeydown);
+  document.addEventListener('input', onDocumentInput);
+  document.addEventListener('change', onDocumentChange);
+
+  /*
+   * The dial shows the world's own reading, not the last thing that was asked
+   * for. The request travels one way and the answer the other, so a request with
+   * no renderer listening leaves the dial honest about it rather than showing an
+   * hour that never happened.
+   */
+  subscribeSkyState((state) => syncSkyTimeControls(state));
 
   document.addEventListener('astro:before-swap', (event) => {
     const detail = event as Event & { newDocument?: Document };

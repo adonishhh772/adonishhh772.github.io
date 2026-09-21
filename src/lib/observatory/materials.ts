@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import type { QualitySettings } from './quality';
 import type { WorldTheme } from './theme';
+import type { TextureLibrary } from './textures';
 
 export class Materials {
   /** The island's ground: vertex-coloured, so one mesh carries all four bands. */
@@ -23,6 +24,8 @@ export class Materials {
   readonly stoneDark: THREE.MeshStandardMaterial;
   readonly ceramic: THREE.MeshStandardMaterial;
   readonly rock: THREE.MeshStandardMaterial;
+  /** Tree trunks and limbs. */
+  readonly bark: THREE.MeshStandardMaterial;
   /**
    * The island's underside. The same stone pushed well toward shadow, so the
    * island reads as a lit plateau over a dark rock keel instead of one pale
@@ -77,30 +80,36 @@ export class Materials {
      * the lip, dark rock down the cliff. Painting it per vertex rather than
      * per mesh is what makes the transition between ground and rock follow the
      * landform instead of a ring of separate objects.
+     *
+     * Smooth-shaded, with a normal map: the vertex colours carry the *large*
+     * scale variation and the map carries everything finer than a vertex. Flat
+     * shading here would throw the normal map away and declare every triangle a
+     * facet, which is precisely the look this is replacing.
      */
-    this.terrain = standard(0xffffff, 0.86, 0.02, { vertexColors: true, flatShading: true });
+    this.terrain = standard(0xffffff, 0.86, 0.02, { vertexColors: true });
 
     /* Warm ceramic stone — the terraces and plinths. */
     this.stone = standard(theme.stone, 0.8, 0.03);
     this.stoneDark = standard(theme.stoneDeep, 0.88, 0.04);
     this.ceramic = standard(theme.ceramic, 0.62, 0.04);
-    this.rock = standard(theme.stoneDeep, 0.95, 0.02, { flatShading: true });
+    /* Broken rock. Smooth-shaded, because its surface is a normal map. */
+    this.rock = standard(theme.stoneDeep, 0.95, 0.02);
     this.keel = standard(
       new THREE.Color(theme.stoneDeep).lerp(new THREE.Color(0x080d18), 0.5).getHex(),
       0.96,
       0.01,
-      { flatShading: true },
     );
     this.grass = standard(theme.grass, 0.94, 0);
-    this.foliage = standard(theme.moss, 0.92, 0, { flatShading: true });
+    this.foliage = standard(theme.moss, 0.92, 0);
     /* Lifted toward the sky colour so a mixed treeline separates into shape
        instead of collapsing into one dark mass at island distance. */
     this.foliageLight = standard(
       new THREE.Color(theme.grass).lerp(new THREE.Color(theme.skyHorizon), 0.26).getHex(),
       0.9,
       0,
-      { flatShading: true },
     );
+    /* Bark: rough, matte, and mapped. */
+    this.bark = standard(theme.bark, 0.95, 0);
 
     /* Deep navy metal for structure and instruments. */
     this.metal = standard(theme.metal, 0.33, 0.6);
@@ -188,9 +197,79 @@ export class Materials {
     this.setQuality(quality);
   }
 
+  /**
+   * Attach the generated PBR maps.
+   *
+   * The maps are *detail*, not colour: the material's own colour still comes
+   * from the theme, and the map is multiplied over it. That ordering is what
+   * lets one set of greyscale-ish albedo textures serve both the day and the
+   * night palette without a second download — and it is why the albedo maps here
+   * are built around mid-grey rather than around a finished colour.
+   *
+   * The normal maps are what actually carry the realism. A `MeshStandardMaterial`
+   * with a roughness and a colour is a smooth surface with a tint; the normal
+   * map is what gives it a *surface* — a grain, a crack, a direction — and it is
+   * most of the difference between the flat render this replaces and a credible
+   * one.
+   */
+  setTextures(textures: TextureLibrary): void {
+    /*
+     * Ground: the map already carries a seven-unit tile, and this tightens it
+     * further. The island is twenty-eight units across, so a seven-unit tile
+     * gives four repetitions across the whole shelf — enough for the *large*
+     * scale to read, and far too little for the fine one. A little over three
+     * units per tile is where the tuft grain in the map stops being a smudge
+     * at the overview distance and starts being texture.
+     */
+    this.terrain.map = textures.ground.map;
+    this.terrain.normalMap = textures.ground.normalMap;
+    this.terrain.roughnessMap = textures.ground.roughnessMap;
+    this.terrain.normalScale.set(1.15, 1.15);
+    for (const map of [
+      this.terrain.map,
+      this.terrain.normalMap,
+      this.terrain.roughnessMap,
+    ]) {
+      map.repeat.set(2.2, 2.2);
+      map.needsUpdate = true;
+    }
+
+    /* Broken rock and the raw keel share a surface: they are the same stone. */
+    for (const material of [this.rock, this.keel]) {
+      material.map = textures.rock.map;
+      material.normalMap = textures.rock.normalMap;
+      material.roughnessMap = textures.rock.roughnessMap;
+      material.normalScale.set(1.1, 1.1);
+    }
+
+    /* Dressed stone, for everything the campus is built out of. */
+    for (const material of [this.stone, this.stoneDark, this.ceramic]) {
+      material.map = textures.stone.map;
+      material.normalMap = textures.stone.normalMap;
+      material.roughnessMap = textures.stone.roughnessMap;
+      material.normalScale.set(0.5, 0.5);
+    }
+
+    this.bark.map = textures.bark.map;
+    this.bark.normalMap = textures.bark.normalMap;
+    this.bark.roughnessMap = textures.bark.roughnessMap;
+    this.bark.normalScale.set(1.0, 1.0);
+
+    for (const material of [
+      this.terrain,
+      this.rock,
+      this.keel,
+      this.stone,
+      this.stoneDark,
+      this.ceramic,
+      this.bark,
+    ]) {
+      material.needsUpdate = true;
+    }
+  }
+
   /** A window material the world can hand to a new pane; tracked for disposal. */
-  windowPanel(color: number, intensity: number): THREE.MeshStandardMaterial {
-    const material = new THREE.MeshStandardMaterial({
+  windowPanel(color: number, intensity: number): THREE.MeshStandardMaterial {    const material = new THREE.MeshStandardMaterial({
       color: 0x1a1206,
       roughness: 0.45,
       metalness: 0.05,
@@ -212,6 +291,7 @@ export class Materials {
     this.grass.color.setHex(theme.grass);
     this.foliage.color.setHex(theme.moss);
     this.foliageLight.color.setHex(theme.grass).lerp(new THREE.Color(theme.skyHorizon), 0.26);
+    this.bark.color.setHex(theme.bark);
     this.metal.color.setHex(theme.metal);
     this.metalDark.color.setHex(theme.metal).lerp(new THREE.Color(0x05080f), 0.55);
     this.glass.color.setHex(theme.glass);

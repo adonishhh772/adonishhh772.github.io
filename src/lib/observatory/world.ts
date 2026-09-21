@@ -24,6 +24,7 @@ import {
   crystalGeometry,
   curveFrom,
   distantRidges,
+  grassClumpGeometry,
   instancedMesh,
   islandEnvelopeAt,
   islandGeometry,
@@ -33,17 +34,22 @@ import {
   paintCloud,
   paintIsland,
   radialFalloffTexture,
+  reduceBoulder,
   ribbon,
   ribGeometry,
   ribbedDome,
   ridgeGeometry,
   rimRing,
   roundedBox,
+  shrubGeometry,
   spanMatrix,
   terrace,
   tubeAlong,
   unitCylinder,
 } from './parts';
+import { GrassField } from './grass';
+import { bedMatrix, heightAt, slopeAt } from './terrain';
+import type { TextureLibrary } from './textures';
 import type { Atmosphere } from './lighting';
 import type { QualitySettings } from './quality';
 import type { WorldTheme } from './theme';
@@ -213,6 +219,13 @@ export function fitDistance(radius: number, fovDeg: number, aspect: number): num
 
 export class ObservatoryWorld {
   readonly group = new THREE.Group();
+  /**
+   * The island, on its own group so it can be turned in place.
+   *
+   * See the constructor for why the campus and the sky's own furniture are not
+   * siblings. Anything that should rotate with the island goes in here.
+   */
+  private readonly turntable = new THREE.Group();
   readonly places = new Map<DestinationId, PlaceNode>();
   readonly exhibits = new Map<string, ExhibitNode>();
   /** Pickable objects for articles, repositories and projects. */
@@ -246,6 +259,10 @@ export class ObservatoryWorld {
   private clouds: THREE.Mesh[] = [];
   private drone = new THREE.Group();
   private rotorGroup = new THREE.Group();
+  /** The animated grass layer, built once the island's ground exists. */
+  private grass: GrassField | null = null;
+  /** The generated texture set, handed over by the shell. */
+  private textures: TextureLibrary | null = null;
 
   /* Signals along the pathways */
   private signals: { mesh: THREE.Mesh; t: number; speed: number; curve: THREE.CatmullRomCurve3 }[] = [];
@@ -254,6 +271,9 @@ export class ObservatoryWorld {
   private ringCurve!: THREE.CatmullRomCurve3;
   private droneTarget = new THREE.Vector3();
   private dronePosition = new THREE.Vector3(0, 9, 12);
+
+  /** How far the island has been turned, in radians. */
+  private turnAngle = 0;
 
   private readonly occluderList: THREE.Object3D[] = [];
   /** The island's mesh and geometry, kept so the bands can be repainted. */
@@ -287,6 +307,24 @@ export class ObservatoryWorld {
     this.materials = materials;
     this.atmosphere = atmosphere;
     this.group.name = 'observatory-world';
+    /*
+     * The turn-table.
+     *
+     * Everything that belongs to the *island* — the terrain, the planting, the
+     * buildings, the walkways — hangs off this group, while the sky's own
+     * furniture (the distant ridges, the mist, the clouds) hangs off the world
+     * group outside it.
+     *
+     * That split is what lets the campus turn without dragging the sky with it.
+     * The camera used to orbit the island instead: the island stayed put on
+     * screen and the whole sky slid past behind it, so the sun drifted out of
+     * frame while the campus sat still — the exact opposite of what a turning
+     * world should look like. Rotating the island in place leaves the camera and
+     * the sky where they are, and the horizon, the hills and the stars all hold
+     * still while the campus goes round.
+     */
+    this.turntable.name = 'observatory-turntable';
+    this.group.add(this.turntable);
 
     this.buildIsland();
     this.buildLandscape();
@@ -451,7 +489,7 @@ export class ObservatoryWorld {
     group.name = `place-${id}`;
     group.position.set(layout.x, 0, layout.z);
     group.rotation.y = layout.yaw;
-    this.group.add(group);
+    this.turntable.add(group);
 
     const glow = this.accentMaterial(id, this.accentFor(id));
     const result = build({ group, surface, origin, glow });
@@ -465,7 +503,7 @@ export class ObservatoryWorld {
     const pick = new THREE.Mesh(pickGeometry, this.pickMaterial);
     pick.name = `pick-${id}`;
     pick.position.set(layout.x, surface + pickHeight / 2 - 0.2, layout.z);
-    this.group.add(pick);
+    this.turntable.add(pick);
 
     const node: PlaceNode = {
       id,
@@ -583,7 +621,7 @@ export class ObservatoryWorld {
    * move with the theme while remaining one draw call.
    */
   private buildIsland(): void {
-    const geometry = islandGeometry({ seed: 11, sectors: 11, strength: 0.038, segments: 128 });
+    const geometry = islandGeometry({ seed: 11, sectors: 11, strength: 0.038, segments: 192 });
     this.track(geometry);
     paintIsland(geometry, this.islandPalette(this.theme));
     this.islandGeometry = geometry;
@@ -608,8 +646,9 @@ export class ObservatoryWorld {
       const matrix = new THREE.Matrix4();
       const outward = new THREE.Vector3();
       const bands = [
-        { count: 20, geometry: boulderGeometry(7, 0.62), y: -1.0, scale: [0.55, 0.9] },
-        { count: 16, geometry: boulderGeometry(19, 0.58), y: -1.9, scale: [0.8, 1.25] },
+        { count: 22, geometry: boulderGeometry(7, 0.62), y: -1.0, scale: [0.55, 0.9] },
+        { count: 18, geometry: boulderGeometry(19, 0.58), y: -1.9, scale: [0.8, 1.25] },
+        { count: 14, geometry: boulderGeometry(29, 0.6), y: -3.1, scale: [1.0, 1.5] },
       ];
       for (const band of bands) {
         const matrices: THREE.Matrix4[] = [];
@@ -636,206 +675,390 @@ export class ObservatoryWorld {
         const mesh = instancedMesh(band.geometry, this.materials.rock, matrices, 'cliff-ledges');
         mesh.castShadow = false;
         mesh.receiveShadow = true;
-        this.group.add(mesh);
+        this.turntable.add(mesh);
         this.track(band.geometry);
       }
     }
 
-    /*
-     * Outcrops on the plateau.
-     *
-     * Stone occurs in clusters, and it sits *in* the ground: these are turned
-     * only about the vertical axis — no tilt, which is what made the earlier
-     * ones read as plates leaning on the surface — stretched wider than they
-     * are tall, and sunk by two thirds of their height.
-     */
-    {
-      const random = mulberry32(77);
-      const geometry = this.track(boulderGeometry(53, 0.62));
-      const matrices: THREE.Matrix4[] = [];
-      const matrix = new THREE.Matrix4();
-      const rim = plateauRadius();
-      const clusters = 11;
-      for (let cluster = 0; cluster < clusters; cluster++) {
-        const angle = (cluster / clusters) * Math.PI * 2 + random() * 0.8;
-        const radius = (rim - 5) + random() * 3.2;
-        const anchorX = Math.cos(angle) * radius;
-        const anchorZ = Math.sin(angle) * radius;
-        const stones = 1 + Math.floor(random() * 3);
-        for (let stone = 0; stone < stones; stone++) {
-          const x = anchorX + (random() - 0.5) * 1.8;
-          const z = anchorZ + (random() - 0.5) * 1.8;
-          if (this.nearStation(x, z, 2.4)) continue;
-          const scale = 0.5 + random() * 0.6;
-          matrix.compose(
-            new THREE.Vector3(x, GROUND - 0.06 - scale * 0.66, z),
-            new THREE.Quaternion().setFromAxisAngle(
-              new THREE.Vector3(0, 1, 0),
-              random() * Math.PI * 2,
-            ),
-            new THREE.Vector3(scale * 1.3, scale * 0.72, scale),
-          );
-          matrices.push(matrix.clone());
-        }
-      }
-      const outcrops = instancedMesh(geometry, this.materials.rock, matrices, 'outcrops');
-      outcrops.castShadow = this.quality.shadows;
-      outcrops.receiveShadow = true;
-      this.group.add(outcrops);
+    this.scatterStone();
+    this.plantWoodland();
+  }
 
-      /*
-       * A scatter of single stones through the open ground, so the shelf reads
-       * as broken rock rather than as lawn. They are kept clear of the
-       * walkways and the terraces and kept flat: a stone stood on its edge is
-       * a stone that looks placed.
-       */
-      const scatter: THREE.Matrix4[] = [];
-      for (let i = 0; i < 46; i++) {
-        const angle = random() * Math.PI * 2;
-        const radius = 4.2 + random() * (rim - 5.4);
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
-        if (this.nearStation(x, z, 1.6)) continue;
-        const scale = 0.22 + random() * 0.4;
-        matrix.compose(
-          new THREE.Vector3(x, GROUND - 0.05 - scale * 0.62, z),
-          new THREE.Quaternion().setFromAxisAngle(
-            new THREE.Vector3(0, 1, 0),
-            random() * Math.PI * 2,
-          ),
-          new THREE.Vector3(scale * 1.35, scale * 0.7, scale),
-        );
-        scatter.push(matrix.clone());
+  /**
+   * Stone on the shelf.
+   *
+   * Three passes, in the order a real slope accumulates it: outcrops where the
+   * bedrock breaks through, a scree field below them where the broken pieces
+   * came to rest, and a scatter of single stones that have not moved in a long
+   * time. Every one of them is bedded into the ground by `bedMatrix`, which asks
+   * the terrain for its height at that exact point — so a stone in a hollow sits
+   * in the hollow, and the same stone on a swell sits on the swell.
+   *
+   * All three share one geometry and one material, so the whole of the island's
+   * stone costs three draw calls.
+   */
+  private scatterStone(): void {
+    const random = mulberry32(77);
+    const geometry = this.track(boulderGeometry(53, 0.62));
+    const rim = plateauRadius();
+    const matrix = new THREE.Matrix4();
+
+    /* Outcrops: clustered, wide, and sunk two thirds of the way in. */
+    const outcrops: THREE.Matrix4[] = [];
+    const clusters = 13;
+    for (let cluster = 0; cluster < clusters; cluster++) {
+      const angle = (cluster / clusters) * Math.PI * 2 + random() * 0.8;
+      const radius = rim * 0.42 + random() * (rim - rim * 0.42 - 1.2);
+      const anchorX = Math.cos(angle) * radius;
+      const anchorZ = Math.sin(angle) * radius;
+      const stones = 2 + Math.floor(random() * 4);
+      for (let stone = 0; stone < stones; stone++) {
+        const x = anchorX + (random() - 0.5) * 2.1;
+        const z = anchorZ + (random() - 0.5) * 2.1;
+        if (this.nearStation(x, z, 2.4)) continue;
+        if (Math.hypot(x, z) > rim - 1) continue;
+        /* Stone is bigger where the ground is steeper: it has not been buried
+           by the soil that collected on the flats. */
+        const slope = slopeAt(x, z);
+        const scale = (0.44 + random() * 0.6) * (1 + slope * 0.7);
+        bedMatrix(x, z, {
+          scale: new THREE.Vector3(scale * (1.1 + random() * 0.5), scale * 0.78, scale),
+          yaw: random() * Math.PI * 2,
+          sink: 0.62,
+          sinkHeight: 1.6,
+          target: matrix,
+        });
+        outcrops.push(matrix.clone());
       }
-      if (scatter.length) {
-        const stones = instancedMesh(geometry, this.materials.rock, scatter, 'scattered-stone');
-        stones.castShadow = this.quality.shadows;
-        stones.receiveShadow = true;
-        this.group.add(stones);
-      }
+    }
+    if (outcrops.length) {
+      const mesh = instancedMesh(geometry, this.materials.rock, outcrops, 'outcrops');
+      mesh.castShadow = this.quality.shadows;
+      mesh.receiveShadow = true;
+      this.turntable.add(mesh);
     }
 
     /*
-     * Planting: two species, arranged in rings from the rim inward, each
-     * turned and scaled on its own so the treeline reads as a wood rather
-     * than one repeated silhouette.
+     * Scree: the smaller, angular fragments that collect downhill of an
+     * outcrop. A second geometry, because a scree stone is a *shard* — flatter
+     * and sharper than a boulder — and reusing the boulder shape here is what
+     * makes a scree field read as a pile of eggs.
      */
+    const scree = this.track(reduceBoulder(boulderGeometry(97, 0.44), 0.36));
+    const fragments: THREE.Matrix4[] = [];
+    for (let i = 0; i < 150; i++) {
+      const angle = random() * Math.PI * 2;
+      const radius = 4.4 + random() * (rim - 5.6);
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      if (this.nearStation(x, z, 1.9)) continue;
+      const scale = 0.16 + random() * 0.34;
+      bedMatrix(x, z, {
+        scale: new THREE.Vector3(scale * (1.2 + random() * 0.6), scale * 0.6, scale),
+        yaw: random() * Math.PI * 2,
+        tilt: (random() - 0.5) * 0.5,
+        tiltBearing: random() * Math.PI * 2,
+        sink: 0.44,
+        sinkHeight: 1.2,
+        target: matrix,
+      });
+      fragments.push(matrix.clone());
+    }
+    if (fragments.length) {
+      const mesh = instancedMesh(scree, this.materials.rock, fragments, 'scree');
+      mesh.castShadow = this.quality.shadows;
+      mesh.receiveShadow = true;
+      this.turntable.add(mesh);
+    }
+
+    /* Single stones through the open ground, so the shelf reads as broken rock
+       rather than as lawn. Kept flat: a stone stood on its edge is a stone that
+       looks placed. */
+    const scatter: THREE.Matrix4[] = [];
+    for (let i = 0; i < 64; i++) {
+      const angle = random() * Math.PI * 2;
+      const radius = 4.2 + random() * (rim - 5.4);
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      if (this.nearStation(x, z, 1.6)) continue;
+      const scale = 0.22 + random() * 0.4;
+      bedMatrix(x, z, {
+        scale: new THREE.Vector3(scale * 1.35, scale * 0.7, scale),
+        yaw: random() * Math.PI * 2,
+        sink: 0.5,
+        sinkHeight: 1.4,
+        target: matrix,
+      });
+      scatter.push(matrix.clone());
+    }
+    if (scatter.length) {
+      const mesh = instancedMesh(geometry, this.materials.rock, scatter, 'scattered-stone');
+      mesh.castShadow = this.quality.shadows;
+      mesh.receiveShadow = true;
+      this.turntable.add(mesh);
+    }
+  }
+
+  /**
+   * The woodland.
+   *
+   * Two species in three bands: a dense treeline just inside the lip, a middle
+   * band of mixed trees, and a scattering of specimens close to the campus. The
+   * banding is what makes it read as a *wood* — a uniform scatter looks like a
+   * plantation, and a wood is denser at its edge and thins as it opens out.
+   *
+   * Each tree is given its own colour and its own small displacement, so a
+   * hundred conifers are not one conifer repeated a hundred times. That
+   * variation is the difference between planting and a texture.
+   */
+  private plantWoodland(): void {
     const random = mulberry32(5);
-    const rings = this.quality.treeRings;
     const conifer = coniferGeometry();
     const broadleaf = broadleafGeometry();
     this.track(conifer.trunk);
     for (const tier of conifer.tiers) this.track(tier);
+    this.track(conifer.branches);
     this.track(broadleaf.trunk);
+    this.track(broadleaf.limbs);
     this.track(broadleaf.canopy);
 
-    const coniferMatrices: THREE.Matrix4[][] = conifer.tiers.map(() => []);
-    const coniferTrunks: THREE.Matrix4[] = [];
-    const broadleafTrunks: THREE.Matrix4[] = [];
-    const broadleafCanopies: THREE.Matrix4[] = [];
-    const matrix = new THREE.Matrix4();
-    const lean = new THREE.Quaternion();
-    const yawOnly = new THREE.Quaternion();
     const rim = plateauRadius();
-    for (let ring = 0; ring < rings; ring++) {
-      const radius = (rim - 1.4) - ring * 1.5;
-      const count = 32 - ring * 5;
-      for (let i = 0; i < count; i++) {
-        const angle = (i / count) * Math.PI * 2 + random() * 0.3 + ring * 0.9;
-        const jitter = 0.86 + random() * 0.2;
-        const x = Math.cos(angle) * radius * jitter;
-        const z = Math.sin(angle) * radius * jitter;
-        /* Keep the built terraces clear of planting. */
-        if (this.nearStation(x, z, 4.2)) continue;
-        /*
-         * Trees are sized against the architecture, not against the ground:
-         * at island scale anything smaller than a third of a building reads
-         * as a shrub, which is what the earlier treeline looked like.
-         */
-        const scale = 0.78 + random() * 0.72;
-        yawOnly.setFromAxisAngle(new THREE.Vector3(0, 1, 0), random() * Math.PI * 2);
-        /* A slight lean, so the treeline is not a row of plumb lines. */
-        lean.setFromAxisAngle(
-          new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)),
-          (random() - 0.5) * 0.14,
-        );
-        const quaternion = lean.clone().multiply(yawOnly);
-        const base = new THREE.Vector3(x, GROUND - 0.08, z);
-        const uniform = new THREE.Vector3(scale, scale * (0.92 + random() * 0.24), scale);
-        matrix.compose(base, quaternion, uniform);
+    const bands = this.quality.treeRings;
+    const coniferTrunks: THREE.Matrix4[] = [];
+    const coniferTiers: THREE.Matrix4[][] = conifer.tiers.map(() => []);
+    const coniferBranches: THREE.Matrix4[] = [];
+    const coniferTints: number[] = [];
+    const broadleafTrunks: THREE.Matrix4[] = [];
+    const broadleafLimbs: THREE.Matrix4[] = [];
+    const broadleafCanopies: THREE.Matrix4[] = [];
+    const broadleafTints: number[] = [];
 
-        /* Roughly one tree in three is the rounded species. */
-        if (random() < 0.34) {
+    const matrix = new THREE.Matrix4();
+    const branchScratch = new THREE.Matrix4();
+    const tintScratch = new THREE.Color();
+
+    for (let band = 0; band < bands; band++) {
+      /* Outer bands are dense and narrow, inner ones wide and thin. */
+      const outer = (rim - 0.9) - band * (rim / (bands + 0.6));
+      const inner = Math.max(4.6, outer - rim / (bands + 0.6));
+      const count = Math.round((30 - band * 7) * (rim / 9));
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2 + random() * 0.4 + band * 1.1;
+        const radius = inner + random() * (outer - inner);
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        if (this.nearStation(x, z, 4.2)) continue;
+        if (Math.hypot(x, z) > rim - 0.7) continue;
+        /* Nothing grows on the rock band. */
+        if (slopeAt(x, z) > 0.4) continue;
+
+        /*
+         * Trees are sized against the architecture, not against the ground: at
+         * island scale anything smaller than a third of a building reads as a
+         * shrub. The inner bands are allowed to be smaller, because a specimen
+         * close to the camera can afford to be a young tree.
+         */
+        const scale = (0.8 + random() * 0.78) * (0.86 + band * 0.06);
+        const yaw = random() * Math.PI * 2;
+        const tilt = (random() - 0.5) * 0.15;
+        bedMatrix(x, z, {
+          scale: new THREE.Vector3(scale, scale * (0.92 + random() * 0.26), scale),
+          yaw,
+          tilt,
+          tiltBearing: random() * Math.PI * 2,
+          sink: 0.04,
+          sinkHeight: 1,
+          target: matrix,
+        });
+
+        if (random() < 0.38) {
           broadleafTrunks.push(matrix.clone());
+          const limbCount = broadleaf.limbMatrices.length;
+          for (let limb = 0; limb < limbCount; limb++) {
+            broadleafLimbs.push(
+              branchScratch.multiplyMatrices(matrix, broadleaf.limbMatrices[limb]).clone(),
+            );
+          }
           broadleafCanopies.push(matrix.clone());
+          /*
+           * A crown is never one flat colour. The tint runs the whole palette
+           * from a deep shaded green to a pale sun-bleached one, decided per
+           * tree, which is what breaks a mass of geometry into individual
+           * crowns.
+           */
+          broadleafTints.push(
+            tintScratch
+              .setHex(this.theme.moss)
+              .lerp(new THREE.Color(this.theme.grass), random())
+              .lerp(new THREE.Color(this.theme.snow), random() * 0.16)
+              .getHex(),
+          );
           continue;
         }
+
         coniferTrunks.push(matrix.clone());
-        for (const band of coniferMatrices) band.push(matrix.clone());
+        for (let tier = 0; tier < conifer.tiers.length; tier++) {
+          coniferTiers[tier].push(
+            branchScratch.multiplyMatrices(matrix, conifer.tierMatrices[tier]).clone(),
+          );
+        }
+        for (const branch of conifer.branchMatrices) {
+          coniferBranches.push(branchScratch.multiplyMatrices(matrix, branch).clone());
+        }
+        coniferTints.push(
+          tintScratch
+            .setHex(this.theme.moss)
+            .lerp(new THREE.Color(this.theme.grass), 0.25 + random() * 0.5)
+            .lerp(new THREE.Color(this.theme.skyHorizon), random() * 0.14)
+            .getHex(),
+        );
       }
     }
 
-    const addTree = (
-      mesh: THREE.InstancedMesh,
-      shadows: boolean,
-    ): THREE.InstancedMesh => {
+    const add = (mesh: THREE.InstancedMesh, shadows: boolean): THREE.InstancedMesh => {
       mesh.castShadow = shadows;
       mesh.receiveShadow = true;
-      this.group.add(mesh);
+      this.turntable.add(mesh);
       return mesh;
     };
 
     if (coniferTrunks.length) {
-      addTree(
-        instancedMesh(conifer.trunk, this.materials.rock, coniferTrunks, 'conifer-trunks'),
+      add(
+        instancedMesh(conifer.trunk, this.materials.bark, coniferTrunks, 'conifer-trunks'),
         this.quality.shadows,
       );
-      coniferMatrices.forEach((band, index) => {
-        addTree(
-          instancedMesh(conifer.tiers[index], this.materials.foliage, band, `conifer-tier-${index}`),
+      add(
+        instancedMesh(conifer.branches, this.materials.bark, coniferBranches, 'conifer-branches'),
+        false,
+      );
+      coniferTiers.forEach((store, index) => {
+        const mesh = add(
+          instancedMesh(conifer.tiers[index], this.materials.foliage, store, `conifer-tier-${index}`),
           this.quality.shadows,
         );
+        this.tintInstances(mesh, coniferTints);
       });
     }
     if (broadleafTrunks.length) {
-      addTree(
-        instancedMesh(broadleaf.trunk, this.materials.rock, broadleafTrunks, 'broadleaf-trunks'),
+      add(
+        instancedMesh(broadleaf.trunk, this.materials.bark, broadleafTrunks, 'broadleaf-trunks'),
         this.quality.shadows,
       );
-      addTree(
-        instancedMesh(
-          broadleaf.canopy,
-          this.materials.foliageLight,
-          broadleafCanopies,
-          'broadleaf-canopies',
-        ),
+      add(
+        instancedMesh(broadleaf.limbs, this.materials.bark, broadleafLimbs, 'broadleaf-limbs'),
+        false,
+      );
+      const mesh = add(
+        instancedMesh(broadleaf.canopy, this.materials.foliageLight, broadleafCanopies, 'broadleaf-canopy'),
         this.quality.shadows,
       );
+      this.tintInstances(mesh, broadleafTints);
     }
 
-    /* Restrained shrubs close to the architecture. */
-    const shrubGeometry = this.track(new THREE.IcosahedronGeometry(0.34, 0));
-    shrubGeometry.scale(1, 0.66, 1);
+    /* Shrubs: low, scattered, and much closer to the buildings than the trees. */
+    const shrub = this.track(shrubGeometry(2024));
     const shrubs: THREE.Matrix4[] = [];
-    for (let i = 0; i < 110; i++) {
+    for (let i = 0; i < 130; i++) {
       const angle = random() * Math.PI * 2;
-      const radius = 3.6 + random() * 7.4;
+      const radius = 3.6 + random() * (rim - 4.6);
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
       if (this.nearStation(x, z, 3.2)) continue;
-      const scale = 0.5 + random() * 0.85;
-      matrix.compose(
-        new THREE.Vector3(x, GROUND - 0.05, z),
-        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), random() * Math.PI),
-        new THREE.Vector3(scale, scale, scale),
-      );
+      if (slopeAt(x, z) > 0.46) continue;
+      const scale = 0.5 + random() * 0.9;
+      bedMatrix(x, z, {
+        scale: new THREE.Vector3(scale, scale * (0.8 + random() * 0.3), scale),
+        yaw: random() * Math.PI * 2,
+        sink: 0.14,
+        sinkHeight: 1,
+        target: matrix,
+      });
       shrubs.push(matrix.clone());
     }
     if (shrubs.length) {
-      const shrubsMesh = instancedMesh(shrubGeometry, this.materials.foliage, shrubs, 'shrubs');
-      shrubsMesh.castShadow = this.quality.shadows;
-      this.group.add(shrubsMesh);
+      const mesh = instancedMesh(shrub, this.materials.foliage, shrubs, 'shrubs');
+      mesh.castShadow = this.quality.shadows;
+      mesh.receiveShadow = true;
+      this.turntable.add(mesh);
     }
+  }
+
+  /** Apply a per-instance colour to a mesh, so a mass of foliage varies. */
+  private tintInstances(mesh: THREE.InstancedMesh, tints: number[]): void {
+    const color = new THREE.Color();
+    for (let i = 0; i < tints.length && i < mesh.count; i++) {
+      color.setHex(tints[i]);
+      mesh.setColorAt(i, color);
+    }
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
+  /**
+   * The grass layer.
+   *
+   * Built after the island, because it is placed *on* the island's own height
+   * field — and because the walkways and the terraces have to exist before the
+   * grass can be kept out of them.
+   *
+   * The count is scaled by the quality tier rather than being a fixed number: a
+   * field is the one thing in this scene whose cost is almost entirely
+   * fill-rate, so it is the first thing to give up on a device that is
+   * struggling, and the last thing to be added back.
+   */
+  private buildGrass(): void {
+    const textures = this.textures;
+    if (!textures || !this.quality.grassDensity) return;
+
+    const rim = plateauRadius();
+    const exclusion: { x: number; z: number; radius: number }[] = [];
+    for (const layout of Object.values(LAYOUT)) {
+      /*
+       * A radius generous enough to keep the field off the terraces *and* off
+       * the walkway that leads to them: grass growing through a path is the
+       * single most obvious sign that a scatter pass did not know what was
+       * already there.
+       */
+      exclusion.push({ x: layout.x, z: layout.z, radius: layout.pad + 1.5 });
+    }
+
+    this.grass = new GrassField(textures, this.quality, {
+      count: this.quality.grassTufts,
+      minHeight: 0.14,
+      maxHeight: 0.34,
+      seed: 8081,
+      bounds: {
+        exclusion,
+        innerRadius: 3.4,
+        outerRadius: rim - 0.35,
+      },
+    });
+    this.turntable.add(this.grass.group);
+  }
+
+  /**
+   * Hand the world its generated textures, once the shell has built them.
+   *
+   * The textures are built by the shell rather than here because they are
+   * expensive and shared: the materials need them at construction, and the grass
+   * needs them a moment later. Passing them in beats building them twice.
+   */
+  setTextures(textures: TextureLibrary): void {
+    this.textures = textures;
+    this.buildGrass();
+    this.setTheme(this.theme);
+  }
+
+  /**
+   * Run the wind.
+   *
+   * The strength is a function of the hour rather than a constant: a field is
+   * stillest in the middle of the night and moves most in the afternoon, which
+   * is the diurnal cycle of real wind and costs nothing to honour.
+   */
+  wind(time: number): void {
+    if (!this.grass) return;
+    const daylight = this.theme.dayness;
+    this.grass.update(time, 0.55 + daylight * 0.85 + this.theme.twilight * 0.3);
   }
 
   /** The four band colours of the island, read from the live theme. */
@@ -1058,7 +1281,7 @@ export class ObservatoryWorld {
       if (balusters.length) {
         const posts = instancedMesh(postGeometry, this.materials.metalDark, balusters, 'ring-posts');
         posts.castShadow = false;
-        this.group.add(posts);
+        this.turntable.add(posts);
       }
     }
 
@@ -1330,7 +1553,7 @@ export class ObservatoryWorld {
     group.name = 'light-switch';
     group.position.set(2.35, surface, 2.45);
     group.rotation.y = Math.PI * 0.25;
-    this.group.add(group);
+    this.turntable.add(group);
 
     /* Base and pillar. */
     this.mesh(terrace(0.34, 0.14, 0.06), this.materials.stoneDark, group, 'switch-base', {
@@ -1418,6 +1641,43 @@ export class ObservatoryWorld {
   /** Solid volumes for the camera rig. */
   cameraSolids(): { x: number; z: number; radius: number; top: number }[] {
     return this.solids;
+  }
+
+  /**
+   * Turn the island, in radians.
+   *
+   * The camera does not move: it is the world that goes round, so the sky stays
+   * where it is and the campus turns underneath it.
+   */
+  setTurn(radians: number): void {
+    this.turnAngle = radians;
+    this.turntable.rotation.y = radians;
+  }
+
+  get turn(): number {
+    return this.turnAngle;
+  }
+
+  /**
+   * The camera's clearance volumes, turned with the island.
+   *
+   * The solids are recorded in the island's own coordinates — where the
+   * buildings were actually placed — and the camera's clearance test works in
+   * world space. Once the island rotates, the two are in different frames and
+   * every building appears to be somewhere it is not. Rotating them here keeps
+   * the correction honest: the rig is told where the walls ended up, rather than
+   * having to know that anything turned at all.
+   */
+  turnedSolids(): { x: number; z: number; radius: number; top: number }[] {
+    if (Math.abs(this.turnAngle) < 1e-6) return this.solids;
+    const cos = Math.cos(this.turnAngle);
+    const sin = Math.sin(this.turnAngle);
+    return this.solids.map((solid) => ({
+      x: solid.x * cos - solid.z * sin,
+      z: solid.x * sin + solid.z * cos,
+      radius: solid.radius,
+      top: solid.top,
+    }));
   }
 
   /** True when a ray hits the light switch. Used for the direct tap, which is
@@ -2462,7 +2722,7 @@ export class ObservatoryWorld {
     eyeHalo.position.copy(eye.position);
     details.add(eyeHalo);
 
-    this.group.add(this.drone);
+    this.turntable.add(this.drone);
 
     /* The drone's light is only worth a shadow-less point light at full quality. */
     if (this.quality.droneLight) {
@@ -2482,7 +2742,7 @@ export class ObservatoryWorld {
       mesh.castShadow = false;
       mesh.receiveShadow = false;
       mesh.renderOrder = 2;
-      this.group.add(mesh);
+      this.turntable.add(mesh);
       this.signals.push({
         mesh,
         t: i / this.quality.signalCount,
@@ -2506,7 +2766,7 @@ export class ObservatoryWorld {
       const mesh = new THREE.Mesh(geometry, this.materials.signal);
       mesh.renderOrder = 3;
       mesh.castShadow = false;
-      this.group.add(mesh);
+      this.turntable.add(mesh);
       this.flight = { mesh, curve, t: 0 };
     }
     this.flight.curve = curve;
@@ -2556,6 +2816,19 @@ export class ObservatoryWorld {
       paintCloud(cloud.geometry, theme.snow, theme.cloudShade);
       const colors = cloud.geometry.attributes.color as THREE.BufferAttribute | undefined;
       if (colors) colors.needsUpdate = true;
+    }
+
+    /*
+     * The grass is tinted rather than repainted: it is cards carrying a drawn
+     * tuft, so its colour comes from the light. The tint tracks the ground it
+     * stands on, which is what keeps a clump from floating visually when the
+     * ground under it changes tone at dusk.
+     */
+    if (this.grass) {
+      const tint = new THREE.Color(theme.grass)
+        .lerp(new THREE.Color(theme.dryGrass), 0.22)
+        .lerp(new THREE.Color(theme.skyHorizon), theme.nightness * 0.18);
+      this.grass.setTint(tint.getHex(), 0.92 + theme.dayness * 0.2);
     }
 
     /* Atmosphere-adjacent pieces that are painted rather than lit. */
@@ -2618,6 +2891,9 @@ export class ObservatoryWorld {
 
   update(t: number, delta: number): void {
     const step = delta;
+
+    /* The wind. One uniform write for the whole field. */
+    this.wind(t);
 
     /* Orbital instrument: slow, deliberate, never a spin. */
     if (this.armillary) {
@@ -2811,6 +3087,8 @@ export class ObservatoryWorld {
   }
 
   dispose(): void {
+    this.grass?.dispose();
+    this.grass = null;
     this.group.traverse((object) => {
       const geometry = (object as Partial<THREE.Mesh>).geometry;
       geometry?.dispose();

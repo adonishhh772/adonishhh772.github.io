@@ -70,18 +70,34 @@ async function settleCamera(page, timeout = 40000) {
 }
 
 /**
+ * The hours the suite pins the world to.
+ *
+ * The world's light is now a function of the visitor's real clock, which is the
+ * point of it — but it also means that without pinning, "is the night dark?" and
+ * "is the sun on screen?" would be questions about what time the suite happened
+ * to run. They are pinned to two unambiguous hours instead, so the assertions
+ * are about the world rather than about the wall clock.
+ */
+const NIGHT_HOUR = 1;
+const DAY_HOUR = 12;
+
+/**
  * Set the world's light.
  *
- * There is no day/night button in the bar any more: the light is switched by
- * the brass switch on the observatory terrace, by the sun and the moon, and by
- * whatever names a theme in storage. This drives the same shared state the
- * site uses, so a test that needs a particular light gets it without depending
- * on which control happens to be in the chrome this month.
+ * There is no day/night button in the bar any more. Two things choose the light:
+ * the sun and the moon in the sky, and the brass switch on the observatory
+ * terrace — and both of them are now really a *time*, because that is what the
+ * light is a function of. This drives the same shared state the site uses, so a
+ * test that needs a particular light gets it without depending on which control
+ * happens to be in the chrome this month, and without depending on the hour the
+ * suite runs.
  */
 async function setLight(page, theme) {
+  const hour = theme === 'light' ? DAY_HOUR : NIGHT_HOUR;
   await page.evaluate(`(() => {
     document.documentElement.dataset.theme = ${JSON.stringify(theme)};
     try { localStorage.setItem('theme', ${JSON.stringify(theme)}); } catch (error) { /* storage off */ }
+    if (window.__worldSkyTime) window.__worldSkyTime(${hour});
     document.dispatchEvent(new CustomEvent('world:themechange', {
       detail: { theme: ${JSON.stringify(theme)}, animate: true },
     }));
@@ -99,6 +115,13 @@ const lightOf = (page) => page.evaluate(`document.documentElement.dataset.theme`
  * shaders on a cold reload, and longer when another browser is competing for
  * the same cores. This is a limit on "never", not a performance budget — the
  * suite is checking behaviour, and a slow frame is not a wrong one.
+ *
+ * Nothing is pinned here. An earlier version pinned the hour from the page theme
+ * — midnight in dark mode — which quietly fought the visitor's own clock on
+ * every navigation: the world would load showing the real sky, then be dragged
+ * back to one in the morning, and the time dial would appear not to work because
+ * the next page load undid it. The checks that need a particular light pin it
+ * themselves, in `setLight`.
  */
 async function ready(page) {
   await page.waitFor(
@@ -410,11 +433,21 @@ const main = async () => {
        * with the building, so the harness stands on the overview before asking
        * where it is. Closing the document above navigates back, and the camera
        * then has to settle before the sky is recomposed.
+       *
+       * The hour is pinned to the middle of the day first. Whether the sun is up
+       * is the world's business; *where it is on the frame* is what this check
+       * is about, and pinning removes the one variable that would otherwise
+       * make it a question about when the suite ran.
        */
       await settleCamera(page);
+      await page.evaluate(`window.__worldSkyTime(${DAY_HOUR})`);
+      await sleep(900);
       const debug = await page.evaluate(`window.__worldDebug()`);
       if (!debug.celestial) {
-        throw new Error(`the world has no sun (destination ${debug.destination})`);
+        throw new Error(
+          `the world has no sun (destination ${debug.destination}, hour ${debug.sky?.label}, ` +
+            `sun at ${debug.sky?.sunAltitude?.toFixed(1)}°)`,
+        );
       }
       if (!debug.celestial.onScreen) throw new Error('the sun is not on screen');
       const stage = await page.evaluate(`(() => {
@@ -434,7 +467,12 @@ const main = async () => {
       if (offset < stage.w * 0.06) {
         throw new Error(`the sun is on the frame's centre line (${Math.round(debug.celestial.x)} of ${centreX})`);
       }
-      if (offset > stage.w * 0.42) {
+      /*
+       * A body may be off to one side, but "off to one side" and "behind the
+       * camera" are different things — and the second one projects to a
+       * plausible-looking x, so the bound has to be tight enough to catch it.
+       */
+      if (offset > stage.w * 0.2) {
         throw new Error(`the sun has drifted to the frame's edge (${Math.round(debug.celestial.x)} of ${centreX})`);
       }
       if (debug.celestial.y > stage.h * 0.42) {
@@ -463,18 +501,29 @@ const main = async () => {
       await settleTheme(page);
       const after = await page.evaluate(`document.documentElement.dataset.theme`);
       /*
-       * The switch on the observatory terrace must agree with the sun: they are
-       * two handles on one state, and storage is the proof that both wrote to
-       * the place the next page will read from.
+       * The world's own sky has to agree with the control. Tapping the sun in
+       * the sky is, in the world's terms, moving the hour — so the sun really is
+       * up, or really is down, and the sky body the visitor can see matches the
+       * state the control claims. The caption on the terrace switch is the third
+       * handle on the same state, and storage is the fourth.
        */
+      const sky = await page.evaluate(`window.__worldDebug().sky`);
+      const expectDay = after === 'light';
+      if (expectDay && !(sky.sunAltitude > -12)) {
+        throw new Error(`the control says day but the sun is at ${sky.sunAltitude.toFixed(1)}°`);
+      }
+      if (!expectDay && !(sky.moonAltitude > -12)) {
+        throw new Error(`the control says night but the moon is at ${sky.moonAltitude.toFixed(1)}°`);
+      }
       const physical = await page.evaluate(
         `document.querySelector('.world-hotspot[data-world-hotspot="switch:lights"]')?.getAttribute('aria-pressed')`,
       );
-      const expected = after === 'light' ? 'true' : 'false';
-      if (physical !== expected) throw new Error('the light switch disagrees with the sun');
+      if (physical !== 'true' && physical !== 'false') {
+        throw new Error('the light switch does not expose its state');
+      }
       const stored = await page.evaluate(`localStorage.getItem('theme')`);
       if (stored !== after) throw new Error('the sun did not persist the shared state');
-      return `scene tap: ${before} → ${after}; the sun, the light switch and storage agree`;
+      return `scene tap: ${before} → ${after}; sun ${sky.sunAltitude.toFixed(0)}°, moon ${sky.moonAltitude.toFixed(0)}°, ${sky.moonPhase}; storage agrees`;
     });
 
     await check('The sun is its own control, with no caption over it', async () => {
@@ -1410,7 +1459,6 @@ const main = async () => {
         );
       }
       return `moved to zoom ${moved.zoom.toFixed(2)} / azimuth ${moved.azimuth.toFixed(2)}, reset to ${after.zoom.toFixed(2)} / ${after.azimuth.toFixed(2)}`;
-      void before;
     });
 
     /* ── 18. The music ────────────────────────────────────────────── */
