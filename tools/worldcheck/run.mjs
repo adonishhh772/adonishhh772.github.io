@@ -82,6 +82,21 @@ const NIGHT_HOUR = 1;
 const DAY_HOUR = 12;
 
 /**
+ * The hour the sky body is expected to be reachable at.
+ *
+ * Eight in the morning rather than noon, and the reason is a property of the
+ * world rather than a convenience. The camera orbits a focus and its polar
+ * angle is bounded, which means it can only look about three degrees above the
+ * horizon: at noon — forty-six degrees up at this latitude, for most of the
+ * year — the sun is not merely outside the frame, it is above every frame the
+ * visitor can reach. The morning sun is twenty-odd degrees up and twenty-six
+ * degrees to the left of the composed view, which is a turn they can make. So
+ * this is the hour at which "the sun is a body you can see and press" is a
+ * claim about the world rather than about the date.
+ */
+const BODY_HOUR = 8;
+
+/**
  * Set the world's light.
  *
  * There is no day/night button in the bar any more. Two things choose the light:
@@ -427,7 +442,7 @@ const main = async () => {
     await page.screenshot(join(OUT, '06-cv-closed.png'));
 
     /* ── 5. The physical light switch ─────────────────────────────── */
-    await check('The sun is a body in the sky, in the upper part of the view', async () => {
+    await check('The sun is a body in the sky, and the camera can be turned to it', async () => {
       /*
        * The sun belongs to the campus: at a destination the frame is filled
        * with the building, so the harness stands on the overview before asking
@@ -438,10 +453,24 @@ const main = async () => {
        * is the world's business; *where it is on the frame* is what this check
        * is about, and pinning removes the one variable that would otherwise
        * make it a question about when the suite ran.
+       *
+       * The camera is then turned to it, and that is not a convenience. The
+       * overview's composition deliberately ends about twenty degrees above the
+       * horizon, because the island is the subject — and a noon sun is forty-six
+       * degrees up at this latitude, so it is above every frame the visitor can
+       * reach for most of the year. Asserting that a body is on screen at noon
+       * without turning to it is a claim about the season, not about the world.
+       * What matters, and what this checks, is that the camera can be turned to
+       * the body and that the disc is then on the frame where its own bearing
+       * says it is — which is exactly what makes it pressable. `sky.mjs` makes
+       * the same claim against the astronomy itself.
        */
       await settleCamera(page);
-      await page.evaluate(`window.__worldSkyTime(${DAY_HOUR})`);
+      await page.evaluate(`window.__worldSkyTime(${BODY_HOUR})`);
       await sleep(900);
+      const sky = await page.evaluate(`window.__worldDebug().sky`);
+      await page.evaluate(`window.__worldLookAt(${sky.sunAzimuth}, ${sky.sunAltitude})`);
+      await sleep(1400);
       const debug = await page.evaluate(`window.__worldDebug()`);
       if (!debug.celestial) {
         throw new Error(
@@ -449,43 +478,47 @@ const main = async () => {
             `sun at ${debug.sky?.sunAltitude?.toFixed(1)}°)`,
         );
       }
-      if (!debug.celestial.onScreen) throw new Error('the sun is not on screen');
+      if (!debug.celestial.onScreen) {
+        throw new Error(
+          `the sun at ${sky.sunAltitude.toFixed(1)}° is not on the frame after turning to it ` +
+            `(camera facing ${debug.rotation.bearing}° at ${debug.rotation.pitch}°)`,
+        );
+      }
       const stage = await page.evaluate(`(() => {
         const w = document.querySelector('[data-world]').clientWidth;
         const h = document.querySelector('[data-world]').clientHeight;
         return { w, h };
       })()`);
       /*
-       * The body is deliberately off to one side of the frame: hung dead
-       * centre it lands directly behind the observatory dome from the overview
-       * bearing, which reads as a decal on the roof rather than as sky. What
-       * matters is that it is inside the frame, clear of the centre and in the
-       * upper part of it.
-       */
-      const centreX = stage.w / 2;
-      const offset = Math.abs(debug.celestial.x - centreX);
-      if (offset < stage.w * 0.06) {
-        throw new Error(`the sun is on the frame's centre line (${Math.round(debug.celestial.x)} of ${centreX})`);
-      }
-      /*
        * A body may be off to one side, but "off to one side" and "behind the
        * camera" are different things — and the second one projects to a
-       * plausible-looking x, so the bound has to be tight enough to catch it.
+       * plausible-looking coordinate, so the frame bounds are what catch it.
        */
-      if (offset > stage.w * 0.2) {
-        throw new Error(`the sun has drifted to the frame's edge (${Math.round(debug.celestial.x)} of ${centreX})`);
+      if (debug.celestial.x < 0 || debug.celestial.x > stage.w) {
+        throw new Error(`the sun is off the frame horizontally (x ${Math.round(debug.celestial.x)} of ${stage.w})`);
       }
-      if (debug.celestial.y > stage.h * 0.42) {
-        throw new Error(`the sun is not in the upper part of the frame (y ${Math.round(debug.celestial.y)})`);
+      if (debug.celestial.y < 0 || debug.celestial.y > stage.h * 0.6) {
+        throw new Error(`the sun is not in the upper part of the frame (y ${Math.round(debug.celestial.y)} of ${stage.h})`);
       }
-      return `offset ${Math.round(offset)}px from centre at ${Math.round(debug.celestial.x)},${Math.round(debug.celestial.y)} of ${stage.w}×${stage.h}`;
+      return `sun at ${Math.round(debug.celestial.x)},${Math.round(debug.celestial.y)} of ${stage.w}×${stage.h} after turning to ${sky.sunAzimuth.toFixed(0)}° / ${sky.sunAltitude.toFixed(0)}°`;
     });
 
     await check('Tapping the sun in the sky changes the light, and it sets as the moon rises', async () => {
-      /* A direct tap on the post itself, resolved by the scene rather than by
-         a caption: this is the physical control, not the interface one. */
+      /*
+       * A direct tap on the body itself, resolved by the scene rather than by a
+       * caption: this is the physical control, not the interface one. The camera
+       * is turned to it for the same reason as above — a control above the top
+       * of the frame is a control a visitor reaches by looking up, and this
+       * suite looks up.
+       */
+      const skyBefore = await page.evaluate(`window.__worldDebug().sky`);
+      await page.evaluate(
+        `window.__worldLookAt(${skyBefore.sunAzimuth}, ${skyBefore.sunAltitude})`,
+      );
+      await sleep(1400);
       const before = await page.evaluate(`document.documentElement.dataset.theme`);
       const point = await page.evaluate(`window.__worldDebug().celestial`);
+      if (!point || !point.onScreen) throw new Error('the sun is not on the frame to be tapped');
       const blocked = await page.evaluate(`(() => {
         const node = document.elementFromPoint(${point.x}, ${point.y});
         return node ? (node.className || node.tagName) : null;

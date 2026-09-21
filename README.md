@@ -111,11 +111,10 @@ everything else follows from what you select.
   switch turns the lamps over.
 - **The chrome is always there.** A compact bar holds the location readout,
   the **Map** (a labelled list of every place and document, as real links),
-  **Reset view** and the **sound** controls. It takes the
+  the **light**, **Reset view** and the **sound** controls. It takes the
   edge opposite the reading surface on a desktop and the top strip on a phone,
   so it stays reachable from the CV, an article, a case study or the contact
-  card. No destination can be lost behind a building or a panel. The light is
-  not in the bar: it is a switch in the world.
+  card. No destination can be lost behind a building or a panel.
 - **The camera is bounded and unambiguous.** A press only becomes a drag once
   it has travelled far enough to be unarguable, and a press that starts on a
   control belongs to that control - never to the camera.
@@ -139,12 +138,27 @@ then the system preference is honoured.
   choosing night runs it down its arc while the moon rises from the other end
   and the starfield comes up with it. The same value is driven by the brass
   **light switch standing on the observatory terrace** — a post with a lever and
-  a glazed lamp, which a visitor can simply press — and by the sun and the moon,
-  which are their own controls. The sun's rays, the moon's craters and the
-  switch's own lever all follow it. There is no light control in the world's
-  bar: the light is something you do to the place, not a setting in a toolbar.
-  (The hidden fallback header still carries one, for the no-JavaScript and
-  failed-renderer presentations, where the world's own chrome is never drawn.)
+  a glazed lamp, which a visitor can simply press — by the sun and the moon,
+  which are their own controls, and by the **light control in the bar**. The
+  sun's rays, the moon's craters and the switch's own lever all follow it.
+- **The switch moves the sky, and the clock cannot take it back.** Pressing the
+  moon brings the sun up — at noon, at midnight, whenever — because what the
+  visitor is asking for is the other time of day and not a tint. The hour that
+  results is pinned and remembered, so the world stops following the wall clock
+  and stays where it was put, across pages and across visits, until the time
+  dial hands it back. The sky bodies themselves are the control whenever one of
+  them is above the horizon; the bar's control is what makes the switch reachable
+  at the hours when neither of them is.
+- **The sky is a sky, not a painted map.** The sun's glow sits where the sun is,
+  and the starfield is eight thousand points on the celestial sphere that turn
+  with the *sidereal* angle: each star keeps its own size, colour and magnitude,
+  so it is a point at any zoom rather than a smudge, and the Milky Way is a
+  density rather than a texture.
+- **The campus lights itself.** Nine lamp posts stand along the walkway ring and
+  the avenue, spaced along the paths rather than between them: a glazed lantern
+  that comes on at dusk with the windows, a warm pool on the paving beneath it,
+  and a real point light on one post in two. The island at one in the morning is
+  a lit place rather than a silhouette with two bright windows in it.
 - **The sky changes, not a filter.** Sky gradient, fog colour and density,
   hemisphere and key lights, the rim light, practical lamps, window and lamp
   emissives, the environment probe, exposure and the shadow tuning all take
@@ -417,6 +431,7 @@ server first, then:
 npm run build
 npm run preview                                  # http://localhost:4321
 npm run verify:world   -- http://localhost:4321  # the full journey suite
+npm run verify:night   -- http://localhost:4321  # the sky, the stars and the lamps
 npm run verify:a11y    -- http://localhost:4321  # focus, print, scrolling
 npm run verify:content -- http://localhost:4321  # a new Markdown file appears
 npm run verify:music   -- http://localhost:4321  # the audio journey on its own
@@ -439,6 +454,21 @@ node tools/worldcheck/inspect.mjs http://localhost:4321   # screenshots + JSON r
 node tools/worldcheck/inspect.mjs http://localhost:4321 --only camera
 node tools/worldcheck/frame.mjs .screenshots/inspect/02-campus-day.png
 ```
+
+Three more are for looking at the thing you are changing:
+
+```bash
+node tools/worldcheck/shot.mjs http://localhost:4321 --hour 22 --look moon --crop 600,60,320,240 --scale 3
+node tools/worldcheck/eval.mjs http://localhost:4321 "window.__worldDebug().lamps"
+node tools/worldcheck/crop.mjs .screenshots/shot.png .screenshots/zoom.png 600,60,320,240 3
+```
+
+`shot.mjs` pins the hour, optionally turns the camera to a sky body or a bearing,
+magnifies a crop and writes one frame. `eval.mjs` evaluates an expression against
+the live world and prints the result, which is how a question like "how high is
+the ground at this point?" is answered rather than guessed at. `crop.mjs`
+magnifies a region of an existing PNG with nearest-neighbour sampling, so a
+star's pixels can be looked at as pixels.
 
 `inspect.mjs` writes day and night frames of the campus and of each
 destination, and reports the camera, the captions, and whether any two captions

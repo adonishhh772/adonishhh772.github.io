@@ -6,7 +6,7 @@
  * the scene and the camera — alive across client-side navigation. Only the
  * reading surfaces around it are swapped.
  */
-import { hero, site, rootUrl } from '../../site.config';
+import { hero, rootUrl } from '../../site.config';
 
 const portrait = rootUrl('/images/abd-bastola.jpg');
 ---
@@ -15,7 +15,7 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
   class="world"
   id="world"
   data-world
-  data-world-state="idle"
+  data-world-state="loading"
   data-world-reading="false"
   data-portrait={portrait}
   transition:persist="world"
@@ -44,38 +44,35 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
       >
         <div class="loader-sky" aria-hidden="true"></div>
 
-        <div class="loader-orbit" aria-hidden="true">
-          <span class="loader-ring loader-ring--equator"></span>
-          <span class="loader-ring loader-ring--meridian"></span>
-          <span class="loader-ring loader-ring--outer"></span>
-          <span class="loader-satellite"></span>
-          <span class="loader-core"></span>
-          <span class="loader-sweep"></span>
-        </div>
-
-        <div class="loader-copy">
-          <p class="loader-eyebrow mono">{hero.eyebrow}</p>
-          <p class="loader-name">
-            {site.name}<span class="dot">.</span>
-          </p>
-          <p class="loader-step" data-world-load-step>{hero.stage.steps.engine}</p>
-
-          <div
-            class="loader-rule"
-            data-world-progress
-            role="progressbar"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            aria-valuenow="0"
-            aria-label={hero.stage.loadingLabel}
-          >
-            <span class="loader-rule-fill" data-world-progress-fill></span>
-            <span class="loader-rule-sheen" aria-hidden="true"></span>
+        <div class="loader-stack">
+          <div class="loader-orbit-frame" aria-hidden="true">
+            <div class="loader-orbit">
+              <span class="loader-ring loader-ring--equator"></span>
+              <span class="loader-ring loader-ring--meridian"></span>
+              <span class="loader-ring loader-ring--outer">
+                <span class="loader-satellite"></span>
+              </span>
+              <span class="loader-core"></span>
+            </div>
           </div>
 
-          <p class="loader-meta mono">
-            <span data-world-progress-value>0</span>%
-          </p>
+          <div class="loader-copy">
+            <p class="loader-title">{hero.stage.loadingLabel}</p>
+            <p class="loader-step" data-world-load-step>{hero.stage.steps.engine}</p>
+
+            <div
+              class="loader-rule"
+              data-world-progress
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              aria-label={hero.stage.loadingLabel}
+            >
+              <span class="loader-rule-fill" data-world-progress-fill></span>
+              <span class="loader-rule-sheen" aria-hidden="true"></span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -126,7 +123,6 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
   const loader = document.querySelector<HTMLElement>('[data-world-loader]');
   const world = document.querySelector<HTMLElement>('[data-world]');
   const track = document.querySelector<HTMLElement>('[data-world-progress]');
-  const valueEl = document.querySelector<HTMLElement>('[data-world-progress-value]');
   const stepEl = document.querySelector<HTMLElement>('[data-world-load-step]');
   /*
    * The step labels come from the markup, not from this script: a bundled
@@ -154,7 +150,7 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
    * and the canvas then dissolves in. A slow load is never delayed by any of
    * it — the floor only ever applies to time the loader has already had.
    */
-  const MIN_VISIBLE_MS = 900;
+  const MIN_VISIBLE_MS = 720;
   const startedAt = performance.now();
   let shown = 0;
   let ceiling = 8;
@@ -165,7 +161,6 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
     const rounded = Math.round(shown);
     loader?.style.setProperty('--load-progress', (Math.min(shown, 100) / 100).toFixed(4));
     if (track) track.setAttribute('aria-valuenow', String(rounded));
-    if (valueEl) valueEl.textContent = String(rounded);
   };
 
   /**
@@ -247,14 +242,17 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
       complete();
       return;
     }
+    if (state === 'idle' || state === 'loading' || state === 'recovering') {
+      shown += (ceiling - shown) * 0.09;
+      paint();
+      return;
+    }
     if (state === 'error' || state === 'degraded') {
       loader?.setAttribute('data-stalled', 'true');
       window.clearInterval(creep);
       delete document.documentElement.dataset.worldHold;
       return;
     }
-    shown += (ceiling - shown) * 0.09;
-    paint();
   };
 
   const startCreep = () => {
@@ -262,9 +260,22 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
     creep = window.setInterval(creepStep, 110);
   };
 
-  startCreep();
-  report(4, STEP_ENGINE);
-  ceiling = 46;
+  const initialState = world?.dataset.worldState ?? 'loading';
+  if (initialState === 'ready' || initialState === 'degraded') {
+    shown = 100;
+    paint();
+    handOver();
+  } else {
+    if (world) {
+      world.dataset.worldState = 'loading';
+      document.documentElement.dataset.worldState = 'loading';
+      delete document.documentElement.dataset.worldReady;
+    }
+    startCreep();
+    paint();
+    report(4, STEP_ENGINE);
+    ceiling = 46;
+  }
 
   const nextFrame = () =>
     new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
@@ -344,7 +355,8 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
    */
   (function () {
     var world = document.querySelector('[data-world]');
-    var state = (world && world.dataset.worldState) || 'loading';
+    var state = (world && world.dataset.worldState) || 'idle';
+    if (state === 'idle') state = 'loading';
     var usable = state === 'ready' || state === 'degraded' || state === 'error';
     if (usable) document.documentElement.dataset.worldReady = 'true';
     document.documentElement.dataset.worldState = state;

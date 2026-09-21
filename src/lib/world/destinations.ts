@@ -33,13 +33,17 @@ export type SurfaceKind =
   | 'welcome'
   | 'missing';
 
+export type DockIconName = 'compass' | 'user' | 'grid' | 'document' | 'mail' | 'github';
+
 export interface DestinationMeta {
   id: DestinationId;
   /** Dock label. */
   label: string;
+  /** Icon shown in the dock on narrow screens. */
+  dockIcon: DockIconName;
   /** The URL that renders this destination. */
   href: string;
-  /** Longer name used in the dock's tooltip and the location readout. */
+  /** Accessible name for dock controls and map entries. */
   name: string;
   /**
    * Which side the reading surface occupies. The camera frames the location
@@ -52,42 +56,48 @@ export const DESTINATIONS: DestinationMeta[] = [
   {
     id: 'campus',
     label: 'Home',
-    name: 'The observatory campus',
+    dockIcon: 'compass',
+    name: 'Home',
     href: '/',
     panel: 'right',
   },
   {
     id: 'studio',
     label: 'CV',
-    name: 'Personal studio',
+    dockIcon: 'user',
+    name: 'CV',
     href: '/cv/',
     panel: 'right',
   },
   {
     id: 'workshop',
     label: 'Projects',
-    name: 'Project workshop',
+    dockIcon: 'grid',
+    name: 'Projects',
     href: '/work/',
     panel: 'left',
   },
   {
     id: 'library',
     label: 'Writing',
-    name: 'Reliable AI library',
+    dockIcon: 'document',
+    name: 'Writing',
     href: '/writing/',
     panel: 'left',
   },
   {
     id: 'workbench',
     label: 'Open source',
-    name: 'Open-source workbench',
+    dockIcon: 'github',
+    name: 'Open source',
     href: '/open-source/',
     panel: 'right',
   },
   {
     id: 'contact',
     label: 'Contact',
-    name: 'Contact station',
+    dockIcon: 'mail',
+    name: 'Contact',
     href: '/contact/',
     panel: 'right',
   },
@@ -128,6 +138,15 @@ export const PLACE_INDEX: Partial<Record<DestinationId, { label: string; meta: s
   contact: { label: 'Contact', meta: 'Email · LinkedIn · booking', href: '/contact/' },
 };
 
+/** Index listing surface for a destination, when the place index page is open. */
+export function placeIndexSurface(id: DestinationId): SurfaceKind | null {
+  if (id === 'workshop') return 'projects';
+  if (id === 'library') return 'articles';
+  if (id === 'workbench') return 'repos';
+  if (id === 'contact') return 'contact';
+  return null;
+}
+
 /**
  * The destination menu.
  *
@@ -152,7 +171,7 @@ export const WORLD_NAV: WorldNavEntry[] = [
     id: 'campus',
     label: 'Home',
     detail: 'The whole campus',
-    name: 'The observatory campus',
+    name: 'Home',
     href: '/',
     destination: 'campus',
   },

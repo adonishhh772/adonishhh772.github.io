@@ -70,6 +70,18 @@ export function isReading(state: WorldState): boolean {
   return state.surface !== 'none';
 }
 
+/** Index listings (projects, articles, repos) are travel, not document reading. */
+export function isPlaceIndex(state: WorldState): boolean {
+  return INDEX_SURFACES.has(state.surface);
+}
+
+/**
+ * True when the camera should use full-scene framing rather than a document strip.
+ */
+export function isImmersiveWorld(state: WorldState): boolean {
+  return !isReading(state) || isPlaceIndex(state);
+}
+
 /**
  * True when a specific document is open — the CV, the biography, one article,
  * one case study, the contact card. Those are what "close" returns from, so

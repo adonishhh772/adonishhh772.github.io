@@ -22,21 +22,19 @@ const description = `Public repositories from ${site.name}: AI agents, GraphRAG 
   surface="repos"
   backHref="/"
 >
-  <section class="page-head">
+  <section class="page-head page-head--repos">
     <div class="wrap">
-      <span class="kicker">Open-source workbench</span>
       <h1 class="display display--page">Repositories</h1>
       <p class="lede">
-        {githubProjects.length} curated public repositories — agents, GraphRAG
-        experiments, reinforcement learning for RAN and automation tooling.
-        Each one links straight to GitHub.
+        {githubProjects.length} curated repos on GitHub — agents, GraphRAG, RL for RAN, and
+        automation tooling.
       </p>
-      <div class="page-head-actions">
-        <a class="btn btn--ghost" href={social.github} target="_blank" rel="noopener noreferrer">
+      <div class="page-head-actions page-head-actions--repos">
+        <a class="btn btn--ghost btn--small" href={social.github} target="_blank" rel="noopener noreferrer">
           <Icon name="github" size={15} />
-          Profile on GitHub
+          GitHub profile
         </a>
-        <a class="btn btn--ghost" href={rootUrl('/work/')}>
+        <a class="btn btn--ghost btn--small" href={rootUrl('/work/')}>
           Case studies
           <Icon name="arrow-right" size={15} />
         </a>
@@ -44,7 +42,7 @@ const description = `Public repositories from ${site.name}: AI agents, GraphRAG 
     </div>
   </section>
 
-  <section class="section" aria-label="Public repositories">
+  <section class="section section--repos" aria-label="Public repositories">
     <div class="wrap">
       {
         categories.map((category) => (
@@ -65,6 +63,16 @@ const description = `Public repositories from ${site.name}: AI agents, GraphRAG 
 </BaseLayout>
 
 <style>
+  .page-head--repos .lede {
+    max-width: 38ch;
+    font-size: 0.92rem;
+  }
+
+  .page-head-actions--repos {
+    margin-top: 0.85rem;
+    gap: 0.5rem;
+  }
+
   .repo-group + .repo-group {
     margin-top: 2.2rem;
   }

@@ -24,6 +24,26 @@ import {
 
 const BOOT_KEY = '__abdWorldSound';
 const PANEL_KEY = '__abdWorldSoundPanel';
+const SOUND_GATE_KEY = 'world:sound-gate';
+
+function soundGateDismissed(): boolean {
+  try {
+    return window.sessionStorage.getItem(SOUND_GATE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function syncSoundGate(): void {
+  const gate = document.querySelector<HTMLElement>('[data-world-sound-gate]');
+  const world = document.querySelector<HTMLElement>('[data-world]');
+  if (!gate) return;
+  if (soundGateDismissed()) {
+    gate.hidden = true;
+    return;
+  }
+  gate.hidden = world?.dataset.worldState !== 'ready';
+}
 
 interface BoundWindow extends Window {
   [BOOT_KEY]?: boolean;
@@ -188,6 +208,29 @@ export function watchSoundControls(): void {
       return;
     }
 
+    if (target.closest('[data-world-enter-sound]')) {
+      try {
+        window.sessionStorage.setItem(SOUND_GATE_KEY, '1');
+      } catch {
+        /* storage unavailable */
+      }
+      syncSoundGate();
+      armFirstGesture();
+      void engine.play({ fadeMs: 1200 });
+      return;
+    }
+
+    if (target.closest('[data-world-enter-silent]')) {
+      try {
+        window.sessionStorage.setItem(SOUND_GATE_KEY, '1');
+      } catch {
+        /* storage unavailable */
+      }
+      engine.pause({ forget: true });
+      syncSoundGate();
+      return;
+    }
+
     /*
      * A press outside closes the popover — but only a press on the world.
      * Closing it for *any* click used to mean that opening the map menu, or
@@ -206,9 +249,17 @@ export function watchSoundControls(): void {
 
   /*
    * The music is on unless the visitor turned it off, and this is what starts
-   * it: the first press, scroll, key or touch anywhere on the page.
+   * it: the first press, scroll, key or touch anywhere on the page — but only
+   * after the one-time entry gate has been answered.
    */
-  if (readSoundPreference() !== 'off') armFirstGesture();
+  if (soundGateDismissed() && readSoundPreference() !== 'off') armFirstGesture();
+
+  syncSoundGate();
+  const worldRoot = document.querySelector<HTMLElement>('[data-world]');
+  if (worldRoot) {
+    const observer = new MutationObserver(() => syncSoundGate());
+    observer.observe(worldRoot, { attributes: true, attributeFilter: ['data-world-state'] });
+  }
 
   document.addEventListener('visibilitychange', () => {
     engine.handleVisibility(document.hidden);

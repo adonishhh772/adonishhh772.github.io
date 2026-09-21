@@ -27,9 +27,12 @@ import {
   directionFrom,
   moonTexture,
   skyMaterial,
-  starTexture,
+  starGeometry,
+  starMaterial,
+  STAR_POLE_AXIS,
   sunTexture,
   type SkyUniforms,
+  type StarUniforms,
 } from './sky-textures';
 
 const SKY_RADIUS = 420;
@@ -72,18 +75,13 @@ export class Atmosphere {
   /**
    * The stars.
    *
-   * Not a `Points` cloud but a single map applied to the dome along the
-   * celestial sphere: the sidereal angle is a uniform, so the whole field turns
-   * together as the world does. `sky-textures.ts` has the map; here it only has
-   * to be rotated and faded.
+   * A field of points on the celestial sphere rather than a map on the dome:
+   * each star keeps its own apparent size and colour, so the sky is a sky at any
+   * zoom. `sky-textures.ts` builds the field; here it only has to be turned by
+   * the sidereal angle and faded.
    */
-  private readonly stars: THREE.Mesh;
-  private readonly starUniforms: {
-    map: { value: THREE.Texture };
-    rotation: { value: number };
-    opacity: { value: number };
-    tint: { value: THREE.Color };
-  };
+  private readonly stars: THREE.Points;
+  private readonly starUniforms: StarUniforms;
 
   private theme: WorldTheme;
   private quality: QualitySettings;
@@ -111,6 +109,7 @@ export class Atmosphere {
   private readonly scratchProject = new THREE.Vector3();
   private readonly captionOffset = new THREE.Vector3();
   private readonly scratchLightPosition = new THREE.Vector3();
+  private readonly scratchViewDir = new THREE.Vector3();
 
   private pmrem: THREE.PMREMGenerator;
   environment: THREE.Texture | null = null;
@@ -147,79 +146,20 @@ export class Atmosphere {
     this.group.add(this.skyMesh);
 
     /* Stars ---------------------------------------------------------- */
-    const starGeometry = new THREE.SphereGeometry(SKY_RADIUS * 0.97, 32, 20);
-    this.starUniforms = {
-      map: { value: starTexture() },
-      rotation: { value: 0 },
-      opacity: { value: 0 },
-      tint: { value: new THREE.Color(0xffffff) },
-    };
-    this.stars = new THREE.Mesh(
-      starGeometry,
-      new THREE.ShaderMaterial({
-        uniforms: this.starUniforms as unknown as Record<string, THREE.IUniform>,
-        vertexShader: /* glsl */ `
-          varying vec3 vDirection;
-          varying vec2 vEquirect;
-          void main() {
-            vDirection = normalize(position);
-            /*
-             * The dome's own spherical UV, which is already an equirectangular
-             * parameterisation — so a star map drawn as longitude/latitude maps
-             * onto it without a seam stitch.
-             */
-            vEquirect = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: /* glsl */ `
-          precision highp float;
-          uniform sampler2D map;
-          uniform float rotation;
-          uniform float opacity;
-          uniform vec3 tint;
-          varying vec3 vDirection;
-          varying vec2 vEquirect;
-          void main() {
-            /*
-             * Turn the sky about the celestial pole rather than about the
-             * zenith: the stars wheel around the pole, and a field that rotates
-             * about the vertical is the one thing that instantly reads as a
-             * spinning texture.
-             */
-            vec3 direction = vDirection;
-            float pole = 0.72;
-            float sinPole = sqrt(1.0 - pole * pole);
-            vec3 axis = vec3(sinPole, pole, 0.0);
-            float angle = rotation;
-            vec3 turned = direction * cos(angle) +
-              cross(axis, direction) * sin(angle) +
-              axis * dot(axis, direction) * (1.0 - cos(angle));
-
-            float longitude = atan(turned.z, turned.x) / 6.2831853 + 0.5;
-            float latitude = 0.5 - asin(clamp(turned.y, -1.0, 1.0)) / 3.14159265;
-            vec3 star = texture2D(map, vec2(longitude, latitude)).rgb;
-
-            /* Below the horizon there is nothing to see: the island is there. */
-            float above = smoothstep(-0.04, 0.06, direction.y);
-            gl_FragColor = vec4(star * tint * opacity * above, 1.0);
-
-            #include <tonemapping_fragment>
-            #include <colorspace_fragment>
-          }
-        `,
-        side: THREE.BackSide,
-        depthWrite: false,
-        depthTest: false,
-        fog: false,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        toneMapped: true,
-      }),
-    );
+    this.stars = new THREE.Points(starGeometry(), starMaterial());
+    this.starUniforms = (this.stars.material as THREE.ShaderMaterial)
+      .uniforms as unknown as StarUniforms;
+    this.starUniforms.pixelScale.value = renderer.getPixelRatio();
     this.stars.name = 'stars';
     this.stars.frustumCulled = false;
     this.stars.renderOrder = -18;
+    this.stars.visible = false;
+    /*
+     * The field sits on a unit sphere and is *scaled* to the dome's radius, so
+     * the rotation that turns the sky is applied about the origin in the
+     * object's own space rather than against a second, huge coordinate system.
+     */
+    this.stars.scale.setScalar(SKY_RADIUS * 0.99);
     this.group.add(this.stars);
 
     /* The sun and the moon ------------------------------------------- */
@@ -228,8 +168,8 @@ export class Atmosphere {
     this.moonTexture = moonTexture(0);
     this.moonPhaseKey = 0;
 
-    const sun = this.celestialBody(this.sunTexture, 0.3, 2.6);
-    const moon = this.celestialBody(this.moonTexture, 0.12, 1.9);
+    const sun = this.celestialBody(this.sunTexture, 0.22, 2.35);
+    const moon = this.celestialBody(this.moonTexture, 0.12, 1.85);
     this.sunBody = sun.group;
     this.moonBody = moon.group;
     this.sunMaterials = { disc: sun.disc, glow: sun.glow };
@@ -263,8 +203,24 @@ export class Atmosphere {
     this.fill.target.position.set(0, 1, 0);
     this.group.add(this.fill, this.fill.target);
 
-    for (const name of ['studio', 'tower', 'beacon', 'drone']) {
-      const light = new THREE.PointLight(theme.practical, 0, 9, 2);
+    /*
+     * Four lights inside the buildings and four out on the campus lamps — the
+     * posts are built by the world and have their positions handed back here.
+     * The count is a budget rather than an accident: every one of these costs
+     * a term in the fragment shader of every lit surface in the scene, and a
+     * night campus is perfectly readable with one lamp in two actually lit.
+     */
+    for (const name of [
+      'studio',
+      'tower',
+      'beacon',
+      'drone',
+      'lamp-0',
+      'lamp-1',
+      'lamp-2',
+      'lamp-3',
+    ]) {
+      const light = new THREE.PointLight(theme.practical, 0, 11, 2);
       light.name = `practical-${name}`;
       this.practicals.push(light);
       this.group.add(light);
@@ -296,7 +252,7 @@ export class Atmosphere {
     discScale: number,
   ): { group: THREE.Group; disc: THREE.SpriteMaterial; glow: THREE.SpriteMaterial } {
     const group = new THREE.Group();
-    group.renderOrder = 12;
+    group.renderOrder = 80;
 
     const glowMaterial = new THREE.SpriteMaterial({
       map: this.hazeTexture,
@@ -311,7 +267,7 @@ export class Atmosphere {
     const glow = new THREE.Sprite(glowMaterial);
     glow.name = 'glow';
     glow.scale.setScalar(discScale * 4.4);
-    glow.renderOrder = 12;
+    glow.renderOrder = 80;
     group.add(glow);
 
     const faceMaterial = new THREE.SpriteMaterial({
@@ -324,7 +280,7 @@ export class Atmosphere {
     const disc = new THREE.Sprite(faceMaterial);
     disc.name = 'disc';
     disc.scale.setScalar(discScale);
-    disc.renderOrder = 13;
+    disc.renderOrder = 81;
     group.add(disc);
 
     return { group, disc: faceMaterial, glow: glowMaterial };
@@ -528,6 +484,68 @@ export class Atmosphere {
     cube.dispose();
   }
 
+  /**
+   * What the sky's own artwork is made of.
+   *
+   * Two claims about this world are claims about pixels that a frame cannot
+   * settle: that the moon's sprite does not draw the edge of its own quad onto
+   * the sky, and that a star is a point rather than a smudge. Both were once
+   * false, and both were invisible in a screenshot taken at the wrong hour.
+   *
+   * So they are read back from the live objects. The moon's boundary is read
+   * from the alpha channel the sprite is actually textured with — a glow that
+   * has not reached zero where the canvas ends *is* a square, whatever the
+   * frame happens to show. The star sizes are read from the attribute the
+   * shader turns into `gl_PointSize`, so "a star is at most a few pixels" is
+   * measured on the data rather than inferred from a blur.
+   */
+  craftDiagnostics(): {
+    moon: { size: number; edge: number; centre: number; disc: number };
+    stars: { count: number; median: number; largest: number; flares: number };
+  } {
+    const moon = { size: 0, edge: 0, centre: 0, disc: 0 };
+    const image = (this.moonTexture as THREE.CanvasTexture).image as
+      | HTMLCanvasElement
+      | undefined;
+    const context = image?.getContext?.('2d') ?? null;
+    if (image && context) {
+      const size = image.width;
+      const data = context.getImageData(0, 0, size, size).data;
+      const alphaAt = (x: number, y: number) =>
+        data[(Math.round(y) * size + Math.round(x)) * 4 + 3];
+      moon.size = size;
+      moon.edge = Math.max(
+        alphaAt(0, 0),
+        alphaAt(size - 1, 0),
+        alphaAt(0, size - 1),
+        alphaAt(size - 1, size - 1),
+        alphaAt(size / 2, 0),
+        alphaAt(0, size / 2),
+        alphaAt(size - 1, size / 2),
+        alphaAt(size / 2, size - 1),
+        alphaAt(size / 2, 2),
+        alphaAt(2, size / 2),
+      );
+      moon.centre = alphaAt(size / 2, size / 2);
+      /* Three fifths of the way out along the disc's own radius, which is where
+         a full moon has to be drawn if the disc is drawn at all. */
+      moon.disc = alphaAt(size / 2, size * 0.272);
+    }
+
+    const sizes = (this.stars.geometry as THREE.BufferGeometry).attributes.aSize
+      ?.array as Float32Array | undefined;
+    const flares = (this.stars.geometry as THREE.BufferGeometry).attributes.aFlare
+      ?.array as Float32Array | undefined;
+    const stars = { count: sizes?.length ?? 0, median: 0, largest: 0, flares: 0 };
+    if (sizes?.length) {
+      const sorted = Array.from(sizes).sort((a, b) => a - b);
+      stars.median = Number(sorted[Math.floor(sorted.length / 2)].toFixed(2));
+      stars.largest = Number(sorted[sorted.length - 1].toFixed(2));
+      stars.flares = flares ? Array.from(flares).filter((value) => value > 0.5).length : 0;
+    }
+    return { moon, stars };
+  }
+
   setQuality(quality: QualitySettings): void {
     this.quality = quality;
     this.key.castShadow = quality.shadows;
@@ -574,7 +592,7 @@ export class Atmosphere {
     this.stars.position.copy(camera.position);
 
     const theme = this.theme;
-    const distance = SKY_RADIUS * 0.92;
+    const distance = SKY_RADIUS * 0.98;
     const place = (body: THREE.Group, direction: THREE.Vector3, size: number) => {
       body.position.copy(camera.position).addScaledVector(direction, distance);
       body.scale.setScalar(size);
@@ -589,38 +607,67 @@ export class Atmosphere {
     const perspective = camera as THREE.PerspectiveCamera;
     const halfHeight = Math.tan(THREE.MathUtils.degToRad(perspective.fov ?? 40) / 2) * distance;
 
-    place(this.sunBody, this.sunDirection, halfHeight * 0.115);
-    place(this.moonBody, this.moonDirection, halfHeight * 0.105);
+    const focusDistance = focus === undefined ? 0 : camera.position.distanceTo(focus);
+    this.lastFocusDistance = focusDistance;
+
+    let sunFade: number;
+    let moonFade: number;
+
+    if (this.celestialEnabled) {
+      /*
+       * On the campus overview the sun and moon are the light switch. They are
+       * drawn in view space so they always sit in the upper sky the visitor is
+       * looking at, while the key light and the dome shader still follow the
+       * real astronomy. A body that has set slides below the frame; the other
+       * rises through `dayness`.
+       */
+      const day = THREE.MathUtils.clamp(theme.dayness, 0, 1);
+      const night = THREE.MathUtils.clamp(theme.nightness, 0, 1);
+      const portrait = (perspective.aspect ?? 1) < 0.92;
+      const sunLift = portrait
+        ? THREE.MathUtils.lerp(-0.55, 0.34, day)
+        : THREE.MathUtils.lerp(-0.62, 0.52, day);
+      const moonLift = portrait
+        ? THREE.MathUtils.lerp(0.22, -0.55, day)
+        : THREE.MathUtils.lerp(0.4, -0.62, day);
+      const sunPan = portrait ? 0 : -0.28;
+      const moonPan = portrait ? 0.2 : 0.42;
+      const sunSize = halfHeight * (portrait ? 0.15 : 0.125);
+      const moonSize = halfHeight * (portrait ? 0.13 : 0.1);
+
+      this.placeBodyInView(camera, this.sunBody, sunPan, sunLift, sunSize, distance);
+      this.placeBodyInView(camera, this.moonBody, moonPan, moonLift, moonSize, distance);
+
+      const sunHorizon = THREE.MathUtils.smoothstep(sunLift, -0.5, -0.15);
+      const moonHorizon = THREE.MathUtils.smoothstep(moonLift, -0.5, -0.15);
+      sunFade = day * sunHorizon;
+      moonFade = night * moonHorizon * (0.55 + theme.moonIllumination * 0.45);
+    } else {
+      place(this.sunBody, this.sunDirection, halfHeight * 0.19);
+      place(this.moonBody, this.moonDirection, halfHeight * 0.15);
+
+      let range =
+        focus === undefined ? 1 : THREE.MathUtils.clamp((focusDistance - 6.6) / 2.8, 0, 1);
+      const pitchDown = -camera.getWorldDirection(this.scratchBody).y;
+      range *= THREE.MathUtils.clamp((0.8 - pitchDown) / 0.24, 0, 1);
+
+      sunFade = altitudeFade(theme.sunAltitude) * range;
+      moonFade = altitudeFade(theme.moonAltitude) * range * (0.35 + theme.moonIllumination * 0.65);
+    }
 
     this.captionOffset
       .set(0, 1, 0)
       .applyQuaternion(camera.quaternion)
       .multiplyScalar(-0.19 * halfHeight);
-
-    /*
-     * Visibility. A body fades over the last few degrees of its descent, so it
-     * disappears at the horizon rather than winking out, and it is faded further
-     * when the camera is close to something — the body belongs to a wide, level
-     * view, and a sun hanging over a destination the visitor has zoomed into is
-     * decoration where there should be none.
-     */
-    const focusDistance = focus === undefined ? 0 : camera.position.distanceTo(focus);
-    this.lastFocusDistance = focusDistance;
-    let range =
-      focus === undefined ? 1 : THREE.MathUtils.clamp((focusDistance - 6.6) / 2.8, 0, 1);
-    const pitchDown = -camera.getWorldDirection(this.scratchBody).y;
-    range *= THREE.MathUtils.clamp((0.8 - pitchDown) / 0.24, 0, 1);
-
-    const sunFade = altitudeFade(theme.sunAltitude) * range;
-    const moonFade = altitudeFade(theme.moonAltitude) * range * (0.35 + theme.moonIllumination * 0.65);
     this.sunOpacity = sunFade;
     this.moonOpacity = moonFade;
     this.celestialOpacity = Math.max(sunFade, moonFade);
 
-    this.sunMaterials.disc.opacity = sunFade;
-    this.sunMaterials.glow.opacity = 0.3 * sunFade * (0.4 + theme.golden * 0.6 + theme.dayness * 0.4);
+    this.sunMaterials.disc.opacity = sunFade * 0.88;
+    this.sunMaterials.glow.opacity =
+      0.28 * sunFade * (0.45 + theme.golden * 0.45 + theme.dayness * 0.35);
     this.moonMaterials.disc.opacity = moonFade;
-    this.moonMaterials.glow.opacity = 0.22 * moonFade * theme.nightness + 0.08 * moonFade;
+    this.moonMaterials.glow.opacity = 0.3 * moonFade * theme.nightness + 0.12 * moonFade;
 
     this.sunBody.visible = this.celestialEnabled && sunFade > 0.01;
     this.moonBody.visible = this.celestialEnabled && moonFade > 0.01;
@@ -635,14 +682,14 @@ export class Atmosphere {
      * turning one — the campus auto-turns on arrival, and the effect was a sky
      * that span round with the island as though the two were welded together.
      *
-     * The fix is to subtract the camera's own bearing from the field's
-     * rotation, so the *world* angle the stars are drawn at is the sidereal
-     * angle and nothing else. The real sky does not care where the visitor is
-     * looking, and now neither does this one.
+     * The fix is to turn the field by the *sidereal* angle alone rather than by
+     * the camera's bearing as well: the real sky does not care where the visitor
+     * is looking, and now neither does this one. The field is a child of nothing
+     * that rotates, so the quaternion is the whole of it.
      */
-    const forward = camera.getWorldDirection(this.scratchForward2);
-    const bearing = Math.atan2(forward.x, -forward.z);
-    this.starUniforms.rotation.value = this.siderealAngle - bearing;
+    this.stars.quaternion.setFromAxisAngle(STAR_POLE_AXIS, this.siderealAngle);
+    this.starUniforms.pixelScale.value = this.renderer.getPixelRatio();
+    this.starUniforms.time.value = performance.now() * 0.001;
 
     /* A slow twinkle, which is atmospheric scintillation compressed to
        something a viewer will actually notice. */
@@ -678,6 +725,24 @@ export class Atmosphere {
   /** Show or hide the sky bodies. */
   setCelestialEnabled(enabled: boolean): void {
     this.celestialEnabled = enabled;
+  }
+
+  /**
+   * Place a sky body on the inner dome in camera space so it stays in the
+   * frame the visitor is looking at.
+   */
+  private placeBodyInView(
+    camera: THREE.Camera,
+    body: THREE.Group,
+    pan: number,
+    lift: number,
+    size: number,
+    distance: number,
+  ): void {
+    this.scratchViewDir.set(pan, lift, -1).normalize();
+    this.scratchViewDir.applyQuaternion(camera.quaternion);
+    body.position.copy(camera.position).addScaledVector(this.scratchViewDir, distance);
+    body.scale.setScalar(size);
   }
 
   /**
@@ -793,14 +858,14 @@ export class Atmosphere {
       domePosition: this.skyMesh.position.toArray().map((n) => Number(n.toFixed(2))),
       starOpacity: this.starUniforms.opacity.value,
       /**
-       * The two halves of the star rotation, reported separately.
+       * The star field's own rotation, and the sidereal angle it is taken from.
        *
-       * The field is drawn at `sidereal − bearing`: the first is the sky's own
-       * angle and the second is where the camera happens to be looking. A check
-       * that the campus can turn without dragging the stars with it has to see
-       * both, because only the second one should change.
+       * The field is turned by the sidereal angle and nothing else, so the two
+       * agree by construction; they are both reported because a sky that spun
+       * with the camera would show the first changing while the second did not,
+       * and that is the failure this pair exists to make visible.
        */
-      starRotation: Number((this.starUniforms.rotation.value * (180 / Math.PI)).toFixed(3)),
+      starRotation: Number(((this.siderealAngle * 180) / Math.PI).toFixed(3)),
       siderealAngle: Number(((this.siderealAngle * 180) / Math.PI).toFixed(3)),
       exposure: this.renderer.toneMappingExposure,
       toneMapping: this.renderer.toneMapping,
@@ -845,13 +910,19 @@ export class Atmosphere {
     return { x: point.x, y: point.y, z: point.z };
   }
 
-  /** The on-screen half-size of the active body, for a forgiving tap target. */  activeCelestialRadius(camera: THREE.Camera): number {
-    const body = this.sunOpacity >= this.moonOpacity ? this.sunBody : this.moonBody;
+  /** The on-screen half-size of the active body, for a forgiving tap target. */
+  activeCelestialRadius(camera: THREE.Camera): number {
+    return this.celestialBodyRadius(this.activeCelestialKind(), camera);
+  }
+
+  /** On-screen radius in NDC-height units for a given body. */
+  celestialBodyRadius(kind: 'sun' | 'moon', camera: THREE.Camera): number {
+    const body = kind === 'sun' ? this.sunBody : this.moonBody;
     const perspective = camera as THREE.PerspectiveCamera;
     const distance = Math.max(camera.position.distanceTo(body.position), 1);
     const worldRadius = 0.5 * body.scale.x;
     const halfHeight = Math.tan(THREE.MathUtils.degToRad(perspective.fov ?? 40) / 2) * distance;
-    return (worldRadius / Math.max(halfHeight, 0.001)) * 0.5;
+    return (worldRadius / Math.max(halfHeight, 0.001)) * 0.58;
   }
 
   dispose(): void {
@@ -859,7 +930,6 @@ export class Atmosphere {
     this.skyMaterial.dispose();
     this.stars.geometry.dispose();
     (this.stars.material as THREE.Material).dispose();
-    this.starUniforms.map.value.dispose();
     this.sunTexture.dispose();
     this.moonTexture.dispose();
     for (const body of [this.sunBody, this.moonBody]) {

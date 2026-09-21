@@ -213,12 +213,12 @@ const DEFAULT_DARK: Palette = {
   skyHorizon: 0x22386b,
   fog: 0x0c1526,
   mist: 0x1a2742,
-  stone: 0x8f8878,
+  stone: 0x9a9284,
   stoneDeep: 0x5f5949,
   stoneAlt: 0x776f5e,
   earth: 0x5a5140,
   dryGrass: 0x9c8a5e,
-  ceramic: 0xc6b99f,
+  ceramic: 0xd8cdb8,
   metal: 0x2b3859,
   grass: 0x4a6353,
   moss: 0x3d5748,
@@ -249,12 +249,12 @@ const DEFAULT_LIGHT: Palette = {
   skyHorizon: 0xbcd6ef,
   fog: 0xc3d6ea,
   mist: 0xcddcec,
-  stone: 0xa39a86,
+  stone: 0xb0a796,
   stoneDeep: 0x6f6857,
   stoneAlt: 0x8a8271,
   earth: 0x6d6250,
   dryGrass: 0xbaa672,
-  ceramic: 0xd3c6ab,
+  ceramic: 0xe4dac6,
   metal: 0x37456a,
   grass: 0x5d7a62,
   moss: 0x476355,
@@ -541,13 +541,23 @@ export function readWorldTheme(
    * rather than by a taste curve, with an extra pull down at midwinter night.
    */
   const daylight = smoothstep(-9, 6, theme.sunAltitude);
-  theme.exposure = 0.28 + daylight * 0.78 + golden * 0.06;
-  theme.fogDensity = 0.0104 - daylight * 0.0036 + haze * 0.0034;
-  theme.hemi = 0.5 + daylight * 1.5;
-  theme.keyIntensity = 0.35 + daylight * 3.0;
-  theme.practicalIntensity = 2.15 - daylight * 1.85;
-  theme.emissive = 1.5 - daylight * 1.05;
-  theme.environmentIntensity = 0.5 + daylight * 0.5;
+  theme.exposure = 0.48 + daylight * 0.82 + golden * 0.08;
+  theme.fogDensity = 0.0092 - daylight * 0.0038 + haze * 0.0028;
+  /*
+   * The night floor is deliberately not near zero.
+   *
+   * A physically honest night is black, and a black campus is a scene with
+   * nothing in it: the island is lit by its own lamps, by a moon at whatever
+   * phase it happens to be at, and by the sky above it, and all three of those
+   * have to leave the ground and the buildings *readable* rather than merely
+   * present. The floor is what carries that, and it is why the night values here
+   * are brighter than the noon values divided by anything.
+   */
+  theme.hemi = 0.92 + daylight * 1.42;
+  theme.keyIntensity = 0.72 + daylight * 2.95;
+  theme.practicalIntensity = 2.6 - daylight * 2.3;
+  theme.emissive = 1.75 - daylight * 1.05;
+  theme.environmentIntensity = 0.6 + daylight * 0.4;
   theme.skyIntensity = 0.34 + daylight * 0.72 + twilight * 0.16;
   theme.starOpacity = clamp01(1 - smoothstep(-13, -3, theme.sunAltitude)) * 0.95;
 

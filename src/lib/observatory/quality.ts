@@ -32,6 +32,8 @@ export interface QualitySettings {
   mistLayers: number;
   /** Travelling signal pulses along the pathway. */
   signalCount: number;
+  /** Small figures cycling the ring walk (and the avenue at high quality). */
+  cyclistCount: number;
   /** Small point light carried by the guide drone. */
   droneLight: boolean;
   /** Extra surface detail (railings, lattice cross-braces, rim lights). */
@@ -52,6 +54,7 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     grassTufts: 7000,
     mistLayers: 5,
     signalCount: 5,
+    cyclistCount: 3,
     droneLight: true,
     detail: true,
     ambient: true,
@@ -67,6 +70,7 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     grassTufts: 2400,
     mistLayers: 3,
     signalCount: 3,
+    cyclistCount: 2,
     droneLight: false,
     detail: true,
     ambient: true,
@@ -82,6 +86,7 @@ export const QUALITY: Record<QualityTier, QualitySettings> = {
     grassTufts: 900,
     mistLayers: 2,
     signalCount: 2,
+    cyclistCount: 0,
     droneLight: false,
     detail: false,
     ambient: true,

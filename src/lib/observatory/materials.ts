@@ -183,11 +183,17 @@ export class Materials {
     this.all.push(this.mist);
 
     /* Clouds are painted rather than lit, for the same reason: a lit cloud in
-       a scene with one shadow-casting key light turns into a grey polygon. */
+       a scene with one shadow-casting key light turns into a grey polygon.
+       The paint is per-vertex — a light-to-shade gradient and an alpha that
+       dissolves the silhouette — so the material has to read the colour
+       attribute, which the first version of this did not do. Without
+       `vertexColors` the whole gradient was thrown away and every cloud
+       rendered as one flat white egg. */
     this.cloud = new THREE.MeshBasicMaterial({
       color: 0xffffff,
+      vertexColors: true,
       transparent: true,
-      opacity: 0.5,
+      opacity: 0.62,
       depthWrite: false,
       fog: false,
     });
@@ -298,8 +304,9 @@ export class Materials {
     this.hill.color.setHex(0xffffff);
     this.mist.color.setHex(theme.mist);
     this.mist.opacity = 0.22 + day * 0.1;
-    this.cloud.color.setHex(theme.snow);
-    this.cloud.opacity = 0.34 + (1 - day) * 0.12;
+    this.cloud.color.setHex(0xffffff);
+    /* The paint carries the colour; the material's opacity is the weather. */
+    this.cloud.opacity = 0.5 + day * 0.24;
 
     this.signal.emissive.setHex(theme.signal);
     this.signal.emissiveIntensity = theme.emissive;

@@ -11,6 +11,7 @@
  * keep working when the renderer is the thing that failed.
  */
 
+import type { DestinationId } from './destinations';
 import { preserveDocumentState, restoreDocumentState, sceneDeclined } from './document-state';
 import {
   currentTheme,
@@ -19,6 +20,7 @@ import {
   pinnedSkyHour,
   requestResetView,
   requestSkyTime,
+  requestTravel,
   setAmbientPaused,
   showWorldAlert,
   subscribeAmbient,
@@ -31,6 +33,44 @@ import {
   type PublishedSkyState,
 } from './theme-state';
 const BOOT_KEY = '__abdWorldChrome';
+const LIVE_TIP_VISIBLE_MS = 5_500;
+const LIVE_TIP_CYCLE_MS = 14_000;
+
+let liveTipIntervalId: ReturnType<typeof setInterval> | null = null;
+let liveTipHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+function setLivePulse(): void {
+  for (const link of document.querySelectorAll<HTMLElement>('[data-world-live]')) {
+    link.dataset.livePulse = 'true';
+  }
+}
+
+function showLiveTipBurst(): void {
+  const tip = document.querySelector<HTMLElement>('[data-world-live-tip]');
+  if (!tip) return;
+  tip.hidden = false;
+  tip.classList.remove('world-live-tip--open');
+  void tip.offsetWidth;
+  tip.classList.add('world-live-tip--open');
+  if (liveTipHideTimeoutId !== null) clearTimeout(liveTipHideTimeoutId);
+  liveTipHideTimeoutId = setTimeout(() => {
+    liveTipHideTimeoutId = null;
+    const current = document.querySelector<HTMLElement>('[data-world-live-tip]');
+    if (current) {
+      current.hidden = true;
+      current.classList.remove('world-live-tip--open');
+    }
+  }, LIVE_TIP_VISIBLE_MS);
+}
+
+function ensureLivePromoCycle(): void {
+  setLivePulse();
+  if (liveTipIntervalId !== null) return;
+  showLiveTipBurst();
+  liveTipIntervalId = setInterval(() => {
+    showLiveTipBurst();
+  }, LIVE_TIP_CYCLE_MS);
+}
 
 interface BoundWindow extends Window {
   [BOOT_KEY]?: boolean;
@@ -55,10 +95,10 @@ function mapMenu(): HTMLElement | null {
 /**
  * Keep every theme control showing the state that is actually live.
  *
- * There is no light control in the bar any more: the world's light is switched
- * by the brass switch standing on the observatory terrace, and by the sun and
- * moon themselves. This still runs, because the map menu names the current
- * light and anything else that reads the state must agree with the scene.
+ * The bar's light control, the map menu's readout and the pre-paint attribute
+ * all have to agree with the scene, and the scene is the thing that cannot
+ * drift: the icon is the light the world is in, and the accessible name is what
+ * pressing the control will do.
  */
 export function syncThemeControls(): void {
   const theme = currentTheme();
@@ -222,6 +262,12 @@ function onDocumentClick(event: MouseEvent): void {
     return;
   }
 
+  const dockButton = target.closest<HTMLElement>('[data-world-dock]');
+  if (dockButton?.dataset.worldDock) {
+    requestTravel(dockButton.dataset.worldDock as DestinationId);
+    return;
+  }
+
   const mapToggle = target.closest('[data-world-map]');
   if (mapToggle) {
     toggleMapMenu();
@@ -283,12 +329,18 @@ function onDocumentChange(event: Event): void {
  * the guard means a second inline execution cannot bind a second set of
  * listeners.
  */
+function syncLiveBuildTip(): void {
+  if (!document.querySelector('[data-world-live-tip]')) return;
+  ensureLivePromoCycle();
+}
+
 export function bootstrapChrome(): void {
   if (typeof document === 'undefined') return;
   restoreDocumentState();
   syncThemeControls();
   syncAmbientControls();
   syncSkyTimeControls();
+  syncLiveBuildTip();
 
   /* If the visitor already chose to read without the 3D scene, that choice
      stands for the rest of the session: the controls still work, the failure
@@ -322,6 +374,10 @@ export function bootstrapChrome(): void {
     preserveDocumentState(detail.newDocument);
     /* A panel that is being replaced must not leave the menu hanging open. */
     closeMapMenu();
+  });
+
+  document.addEventListener('astro:page-load', () => {
+    syncLiveBuildTip();
   });
 
   subscribeTheme(() => syncThemeControls());

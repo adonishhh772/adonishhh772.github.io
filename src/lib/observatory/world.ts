@@ -4,17 +4,27 @@
  * One compact, art-directed island holding every destination of the site: a
  * central instrument with a moving orbital mechanism, a personal studio with
  * a working desk, a project workshop, a reading library, an open-source
- * workbench and a contact station — joined by lit walkways, patrolled by a
- * small guide drone, and hiding three light markers that switch the
- * observatory's lanterns on.
+ * workbench and a contact station — joined by lit walkways, with agent-like
+ * sky aircraft overhead (and a campus guide drone on lite
+ * quality), and hiding three light markers that switch the observatory's
+ * lanterns on.
  *
- * Everything is procedural. No external models, no texture downloads.
+ * Everything on the island is procedural; sky life uses painted sprites.
  */
 
 import * as THREE from 'three';
 import type { DestinationId } from '../world/destinations';
 import type { WorldIndex } from '../world/state';
 import type { Materials } from './materials';
+import {
+  createSkyFaunaAgents,
+  createSkyFaunaTextureSet,
+  disposeSkyFaunaTextures,
+  SKY_FAUNA_CRAFT_POOL,
+  stepSkyFauna,
+  type SkyFaunaAgent,
+  type SkyFaunaTextureSet,
+} from './sky-fauna';
 import {
   boulderGeometry,
   broadleafGeometry,
@@ -90,7 +100,7 @@ interface PlaceLayout {
 }
 
 /** Radius of the ring of destinations around the campus landmark. */
-const RING_RADIUS = 9.2;
+const RING_RADIUS = 10.3;
 
 /**
  * Where the ring is rotated to.
@@ -107,7 +117,7 @@ const RING_RADIUS = 9.2;
  * overview: it was on the map, its caption was projected, and its building
  * could not be seen at all without dragging the camera round the island.
  */
-const RING_ROTATION = 22;
+const RING_ROTATION = 20;
 
 /**
  * Placement is an art-direction decision, not an arbitrary one. The overview
@@ -132,17 +142,22 @@ function localToWorld(layout: PlaceLayout, x: number, y: number, z: number): THR
   );
 }
 
+/*
+ * Five destinations on a pentagon (72° apart). The workbench used to sit on a
+ * tighter inner radius between the workshop and the library, which stacked
+ * three markers on top of each other once the overview zoomed in.
+ */
 const LAYOUT: Record<DestinationId, PlaceLayout> = {
   campus: layoutAt(0, 0, 4.3, 0.9),
-  studio: layoutAt(-45 + RING_ROTATION, RING_RADIUS, 3, 0.5),
-  workshop: layoutAt(0 + RING_ROTATION, RING_RADIUS, 3.2, 0.55),
-  library: layoutAt(50 + RING_ROTATION, RING_RADIUS, 3, 0.45),
-  contact: layoutAt(115 + RING_ROTATION, RING_RADIUS, 2.4, 0.45),
-  workbench: layoutAt(212 + RING_ROTATION, RING_RADIUS, 3.1, 0.4),
+  contact: layoutAt(-130 + RING_ROTATION, RING_RADIUS, 2.4, 0.45),
+  studio: layoutAt(-58 + RING_ROTATION, RING_RADIUS, 3, 0.5),
+  workshop: layoutAt(14 + RING_ROTATION, RING_RADIUS, 3.2, 0.55),
+  library: layoutAt(86 + RING_ROTATION, RING_RADIUS, 3, 0.45),
+  workbench: layoutAt(158 + RING_ROTATION, RING_RADIUS, 2.8, 0.38),
 };
 
 /** Walkway order — the ring, sorted by angle around the island. */
-const RING_ORDER: DestinationId[] = ['studio', 'workshop', 'library', 'contact', 'workbench'];
+const RING_ORDER: DestinationId[] = ['contact', 'studio', 'workshop', 'library', 'workbench'];
 export interface Shot {
   position: THREE.Vector3;
   target: THREE.Vector3;
@@ -257,6 +272,10 @@ export class ObservatoryWorld {
   /** Soft stylised clouds, drifting above the island. */
   private cloudGroup = new THREE.Group();
   private clouds: THREE.Mesh[] = [];
+  /** Aircraft above the campus. */
+  private skyFaunaGroup = new THREE.Group();
+  private skyFauna: SkyFaunaAgent[] = [];
+  private skyFaunaTextures: SkyFaunaTextureSet | null = null;
   private drone = new THREE.Group();
   private rotorGroup = new THREE.Group();
   /** The animated grass layer, built once the island's ground exists. */
@@ -266,9 +285,23 @@ export class ObservatoryWorld {
 
   /* Signals along the pathways */
   private signals: { mesh: THREE.Mesh; t: number; speed: number; curve: THREE.CatmullRomCurve3 }[] = [];
+  private cyclists: {
+    root: THREE.Group;
+    wheels: THREE.Mesh[];
+    curve: THREE.CatmullRomCurve3;
+    t: number;
+    speed: number;
+    forward: number;
+  }[] = [];
   private flight: { mesh: THREE.Mesh; curve: THREE.CatmullRomCurve3; t: number } | null = null;
   private spurCurves = new Map<DestinationId, THREE.CatmullRomCurve3>();
   private ringCurve!: THREE.CatmullRomCurve3;
+  /** The entrance avenue, kept so the lamps can be strung along it. */
+  private avenueCurve: THREE.CatmullRomCurve3 | null = null;
+  /** The warm pools the campus lamps lay on the ground, and their material. */
+  private lampPools: THREE.Mesh[] = [];
+  private lampPoolMaterial: THREE.MeshBasicMaterial | null = null;
+  private lampGlowMaterial: THREE.SpriteMaterial | null = null;
   private droneTarget = new THREE.Vector3();
   private dronePosition = new THREE.Vector3(0, 9, 12);
 
@@ -336,12 +369,16 @@ export class ObservatoryWorld {
     this.buildWorkbench();
     this.buildContactStation();
     this.buildSubscribePost();
+    this.buildCampusLamps();
     this.buildDrone();
+    this.buildSkyFauna();
     this.buildSignals();
+    this.buildCyclists();
     this.wirePracticalLights();
 
     this.setTheme(theme);
     this.setQuality(quality);
+    this.syncSkyFaunaVisibility();
   }
 
   /**
@@ -436,8 +473,51 @@ export class ObservatoryWorld {
     return { layout, surface, origin: new THREE.Vector3(layout.x, surface, layout.z) };
   }
 
+  /**
+   * Open-source yard: pegboard on the approach side (local -Z), framed from
+   * outside the ring like the workshop — not from campus, which would sight
+   * through the observatory.
+   */
+  private workbenchShot(): Shot {
+    const { layout, surface } = this.placeLayout('workbench');
+    const outward = new THREE.Vector3(layout.x, 0, layout.z);
+    if (outward.lengthSq() < 0.001) {
+      return {
+        position: new THREE.Vector3(13.5, 9, 17),
+        target: new THREE.Vector3(0, 3.4, 0),
+        fov: 40,
+      };
+    }
+    outward.normalize();
+    const swing = Math.PI * 0.24;
+    const view = new THREE.Vector3(
+      outward.x * Math.cos(swing) - outward.z * Math.sin(swing),
+      0,
+      outward.x * Math.sin(swing) + outward.z * Math.cos(swing),
+    );
+    const tangent = new THREE.Vector3(-layout.z, 0, layout.x);
+    if (tangent.lengthSq() > 1e-4) tangent.normalize();
+    const repoCount = Math.max(this.index.repos.length, 1);
+    const columns = Math.min(repoCount, 5);
+    const rows = Math.ceil(repoCount / columns);
+    const boardWidth = Math.min(4.4, 0.6 + columns * 0.78);
+    const boardHeight = 0.5 + rows * 0.5;
+    const boardZ = -0.55;
+    const boardCenterY = surface + 1.4 + boardHeight / 2;
+    const target = localToWorld(LAYOUT.workbench, 0, boardCenterY, boardZ);
+    const framing = Math.max(boardWidth, boardHeight) + 2.6;
+    const distance = Math.max(8.4 + layout.pad * 0.7, framing * 2.85);
+    const position = new THREE.Vector3(
+      layout.x + view.x * distance + tangent.x * 2.4,
+      surface + 3.45,
+      layout.z + view.z * distance + tangent.z * 2.4,
+    );
+    return { position, target, fov: 38 };
+  }
+
   /** Camera shot that frames a place from outside the island. */
   private shotFor(id: DestinationId, accentHeight = 1.4): Shot {
+    if (id === 'workbench') return this.workbenchShot();
     const { layout, surface } = this.placeLayout(id);
     const outward = new THREE.Vector3(layout.x, 0, layout.z);
     if (outward.lengthSq() < 0.001) {
@@ -482,6 +562,7 @@ export class ObservatoryWorld {
       pickHeight?: number;
       targetY?: number;
       exhibits?: ExhibitNode[];
+      shot?: Shot;
     },
   ): PlaceNode {
     const { layout, surface, origin } = this.placeLayout(id);
@@ -510,7 +591,7 @@ export class ObservatoryWorld {
       group,
       anchor: new THREE.Vector3(layout.x, surface + (result.anchorY ?? 2.6), layout.z),
       target: new THREE.Vector3(layout.x, surface + (result.targetY ?? 1.4), layout.z),
-      shot: this.shotFor(id),
+      shot: result.shot ?? this.shotFor(id),
       pick,
       glow,
       exhibits: result.exhibits ?? [],
@@ -625,7 +706,7 @@ export class ObservatoryWorld {
     this.track(geometry);
     paintIsland(geometry, this.islandPalette(this.theme));
     this.islandGeometry = geometry;
-    const terrain = this.mesh(geometry, this.materials.terrain, this.group, 'island', {
+    const terrain = this.mesh(geometry, this.materials.terrain, this.turntable, 'island', {
       cast: false,
       receive: true,
       occluder: true,
@@ -915,6 +996,47 @@ export class ObservatoryWorld {
       }
     }
 
+    /*
+     * Specimens in the campus green — between the observatory and the ring
+     * walk. `nearStation` was rejecting almost the whole middle because every
+     * ring building's pad was counted; only the dome pad and the paved ring
+     * are excluded here.
+     */
+    const groveScale = this.quality.detail ? 1 : 0.92;
+    const groveTarget = this.quality.detail ? 9 : 8;
+    const innerRadius = LAYOUT.campus.pad + 1.2;
+    const outerRadius = RING_RADIUS - 2.35;
+    const midRadius = innerRadius + (outerRadius - innerRadius) * 0.45;
+    let grovePlanted = 0;
+    for (let attempt = 0; grovePlanted < groveTarget && attempt < groveTarget * 5; attempt++) {
+      const slot = grovePlanted;
+      const angle = (slot / groveTarget) * Math.PI * 2 + random() * 0.14;
+      const radius = midRadius + (slot % 2) * 0.85 + random() * 0.25;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      if (!this.canPlantInCampusGreen(x, z)) continue;
+      this.pushGroveTree(
+        x,
+        z,
+        random,
+        matrix,
+        branchScratch,
+        conifer,
+        broadleaf,
+        coniferTrunks,
+        coniferTiers,
+        coniferBranches,
+        coniferTints,
+        broadleafTrunks,
+        broadleafLimbs,
+        broadleafCanopies,
+        broadleafTints,
+        tintScratch,
+        groveScale,
+      );
+      grovePlanted += 1;
+    }
+
     const add = (mesh: THREE.InstancedMesh, shadows: boolean): THREE.InstancedMesh => {
       mesh.castShadow = shadows;
       mesh.receiveShadow = true;
@@ -1117,6 +1239,81 @@ export class ObservatoryWorld {
     return false;
   }
 
+  /** Whether a tree may grow in the campus green (not on the dome or ring walk). */
+  private canPlantInCampusGreen(x: number, z: number): boolean {
+    const dist = Math.hypot(x, z);
+    if (dist < LAYOUT.campus.pad + 0.55) return false;
+    if (dist > RING_RADIUS - 1.75) return false;
+    if (Math.abs(dist - RING_RADIUS * 1.02) < 1.15) return false;
+    if (slopeAt(x, z) > 0.4) return false;
+    return true;
+  }
+
+  private pushGroveTree(
+    x: number,
+    z: number,
+    random: () => number,
+    matrix: THREE.Matrix4,
+    branchScratch: THREE.Matrix4,
+    conifer: ReturnType<typeof coniferGeometry>,
+    broadleaf: ReturnType<typeof broadleafGeometry>,
+    coniferTrunks: THREE.Matrix4[],
+    coniferTiers: THREE.Matrix4[][],
+    coniferBranches: THREE.Matrix4[],
+    coniferTints: number[],
+    broadleafTrunks: THREE.Matrix4[],
+    broadleafLimbs: THREE.Matrix4[],
+    broadleafCanopies: THREE.Matrix4[],
+    broadleafTints: number[],
+    tintScratch: THREE.Color,
+    scaleBoost: number,
+  ): void {
+    const scale = (0.58 + random() * 0.48) * scaleBoost;
+    const yaw = random() * Math.PI * 2;
+    const tilt = (random() - 0.5) * 0.12;
+    bedMatrix(x, z, {
+      scale: new THREE.Vector3(scale, scale * (0.9 + random() * 0.22), scale),
+      yaw,
+      tilt,
+      tiltBearing: random() * Math.PI * 2,
+      sink: 0.04,
+      sinkHeight: 1,
+      target: matrix,
+    });
+    if (random() < 0.44) {
+      broadleafTrunks.push(matrix.clone());
+      for (let limb = 0; limb < broadleaf.limbMatrices.length; limb++) {
+        broadleafLimbs.push(
+          branchScratch.multiplyMatrices(matrix, broadleaf.limbMatrices[limb]).clone(),
+        );
+      }
+      broadleafCanopies.push(matrix.clone());
+      broadleafTints.push(
+        tintScratch
+          .setHex(this.theme.moss)
+          .lerp(new THREE.Color(this.theme.grass), random())
+          .lerp(new THREE.Color(this.theme.snow), random() * 0.12)
+          .getHex(),
+      );
+      return;
+    }
+    coniferTrunks.push(matrix.clone());
+    for (let tier = 0; tier < conifer.tiers.length; tier++) {
+      coniferTiers[tier].push(
+        branchScratch.multiplyMatrices(matrix, conifer.tierMatrices[tier]).clone(),
+      );
+    }
+    for (const branch of conifer.branchMatrices) {
+      coniferBranches.push(branchScratch.multiplyMatrices(matrix, branch).clone());
+    }
+    coniferTints.push(
+      tintScratch
+        .setHex(this.theme.moss)
+        .lerp(new THREE.Color(this.theme.grass), 0.3 + random() * 0.45)
+        .getHex(),
+    );
+  }
+
   /* ── Landscape: distance, mist and cloud ───────────────────────────── */
 
   private buildLandscape(): void {
@@ -1195,8 +1392,8 @@ export class ObservatoryWorld {
     const cloudRandom = mulberry32(97);
     const count = this.quality.detail ? 5 : this.quality.mistLayers >= 3 ? 3 : 2;
     for (let i = 0; i < count; i++) {
-      const geometry = this.track(cloudGeometry(300 + i * 17, 6 + Math.floor(cloudRandom() * 3)));
-      paintCloud(geometry, this.theme.snow, this.theme.cloudShade);
+      const geometry = this.track(cloudGeometry(300 + i * 17, 9 + Math.floor(cloudRandom() * 4)));
+      paintCloud(geometry, this.theme.snow, this.theme.cloudShade, this.theme.dayness);
       const material = this.materials.cloud;
       const cloud = new THREE.Mesh(geometry, material);
       cloud.name = `cloud-${i}`;
@@ -1249,24 +1446,50 @@ export class ObservatoryWorld {
     const ringMesh = this.mesh(
       ringSurface,
       walkMaterial,
-      this.group,
+      this.turntable,
       'ring-walk',
       { cast: false, receive: true },
     );
     ringMesh.frustumCulled = false;
 
+    const plaza = this.mesh(
+      new THREE.CylinderGeometry(2.75, 2.82, 0.07, 56, 1, false),
+      walkMaterial,
+      this.turntable,
+      'campus-plaza',
+      { position: new THREE.Vector3(0, GROUND + 0.04, 0), cast: false, receive: true },
+    );
+    plaza.renderOrder = 1;
+    this.mesh(rimRing(1.15, 0.04, 40), this.materials.metalDark, this.turntable, 'plaza-sundial', {
+      position: new THREE.Vector3(0, GROUND + 0.1, 0),
+      cast: false,
+    });
+    this.mesh(
+      new THREE.CylinderGeometry(0.06, 0.08, 0.55, 8),
+      this.materials.metal,
+      this.turntable,
+      'plaza-gnomon',
+      { position: new THREE.Vector3(0.22, GROUND + 0.38, 0), cast: false },
+    );
+
     /* A recessed light guide down the middle of every walkway. */
     const guideGeometry = ribbon(this.ringCurve, 0.1, 200, 0.035);
-    const guide = this.mesh(guideGeometry, this.materials.signal, this.group, 'ring-guide', {
+    const guide = this.mesh(guideGeometry, this.materials.signal, this.turntable, 'ring-guide', {
       cast: false,
       receive: false,
     });
     guide.frustumCulled = false;
+    if (guide.material instanceof THREE.Material) {
+      guide.material.polygonOffset = true;
+      guide.material.polygonOffsetFactor = -2;
+      guide.material.polygonOffsetUnits = -2;
+      guide.renderOrder = 2;
+    }
 
     if (this.quality.detail) {
       const outer = offsetPoints(this.ringCurve, 0.85, 90);
       const railGeometry = tubeAlong(outer, 0.035);
-      this.mesh(railGeometry, this.materials.metal, this.group, 'ring-rail', {
+      this.mesh(railGeometry, this.materials.metal, this.turntable, 'ring-rail', {
         cast: false,
         receive: true,
       });
@@ -1300,13 +1523,14 @@ export class ObservatoryWorld {
       0.4,
     );
     const avenueSurface = ribbon(avenue, 1.4, 90, 0.02);
-    const avenueMesh = this.mesh(avenueSurface, walkMaterial, this.group, 'avenue-walk', {
+    this.avenueCurve = avenue;
+    const avenueMesh = this.mesh(avenueSurface, walkMaterial, this.turntable, 'avenue-walk', {
       cast: false,
       receive: true,
     });
     avenueMesh.frustumCulled = false;
     const avenueGuide = ribbon(avenue, 0.1, 90, 0.035);
-    this.mesh(avenueGuide, this.materials.signal, this.group, 'avenue-guide', {
+    this.mesh(avenueGuide, this.materials.signal, this.turntable, 'avenue-guide', {
       cast: false,
       receive: false,
     }).frustumCulled = false;
@@ -1315,7 +1539,7 @@ export class ObservatoryWorld {
       for (const side of [0.9, -0.9]) {
         const points = offsetPoints(avenue, side, 60);
         const rail = tubeAlong(points, 0.035, false);
-        this.mesh(rail, this.materials.metal, this.group, `avenue-rail-${side}`, {
+        this.mesh(rail, this.materials.metal, this.turntable, `avenue-rail-${side}`, {
           cast: false,
           receive: true,
         });
@@ -1334,10 +1558,193 @@ export class ObservatoryWorld {
     }
   }
 
+  /* ── Lighting the paths ────────────────────────────────────────────── */
+
+  /**
+   * The campus lamps.
+   *
+   * The world used to be lit by four point lights tucked inside buildings, and
+   * at night the island between them was a dark shape with two bright windows in
+   * it: the campus read as *unlit*, which is the one thing a place with a
+   * walkway ring and an avenue cannot look like. Lamps are the missing object.
+   *
+   * Each post carries three things, and all three matter:
+   *
+   *  - a slate post with a glazed lantern whose emissive comes from the same
+   *    material as the observatory's windows, so dusk turns them on with
+   *    everything else;
+   *  - a warm pool on the ground beneath it, drawn as an additive decal. This is
+   *    what actually reads as *illumination*: a point light alone lights the
+   *    surfaces nearest it and leaves the path itself dark, because the path is
+   *    rough and faces up;
+   *  - and, on a handful of them, a real point light, so the lawn, the rail and
+   *    a passing visitor are genuinely lit rather than merely glazed over.
+   *
+   * The posts stand between the buildings, just outside the walkway, and are
+   * instanced — seven posts and five parts each is thirty-five draw calls, which
+   * is not a price worth paying for furniture this simple.
+   */
+  private buildCampusLamps(): void {
+    const post = this.track(new THREE.CylinderGeometry(0.045, 0.07, 3.1, 8));
+    post.translate(0, 1.55, 0);
+    const base = this.track(new THREE.CylinderGeometry(0.14, 0.19, 0.24, 10));
+    base.translate(0, 0.12, 0);
+    const head = this.track(new THREE.CylinderGeometry(0.19, 0.15, 0.34, 8));
+    head.translate(0, 0.17, 0);
+    const cap = this.track(new THREE.ConeGeometry(0.25, 0.16, 8));
+    cap.translate(0, 0.08, 0);
+    const collar = this.track(new THREE.CylinderGeometry(0.07, 0.09, 0.06, 8));
+
+    const poolGeometry = this.track(new THREE.PlaneGeometry(1, 1));
+    poolGeometry.rotateX(-Math.PI / 2);
+    const falloff = this.track(radialFalloffTexture(128));
+    this.lampPoolMaterial = this.track(
+      new THREE.MeshBasicMaterial({
+        map: falloff,
+        color: this.theme.practical,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        fog: true,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    /*
+     * The lantern's own halo. A lamp that is only a bright box is a bright box:
+     * the glow is what tells the eye, at any distance, that this is a *source*
+     * rather than a lit prop — and it is what makes a row of them read as a lit
+     * campus from the overview.
+     */
+    this.lampGlowMaterial = this.track(
+      new THREE.SpriteMaterial({
+        map: falloff,
+        color: this.theme.practical,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        fog: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+
+    /*
+     * Where the posts stand.
+     *
+     * On the walkway rather than on the lawn beside it, because the walkway is
+     * the one surface whose height is known exactly: it follows the ring curve,
+     * and the island's *terrain* sits a third of a unit below the paving the
+     * campus is actually built on. A post planted at the terrain height would
+     * stand knee-deep in the path — which is what the first version did.
+     *
+     * They are spaced evenly along the *curve* rather than at the mid-angles
+     * between stations, so the gaps between lamps are equal even where the
+     * stations are not: a ring with one dark stretch and one crowded one is
+     * exactly what a walkway with lamps is supposed to avoid.
+     */
+    const spots: THREE.Vector3[] = [];
+    const count = RING_ORDER.length;
+    const inward = new THREE.Vector3();
+    for (let i = 0; i < count; i++) {
+      const t = (i + 0.5) / count;
+      const point = this.ringCurve.getPointAt(t);
+      const tangent = this.ringCurve.getTangentAt(t);
+      inward.set(tangent.z, 0, -tangent.x).normalize();
+      /* Which side of the ring is *inside* is a question the tangent cannot
+         answer on its own, so it is asked of the campus centre. */
+      if (inward.x * -point.x + inward.z * -point.z < 0) inward.negate();
+      spots.push(
+        new THREE.Vector3(point.x + inward.x * 0.6, point.y + 0.02, point.z + inward.z * 0.6),
+      );
+    }
+
+    if (this.avenueCurve) {
+      for (const t of [0.3, 0.68]) {
+        const point = this.avenueCurve.getPointAt(t);
+        const tangent = this.avenueCurve.getTangentAt(t);
+        for (const side of [1, -1]) {
+          const offset = new THREE.Vector3(tangent.z, 0, -tangent.x)
+            .normalize()
+            .multiplyScalar(side * 1.05);
+          spots.push(
+            new THREE.Vector3(point.x + offset.x, point.y + 0.02, point.z + offset.z),
+          );
+        }
+      }
+    }
+
+    const postMatrices: THREE.Matrix4[] = [];
+    const baseMatrices: THREE.Matrix4[] = [];
+    const headMatrices: THREE.Matrix4[] = [];
+    const collarMatrices: THREE.Matrix4[] = [];
+    const capMatrices: THREE.Matrix4[] = [];
+
+    spots.forEach((spot, index) => {
+      const height = spot.y;
+      const place = new THREE.Matrix4().makeTranslation(spot.x, height, spot.z);
+      postMatrices.push(place);
+      baseMatrices.push(place);
+      collarMatrices.push(
+        new THREE.Matrix4().makeTranslation(spot.x, height + 2.92, spot.z),
+      );
+      headMatrices.push(new THREE.Matrix4().makeTranslation(spot.x, height + 3.12, spot.z));
+      capMatrices.push(new THREE.Matrix4().makeTranslation(spot.x, height + 3.42, spot.z));
+
+      /*
+       * The pool. Slightly toward the walkway rather than under the post, so
+       * the light reads as falling on the path the visitor is meant to follow.
+       */
+      const inward = new THREE.Vector3(-spot.x, 0, -spot.z).normalize().multiplyScalar(0.55);
+      const pool = new THREE.Mesh(poolGeometry, this.lampPoolMaterial as THREE.Material);
+      pool.name = `campus-lamp-pool-${index}`;
+      pool.position.set(spot.x + inward.x, height + 0.075, spot.z + inward.z);
+      pool.scale.setScalar(3.6);
+      pool.rotation.y = index * 0.7;
+      pool.renderOrder = 2;
+      pool.receiveShadow = false;
+      this.lampPools.push(pool);
+      this.turntable.add(pool);
+
+      const glow = new THREE.Sprite(this.lampGlowMaterial as THREE.SpriteMaterial);
+      glow.name = `campus-lamp-glow-${index}`;
+      glow.position.set(spot.x, height + 3.12, spot.z);
+      glow.scale.setScalar(2.1);
+      glow.renderOrder = 3;
+      this.turntable.add(glow);
+
+      /*
+       * A real light on every other post. Ten point lights would be four more
+       * than the scene can afford to shade per fragment, and the eye cannot
+       * tell a gap in a row of lamps from a row of lamps.
+       */
+      const lit = Math.floor(index / 2);
+      if (index % 2 === 0 && lit < 4) {
+        this.atmosphere.setPractical(
+          4 + lit,
+          new THREE.Vector3(spot.x, height + 3.1, spot.z),
+          13,
+          this.theme.practical,
+        );
+      }
+    });
+
+    const parts: [THREE.BufferGeometry, THREE.Material, THREE.Matrix4[], string][] = [
+      [base, this.materials.metalDark, baseMatrices, 'campus-lamp-bases'],
+      [post, this.materials.metalDark, postMatrices, 'campus-lamp-posts'],
+      [collar, this.materials.metal, collarMatrices, 'campus-lamp-collars'],
+      [head, this.materials.lamp, headMatrices, 'campus-lamp-heads'],
+      [cap, this.materials.metalDark, capMatrices, 'campus-lamp-caps'],
+    ];
+    for (const [geometry, material, matrices, name] of parts) {
+      const mesh = instancedMesh(geometry, material, matrices, name);
+      mesh.castShadow = name === 'campus-lamp-posts' && this.quality.shadows;
+      mesh.receiveShadow = false;
+      this.turntable.add(mesh);
+    }
+  }
+
   /* ── Station: central observatory ──────────────────────────────────── */
 
-  private buildCampusLandmark(): void {
-    const node = this.registerPlace('campus', ({ group, surface, glow }) => {
+  private buildCampusLandmark(): void {    const node = this.registerPlace('campus', ({ group, surface, glow }) => {
       const baseY = GROUND - 0.05;
       this.mesh(terrace(4, 0.9, 0.18), this.materials.stone, group, 'obs-terrace', {
         position: new THREE.Vector3(0, baseY, 0),
@@ -1656,6 +2063,18 @@ export class ObservatoryWorld {
 
   get turn(): number {
     return this.turnAngle;
+  }
+
+  /**
+   * A point on the island, expressed in world space after the turntable turn.
+   *
+   * Anchors and pick volumes are stored in the island's rest frame; captions
+   * and occlusion rays must read them here so they stay on the buildings while
+   * the campus rotates.
+   */
+  turnPoint(point: THREE.Vector3): THREE.Vector3 {
+    this.turntable.updateWorldMatrix(true, false);
+    return point.clone().applyMatrix4(this.turntable.matrixWorld);
   }
 
   /**
@@ -2414,16 +2833,23 @@ export class ObservatoryWorld {
 
         /* A pegboard of repository plaques: one per curated repo. */
         const repos = this.index.repos;
-        const columns = Math.min(Math.max(repos.length, 1), 5);
+        const columns = repos.length > 8 ? 3 : Math.min(Math.max(repos.length, 1), 4);
         const rows = Math.ceil(repos.length / columns);
-        const boardWidth = Math.min(4.4, 0.6 + columns * 0.78);
-        const boardHeight = 0.5 + rows * 0.5;
+        const columnStep = 1.02;
+        const rowStep = 0.72;
+        const plaqueW = 0.42;
+        const plaqueH = 0.26;
+        const boardWidth = Math.min(5.6, 0.85 + columns * columnStep);
+        const boardHeight = 0.6 + rows * rowStep;
+        /* Pegboard on the approach side (local -Z), like the workshop yard. */
+        const boardZ = -0.55;
+        const boardFaceZ = boardZ - 0.04;
         this.mesh(
           roundedBox(boardWidth, boardHeight, 0.08, 0.03),
           this.materials.metalDark,
           group,
           'workbench-board',
-          { position: new THREE.Vector3(0, surface + 1.4 + boardHeight / 2, -0.55), occluder: true },
+          { position: new THREE.Vector3(0, surface + 1.4 + boardHeight / 2, boardZ), occluder: true },
         );
 
         repos.forEach((repo, index) => {
@@ -2431,20 +2857,22 @@ export class ObservatoryWorld {
           const row = Math.floor(index / columns);
           const spread = columns === 1 ? 0 : 1;
           const x = spread
-            ? (column / (columns - 1) - 0.5) * (boardWidth - 0.55)
+            ? (column / (columns - 1) - 0.5) * (boardWidth - 0.65)
             : 0;
-          const y = surface + 1.4 + boardHeight - 0.42 - row * 0.5;
+          const y = surface + 1.4 + boardHeight - 0.44 - row * rowStep;
 
+          const plaqueZ = boardFaceZ - 0.03;
+          const plaqueCenter = new THREE.Vector3(x, y, plaqueZ);
           const plaque = this.mesh(
-            roundedBox(0.5, 0.3, 0.04, 0.02),
+            roundedBox(plaqueW, plaqueH, 0.04, 0.02),
             this.materials.paper,
             group,
             `workbench-plaque-${index}`,
-            { position: new THREE.Vector3(x, y, -0.48), cast: false, receive: false },
+            { position: plaqueCenter, cast: false, receive: false },
           );
           plaque.userData.objectId = repo.id;
           this.mesh(new THREE.BoxGeometry(0.34, 0.03, 0.02), glow, group, `workbench-plaque-line-${index}`, {
-            position: new THREE.Vector3(x, y - 0.07, -0.455),
+            position: new THREE.Vector3(x, y - 0.07, plaqueZ + 0.02),
             cast: false,
             receive: false,
           }).userData.objectId = repo.id;
@@ -2456,7 +2884,12 @@ export class ObservatoryWorld {
             label: repo.label,
             meta: repo.meta,
             href: repo.href,
-            anchor: localToWorld(LAYOUT.workbench, x, y + 0.44, -0.45),
+            anchor: localToWorld(
+              LAYOUT.workbench,
+              plaqueCenter.x,
+              plaqueCenter.y,
+              plaqueCenter.z,
+            ),
             pick: plaque,
           });
         });
@@ -2477,7 +2910,13 @@ export class ObservatoryWorld {
         crateMesh.castShadow = this.quality.shadows;
         group.add(crateMesh);
 
-        return { anchorY: 4.8, pickRadius: 3.4, pickHeight: 5.4, targetY: 2.2 };
+        const boardCenterY = surface + 1.4 + boardHeight / 2;
+        return {
+          anchorY: 4.8,
+          pickRadius: 3.4,
+          pickHeight: 5.4,
+          targetY: boardCenterY - surface,
+        };
       },
     );
 
@@ -2649,6 +3088,49 @@ export class ObservatoryWorld {
     mesh.userData.discoveryOf = node.id;
   }
 
+  /* ── Sky aircraft ──────────────────────────────────────────────────── */
+
+  private buildSkyFauna(): void {
+    this.skyFaunaGroup.name = 'sky-fauna';
+    const textures = createSkyFaunaTextureSet();
+    this.track(textures.airplane);
+    this.track(textures.jet);
+    this.skyFaunaTextures = textures;
+    this.skyFauna = createSkyFaunaAgents({
+      craftCount: SKY_FAUNA_CRAFT_POOL,
+      textures,
+      seed: 881,
+    });
+    for (const agent of this.skyFauna) {
+      this.skyFaunaGroup.add(agent.root);
+    }
+    this.group.add(this.skyFaunaGroup);
+  }
+
+  skyFaunaDiagnostics(): { craftTotal: number; craftVisible: number } {
+    const craftVisible = this.skyFauna.filter((agent) => agent.root.visible).length;
+    return {
+      craftTotal: this.skyFauna.length,
+      craftVisible,
+    };
+  }
+
+  private skyFaunaCraftLimit(): number {
+    if (!this.quality.ambient) return 0;
+    if (this.quality.detail) return 4;
+    if (this.quality.tier === 'medium') return 3;
+    return 2;
+  }
+
+  private syncSkyFaunaVisibility(): void {
+    const craftLimit = this.skyFaunaCraftLimit();
+    for (let index = 0; index < this.skyFauna.length; index += 1) {
+      this.skyFauna[index].root.visible = index < craftLimit;
+    }
+    this.skyFaunaGroup.visible = this.skyFauna.some((agent) => agent.root.visible);
+    this.drone.visible = true;
+  }
+
   /* ── Guide drone ───────────────────────────────────────────────────── */
 
   private buildDrone(): void {
@@ -2734,6 +3216,55 @@ export class ObservatoryWorld {
 
   /* ── Travelling signals ────────────────────────────────────────────── */
 
+  private createCyclistMesh(name: string): { root: THREE.Group; wheels: THREE.Mesh[] } {
+    const root = new THREE.Group();
+    root.name = name;
+    const wheelGeometry = this.track(new THREE.TorusGeometry(0.13, 0.022, 6, 10));
+    const wheels: THREE.Mesh[] = [];
+    for (const offset of [0.2, -0.2]) {
+      const wheel = new THREE.Mesh(wheelGeometry, this.materials.metal);
+      wheel.name = `${name}-wheel`;
+      wheel.rotation.x = Math.PI / 2;
+      wheel.position.set(offset, 0.13, 0);
+      wheel.castShadow = this.quality.shadows;
+      wheel.receiveShadow = false;
+      root.add(wheel);
+      wheels.push(wheel);
+    }
+    this.mesh(
+      roundedBox(0.42, 0.035, 0.05, 0.012),
+      this.materials.metalDark,
+      root,
+      `${name}-frame`,
+      { position: new THREE.Vector3(0, 0.16, 0), cast: false },
+    );
+    this.mesh(
+      roundedBox(0.11, 0.24, 0.09, 0.02),
+      this.materials.ceramic,
+      root,
+      `${name}-rider`,
+      { position: new THREE.Vector3(-0.02, 0.31, 0), cast: false },
+    );
+    this.turntable.add(root);
+    return { root, wheels };
+  }
+
+  private buildCyclists(): void {
+    for (let i = 0; i < this.quality.cyclistCount; i++) {
+      const { root, wheels } = this.createCyclistMesh(`cyclist-${i}`);
+      const onAvenue = i === 1 && this.avenueCurve !== null;
+      const curve = onAvenue ? this.avenueCurve! : this.ringCurve;
+      this.cyclists.push({
+        root,
+        wheels,
+        curve,
+        t: (i + 0.35) / Math.max(this.quality.cyclistCount, 1),
+        speed: 0.042 + (i % 3) * 0.01,
+        forward: i % 2 === 0 ? 1 : -1,
+      });
+    }
+  }
+
   private buildSignals(): void {
     const geometry = this.track(new THREE.SphereGeometry(0.06, 8, 6));
     for (let i = 0; i < this.quality.signalCount; i++) {
@@ -2813,7 +3344,7 @@ export class ObservatoryWorld {
     /* Clouds carry their own light and shade, so a theme change repaints them
        rather than recolouring a material. */
     for (const cloud of this.clouds) {
-      paintCloud(cloud.geometry, theme.snow, theme.cloudShade);
+      paintCloud(cloud.geometry, theme.snow, theme.cloudShade, theme.dayness);
       const colors = cloud.geometry.attributes.color as THREE.BufferAttribute | undefined;
       if (colors) colors.needsUpdate = true;
     }
@@ -2855,6 +3386,52 @@ export class ObservatoryWorld {
 
     /* The switch's lever points at whichever way the world's lights are. */
     this.setSwitchState(theme.dayness < 0.5);
+
+    /*
+     * The campus lamps' pools. Their brightness follows the same curve as the
+     * emissive materials, so the ground under a lamp comes on with the lamp
+     * rather than a moment before or after it — and by day they are gone
+     * entirely, because a warm disc painted on a sunlit path is the clearest
+     * possible sign that it is a decal.
+     */
+    if (this.lampPoolMaterial) {
+      this.lampPoolMaterial.color.setHex(theme.practical);
+      this.lampPoolMaterial.opacity = 0.05 + theme.nightness * 0.52;
+    }
+    if (this.lampGlowMaterial) {
+      this.lampGlowMaterial.color.setHex(theme.practical);
+      this.lampGlowMaterial.opacity = 0.05 + theme.nightness * 0.5;
+    }
+  }
+
+  /**
+   * What the campus lamps are doing.
+   *
+   * "The campus is lit" is a claim about pixels, and pixels are measured from a
+   * screenshot. This is the other half of it: whether the posts, the pools and
+   * the real lights that produce those pixels are actually there, and whether
+   * they are switched on — which a dark frame cannot distinguish from a missing
+   * lamp.
+   */
+  lampDiagnostics(): {
+    posts: number;
+    pools: number;
+    poolOpacity: number;
+    glowOpacity: number;
+    lit: number;
+    litIntensity: number;
+  } {
+    const lit = this.atmosphere.practicals.filter((light) =>
+      light.name.startsWith('practical-lamp-'),
+    );
+    return {
+      posts: this.lampPools.length,
+      pools: this.lampPools.length,
+      poolOpacity: Number((this.lampPoolMaterial?.opacity ?? 0).toFixed(3)),
+      glowOpacity: Number((this.lampGlowMaterial?.opacity ?? 0).toFixed(3)),
+      lit: lit.filter((light) => light.intensity > 0.01).length,
+      litIntensity: Number((lit[0]?.intensity ?? 0).toFixed(2)),
+    };
   }
 
   setQuality(quality: QualitySettings): void {
@@ -2865,11 +3442,15 @@ export class ObservatoryWorld {
     this.signals.forEach((signal, index) => {
       signal.mesh.visible = index < quality.signalCount;
     });
+    this.cyclists.forEach((cyclist, index) => {
+      cyclist.root.visible = index < quality.cyclistCount;
+    });
     this.clouds.forEach((cloud, index) => {
       cloud.visible = index < (quality.detail ? 5 : quality.mistLayers >= 3 ? 3 : 2);
     });
     this.cloudGroup.visible = this.clouds.some((cloud) => cloud.visible);
     this.searchlight.visible = quality.detail;
+    this.syncSkyFaunaVisibility();
   }
 
   /** Switch on a lantern for each discovery found. */
@@ -2897,10 +3478,10 @@ export class ObservatoryWorld {
 
     /* Orbital instrument: slow, deliberate, never a spin. */
     if (this.armillary) {
-      this.armillary.rotation.y = t * 0.085;
+      this.armillary.rotation.y = t * 0.028;
       this.armillary.children.forEach((child) => {
         if (child.userData.spin) {
-          child.rotation.y = t * 0.35;
+          child.rotation.y = t * 0.12;
           child.rotation.x = t * 0.22;
         }
       });
@@ -2959,6 +3540,9 @@ export class ObservatoryWorld {
         Math.sin(t * 0.08 + (cloud.userData.bob as number)) * 0.6;
     }
 
+    if (this.skyFaunaGroup.visible && this.skyFaunaTextures) {
+      stepSkyFauna(this.skyFauna, this.skyFaunaTextures, t, step);
+    }
     /* Signals travelling the pathways. */
     for (const signal of this.signals) {
       if (!signal.mesh.visible) continue;
@@ -2966,6 +3550,32 @@ export class ObservatoryWorld {
       const point = signal.curve.getPointAt(signal.t);
       signal.mesh.position.copy(point);
       signal.mesh.position.y += 0.09;
+    }
+
+    /* Visitors on the ring walk and the entrance avenue. */
+    for (const cyclist of this.cyclists) {
+      if (!cyclist.root.visible) continue;
+      cyclist.t += cyclist.speed * cyclist.forward * step;
+      const closed = cyclist.curve.closed;
+      if (closed) {
+        cyclist.t = ((cyclist.t % 1) + 1) % 1;
+      } else if (cyclist.t >= 1) {
+        cyclist.t = 1;
+        cyclist.forward = -1;
+      } else if (cyclist.t <= 0) {
+        cyclist.t = 0;
+        cyclist.forward = 1;
+      }
+      const point = cyclist.curve.getPointAt(cyclist.t);
+      const lookAhead = closed
+        ? (cyclist.t + cyclist.forward * 0.018 + 1) % 1
+        : THREE.MathUtils.clamp(cyclist.t + cyclist.forward * 0.018, 0, 1);
+      const ahead = cyclist.curve.getPointAt(lookAhead);
+      const rideHeight = point.y + 0.11;
+      cyclist.root.position.set(point.x, rideHeight, point.z);
+      cyclist.root.lookAt(ahead.x, rideHeight, ahead.z);
+      const spin = cyclist.speed * cyclist.forward * step * 26;
+      for (const wheel of cyclist.wheels) wheel.rotation.z += spin;
     }
 
     /* The one-off pulse when a destination is chosen. */
@@ -2984,19 +3594,21 @@ export class ObservatoryWorld {
     }
 
     /* Guide drone: eases toward its destination and banks into the turn. */
-    const droneAnchor = this.droneTarget.lengthSq() > 0 ? this.droneTarget : this.idleDronePoint(t);
-    const previous = this.dronePosition.clone();
-    this.dronePosition.lerp(droneAnchor, Math.min(1, step * 0.9));
-    this.dronePosition.y += Math.sin(t * 1.6) * 0.006;
-    this.drone.position.copy(this.dronePosition);
-    this.drone.lookAt(droneAnchor.x, droneAnchor.y + 1.2, droneAnchor.z);
-    const velocity = this.dronePosition.clone().sub(previous);
-    this.drone.rotation.z = THREE.MathUtils.clamp(-velocity.x * 0.25, -0.28, 0.28);
-    this.drone.rotation.x = THREE.MathUtils.clamp(velocity.z * 0.22, -0.24, 0.24);
-    if (this.rotorGroup) {
-      this.rotorGroup.children.forEach((child) => {
-        if (child.userData.spin) child.rotation.y = t * 22 * (child.userData.spin as number);
-      });
+    if (this.drone.visible) {
+      const droneAnchor = this.droneTarget.lengthSq() > 0 ? this.droneTarget : this.idleDronePoint(t);
+      const previous = this.dronePosition.clone();
+      this.dronePosition.lerp(droneAnchor, Math.min(1, step * 0.9));
+      this.dronePosition.y += Math.sin(t * 1.6) * 0.006;
+      this.drone.position.copy(this.dronePosition);
+      this.drone.lookAt(droneAnchor.x, droneAnchor.y + 1.2, droneAnchor.z);
+      const velocity = this.dronePosition.clone().sub(previous);
+      this.drone.rotation.z = THREE.MathUtils.clamp(-velocity.x * 0.25, -0.28, 0.28);
+      this.drone.rotation.x = THREE.MathUtils.clamp(velocity.z * 0.22, -0.24, 0.24);
+      if (this.rotorGroup) {
+        this.rotorGroup.children.forEach((child) => {
+          if (child.userData.spin) child.rotation.y = t * 22 * (child.userData.spin as number);
+        });
+      }
     }
 
     /* Station accents ease toward their hover / active state. */

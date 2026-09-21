@@ -13,6 +13,7 @@
  */
 
 import type { ThemeName } from '../observatory/theme';
+import type { DestinationId } from './destinations';
 
 /**
  * The storage keys. `theme` is deliberately the same key the pre-paint probe
@@ -67,6 +68,17 @@ export interface ThemeChangeDetail {
   theme: ThemeName;
   /** False on the first application, and for reduced motion. */
   animate: boolean;
+  /**
+   * Who asked for the change.
+   *
+   * `visitor` — a press on a control, and by default anything that does not say
+   * otherwise. `system` — the operating system's own colour preference
+   * arriving while the visitor is on the page. The distinction matters to the
+   * world, which treats a visitor's press as an instruction about the *time of
+   * day* and follows it to noon or midnight, while a system preference is only
+   * ever a statement about colours.
+   */
+  source?: 'visitor' | 'system';
 }
 
 function storage(): Storage | null {
@@ -125,7 +137,7 @@ export function prefersReducedMotion(): boolean {
  */
 export function setTheme(
   next: ThemeName,
-  options: { animate?: boolean; persist?: boolean } = {},
+  options: { animate?: boolean; persist?: boolean; source?: 'visitor' | 'system' } = {},
 ): ThemeName {
   if (typeof document === 'undefined') return next;
   const root = document.documentElement;
@@ -154,7 +166,11 @@ export function setTheme(
     delete root.dataset.themeAnim;
   }
 
-  const detail: ThemeChangeDetail = { theme: next, animate };
+  const detail: ThemeChangeDetail = {
+    theme: next,
+    animate,
+    source: options.source ?? 'visitor',
+  };
   document.dispatchEvent(new CustomEvent<ThemeChangeDetail>(THEME_EVENT, { detail }));
   return next;
 }
@@ -177,7 +193,7 @@ export function watchSystemTheme(): () => void {
   }
   const onChange = () => {
     if (readStoredTheme()) return;
-    setTheme(systemTheme(), { animate: true });
+    setTheme(systemTheme(), { animate: true, source: 'system' });
   };
   media.addEventListener('change', onChange);
   return () => media.removeEventListener('change', onChange);
@@ -362,6 +378,18 @@ export const RESET_VIEW_EVENT = 'world:resetview';
 export function requestResetView(): void {
   if (typeof document === 'undefined') return;
   document.dispatchEvent(new CustomEvent(RESET_VIEW_EVENT));
+}
+
+/** Ask the shell to travel to a campus destination without changing the URL. */
+export const TRAVEL_EVENT = 'world:travel';
+
+export interface TravelDetail {
+  destination: DestinationId;
+}
+
+export function requestTravel(destination: DestinationId): void {
+  if (typeof document === 'undefined') return;
+  document.dispatchEvent(new CustomEvent<TravelDetail>(TRAVEL_EVENT, { detail: { destination } }));
 }
 
 export function showWorldAlert(message?: string): void {

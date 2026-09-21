@@ -27,14 +27,17 @@ import * as THREE from 'three';
 import { navigate } from 'astro:transitions/client';
 import {
   DESTINATIONS,
+  destinationMeta,
   PLACE_INDEX,
   hostsObjects,
+  placeIndexSurface,
   type DestinationId,
 } from '../world/destinations';
 import {
   clearReturnView,
   currentMode,
   isDocument,
+  isImmersiveWorld,
   isReading,
   readIndex,
   readReturnView,
@@ -54,15 +57,25 @@ import {
   pinnedSkyHour,
   prefersReducedMotion,
   RESET_VIEW_EVENT,
+  SKY_HOUR_KEY,
   showWorldAlert,
+  setTheme,
   subscribeAmbient,
   subscribeSkyTime,
   subscribeTheme,
   THEME_TRANSITION_MS,
   toggleTheme,
+  TRAVEL_EVENT,
   type PublishedSkyState,
+  type TravelDetail,
 } from '../world/theme-state';
-import { blendTheme, mixColor, readWorldTheme, type WorldTheme } from '../observatory/theme';
+import {
+  blendTheme,
+  mixColor,
+  readWorldTheme,
+  type ThemeName,
+  type WorldTheme,
+} from '../observatory/theme';
 import { SkyClock, phaseName, siderealTime, type SkyState } from '../observatory/sky';
 import { buildTextures, type TextureLibrary } from '../observatory/textures';
 import { Atmosphere } from '../observatory/lighting';
@@ -80,6 +93,18 @@ import {
 } from '../observatory/quality';
 import { ObservatoryWorld, type Shot } from '../observatory/world';
 import { CameraRig } from '../observatory/camera';
+
+/**
+ * The two hours the light switch moves the world to.
+ *
+ * Not "now, but the other way round": a switch that lands on a time is a switch
+ * whose result depends on when it was pressed, and pressing the moon at four in
+ * the afternoon should not put the sun on the horizon. Noon and one in the
+ * morning are the two unambiguous states, and they are the same two the
+ * verification harness pins when it wants to talk about day and night.
+ */
+const DAY_HOUR = 12;
+const NIGHT_HOUR = 1;
 
 export interface ShellHandle {
   applyState(): void;
@@ -149,6 +174,10 @@ const CAPTION_STAY = 2;
  * caption is showing its name, would answer with the name's size instead.
  */
 const MARKER_SIZE = 44;
+/** Minimum screen gap between overview destination markers when projected close. */
+const OVERVIEW_MARKER_GAP = 54;
+/** Same idea at a destination: project vitrines can sit near each other. */
+const DESTINATION_MARKER_GAP = 50;
 
 /**
  * The order the campus menu is placed in — Home first, then the ring.
@@ -257,7 +286,7 @@ export function webglAvailable(): boolean {
  * to fit *both*, so the frame is decided by the thing the visitor came to see
  * rather than by a distance somebody liked the look of.
  */
-const CAMPUS_EXTENT = { horizontal: 14.7, vertical: 11.5 };
+const CAMPUS_EXTENT = { horizontal: 17.2, vertical: 13.2 };
 /**
  * What the overview camera aims at.
  *
@@ -314,7 +343,7 @@ const CAMPUS_CENTRE = new THREE.Vector3(0, 3.4, 0);
  * sky has to show the sky.
  */
 const OVERVIEW_FOV_LANDSCAPE = 72;
-const OVERVIEW_FOV_PORTRAIT = 78;
+const OVERVIEW_FOV_PORTRAIT = 76;
 /**
  * How much higher than the island's centre of mass the camera aims.
  *
@@ -332,7 +361,7 @@ const OVERVIEW_FOV_PORTRAIT = 78;
  * the top of the frame entirely — the island ends up small and low with nothing
  * above it but empty air.
  */
-const OVERVIEW_LIFT = 4.5;
+const OVERVIEW_LIFT = 3.6;
 
 function overviewShot(usable: { aspect: number }): Shot {
   const portrait = usable.aspect < 1.15;
@@ -342,8 +371,8 @@ function overviewShot(usable: { aspect: number }): Shot {
   const halfH = halfV * Math.max(usable.aspect, 0.35);
 
   /* How much of the frame the island is allowed to fill. */
-  const widthFraction = portrait ? 0.92 : 0.98;
-  const heightFraction = 0.82;
+  const widthFraction = portrait ? 0.93 : 0.82;
+  const heightFraction = portrait ? 0.88 : 0.76;
   const distanceForWidth = CAMPUS_EXTENT.horizontal / widthFraction / halfH;
   const distanceForHeight = CAMPUS_EXTENT.vertical / heightFraction / halfV;
   const distance = Math.max(distanceForWidth, distanceForHeight);
@@ -403,17 +432,20 @@ function overviewShot(usable: { aspect: number }): Shot {
    */
   const OFFSET_BEARING = 135;
   const offset = THREE.MathUtils.degToRad(OFFSET_BEARING);
-  const direction = new THREE.Vector3(Math.sin(offset), 0.5, Math.cos(offset)).normalize();
+  const elevation = portrait ? 0.44 : 0.5;
+  const direction = new THREE.Vector3(Math.sin(offset), elevation, Math.cos(offset)).normalize();
   const target = CAMPUS_CENTRE.clone();
-  target.y += OVERVIEW_LIFT;
+  target.y += portrait ? OVERVIEW_LIFT * 0.9 : OVERVIEW_LIFT;
   /*
    * A portrait frame is tall and narrow, and the island is a wide disc: the
    * width is what limits it, which leaves a band of empty sky above and below,
    * with the identity card and the control bar already claiming the top. On a
    * phone the aim is lifted a little further, so that empty band sits above the
-   * campus where the card is rather than below it.
+   * campus where the card is rather than below it — but not so much that the sun
+   * sits on the top edge; a slightly shallower depression keeps the sky lower
+   * in the frame.
    */
-  if (portrait) target.y += 2.2;
+  if (portrait) target.y += 1.45;
   return { position: target.clone().addScaledVector(direction, distance), target, fov };
 }
 
@@ -570,7 +602,12 @@ export function mountShell(root: WorldHost): ShellHandle {
    * coincidence, and there is no such way.
    */
   const rememberedHour = pinnedSkyHour();
-  if (rememberedHour !== null) skyClock.setOverride({ hour: rememberedHour });
+  if (rememberedHour !== null) {
+    skyClock.setOverride({ hour: rememberedHour }, { hour: rememberedHour });
+  } else {
+    const hour = currentTheme() === 'light' ? DAY_HOUR : NIGHT_HOUR;
+    skyClock.setOverride({ hour }, { hour });
+  }
   skyState = skyClock.current;
   let theme: WorldTheme = readWorldTheme(currentTheme(), skyState);
   /**
@@ -814,9 +851,14 @@ export function mountShell(root: WorldHost): ShellHandle {
   let themeTo: WorldTheme | null = null;
   let themeT = 0;
   let themeBlending = false;
+  let themeTargetName: ThemeName | null = null;
+  let skyHourBlending = false;
+  let skyHourFrom = 0;
+  let skyHourTo = 0;
   let envClock = 0;
   let skyEnvClock = 0;
   const themeScratch = {} as WorldTheme;
+  const themeMovingEnd = {} as WorldTheme;
 
   /**
    * Push a theme into every part of the environment. `environment` refreshes
@@ -845,18 +887,21 @@ export function mountShell(root: WorldHost): ShellHandle {
     rimDirectional.intensity = 0.34 + (1 - day) * 0.36;
   }
 
-  function startThemeTransition(next: WorldTheme, animate: boolean): void {
+  function startThemeTransition(next: WorldTheme, animate: boolean, skyBlend = false): void {
     if (!animate || reducedMotion) {
       themeFrom = null;
       themeTo = null;
       themeBlending = false;
+      skyHourBlending = false;
+      themeTargetName = null;
       liveTheme = next;
       applyTheme(next, true);
       if (!running) renderOnce();
       return;
     }
     themeFrom = { ...liveTheme };
-    themeTo = next;
+    themeTo = skyBlend ? null : next;
+    skyHourBlending = skyBlend;
     themeT = 0;
     themeBlending = true;
     envClock = 0;
@@ -872,27 +917,72 @@ export function mountShell(root: WorldHost): ShellHandle {
    * rather than on a timer.
    */
   function advanceTheme(delta: number): boolean {
-    if (!themeFrom || !themeTo) return false;
+    if (!themeFrom || (!themeTo && !skyHourBlending)) return false;
     themeT = Math.min(1, themeT + (delta * 1000) / THEME_TRANSITION_MS);
-    blendTheme(themeFrom, themeTo, easeInOut(themeT), themeScratch);
+    const eased = easeInOut(themeT);
+
+    if (skyHourBlending && themeTargetName) {
+      const hour = skyHourFrom + (skyHourTo - skyHourFrom) * eased;
+      skyState = skyClock.setOverride({ hour }, { hour });
+      siderealAngle = siderealTime(skyState.jd, skyState.longitude);
+      atmosphere.setSiderealAngle(siderealAngle);
+      readWorldTheme(themeTargetName, skyState, themeMovingEnd);
+      blendTheme(themeFrom, themeMovingEnd, eased, themeScratch);
+      updateCelestialHotspot();
+      publishSkyState();
+    } else if (themeTo) {
+      blendTheme(themeFrom, themeTo, eased, themeScratch);
+    }
+
     envClock += delta * 1000;
     const environment = envClock >= 120 || themeT >= 1;
     if (environment) envClock = 0;
     liveTheme = { ...themeScratch };
     applyTheme(themeScratch, environment);
     if (themeT >= 1) {
-      const settled = themeTo;
+      const settled = skyHourBlending && themeTargetName
+        ? readWorldTheme(themeTargetName, skyState, themeMovingEnd)
+        : themeTo!;
       themeFrom = null;
       themeTo = null;
       themeBlending = false;
-      liveTheme = settled;
-      applyTheme(settled, true);
+      skyHourBlending = false;
+      themeTargetName = null;
+      liveTheme = { ...settled };
+      applyTheme(liveTheme, true);
     }
     return true;
   }
 
   const stopThemes = subscribeTheme((detail) => {
-    startThemeTransition(readWorldTheme(detail.theme, skyState), detail.animate);
+    let nextSky = skyState;
+    let skyBlend = false;
+
+    if (detail.source !== 'system') {
+      const targetHour = detail.theme === 'light' ? DAY_HOUR : NIGHT_HOUR;
+      try {
+        localStorage.setItem(SKY_HOUR_KEY, String(targetHour));
+      } catch {
+        /* storage unavailable */
+      }
+
+      if (detail.animate && !reducedMotion) {
+        skyHourFrom = skyState.hours;
+        skyHourTo = targetHour;
+        themeTargetName = detail.theme;
+        skyBlend = true;
+      } else {
+        themeTargetName = null;
+        nextSky = skyClock.setOverride({ hour: targetHour }, { hour: targetHour });
+        skyState = nextSky;
+        siderealAngle = siderealTime(nextSky.jd, nextSky.longitude);
+        atmosphere.setSiderealAngle(siderealAngle);
+      }
+    } else {
+      themeTargetName = null;
+    }
+
+    startThemeTransition(readWorldTheme(detail.theme, nextSky), detail.animate, skyBlend);
     updateCelestialHotspot();
     publishSkyState();
     if (!running) renderOnce();
@@ -972,25 +1062,23 @@ export function mountShell(root: WorldHost): ShellHandle {
   }
 
   /**
-   * Hold the sky where it is when the light is switched.
+   * Switch the world's light — and move the sky to match.
    *
-   * The sun and the moon are the world's light switch, and a switch has to
-   * *stay* switched. Until this existed, pressing the sun changed the page to
-   * dark mode and then the world went on following the wall clock — so at six in
-   * the evening the sun kept setting, the moon kept rising, and the light the
-   * visitor had just chosen drifted away underneath them within the hour. What
-   * they were looking at was a switch that turned itself back off.
+   * The sun and the moon are the world's light switch, and a switch has to mean
+   * something. Two earlier versions of this got it wrong in opposite directions:
+   * the first did nothing but recolour the page, so at six in the evening the
+   * visitor pressed the moon and watched the sun go on setting; the second held
+   * the sky at whatever hour it happened to be, which is a switch that changes
+   * the furniture but not the light.
    *
-   * So a change of light pins the hour the world is already at. The sun and the
-   * moon keep the positions they had, the stars keep their places, and nothing
-   * moves until the visitor moves the time dial — which is the difference
-   * between a control and an ornament.
+   * What the visitor is asking for when they press a sky body is *the other time
+   * of day*, so that is what this does: the page theme changes and the sky goes
+   * to the hour that belongs to it — noon for daylight, the small hours for
+   * night — whatever the visitor's own clock says. The choice is pinned *and*
+   * persisted, so it overrides the clock now, on the next page and on the next
+   * visit, until they hand the world back with the time dial's "follow my clock"
+   * control. A switch that quietly reverts to the wall clock is not a switch.
    */
-  const stopLightPin = subscribeTheme(() => {
-    if (disposed || skyClock.pinned) return;
-    skyClock.setOverride({ hour: skyState.hours });
-  });
-
   const stopAmbient = subscribeAmbient((paused) => {
     ambientAllowed = !paused && !reducedMotion;
     settings = settingsFor(tier, ambientAllowed);
@@ -1114,6 +1202,8 @@ export function mountShell(root: WorldHost): ShellHandle {
       name.className = 'world-hotspot-name';
       name.textContent = label;
       link.append(name);
+      link.setAttribute('aria-label', meta ? `${label} — ${meta}` : label);
+      link.setAttribute('title', label);
     }
     if (meta) {
       const aside = document.createElement('span');
@@ -1140,7 +1230,9 @@ export function mountShell(root: WorldHost): ShellHandle {
     link.addEventListener('pointerenter', () => {
       revealedKey = key;
     });
-    link.addEventListener('pointerleave', () => {
+    link.addEventListener('pointerleave', (event) => {
+      const related = event.relatedTarget;
+      if (related instanceof Node && hotspotEl.contains(related)) return;
       if (revealedKey === key) revealedKey = null;
     });
     /*
@@ -1237,6 +1329,7 @@ export function mountShell(root: WorldHost): ShellHandle {
 
     if (!atPlace) {
       for (const destination of DESTINATIONS) {
+        if (destination.id === 'campus') continue;
         if (!world.places.has(destination.id)) continue;
         const link = makeHotspot(
           `place:${destination.id}`,
@@ -1258,7 +1351,8 @@ export function mountShell(root: WorldHost): ShellHandle {
          * is what keeps every section reachable from the world alone.
          */
         const index = PLACE_INDEX[focusPlace];
-        if (index) {
+        const indexListingOpen = placeIndexSurface(focusPlace) === state.surface;
+        if (index && !indexListingOpen) {
           const entry = makeHotspot(
             `object:index:${focusPlace}`,
             index.href,
@@ -1341,6 +1435,10 @@ export function mountShell(root: WorldHost): ShellHandle {
     }
   }
 
+  function islandAnchor(local: THREE.Vector3): THREE.Vector3 {
+    return world.turnPoint(local);
+  }
+
   function anchorFor(key: string): THREE.Vector3 | null {
     if (key === CELESTIAL_KEY) {
       /* The sun and moon live in the sky, so their caption follows whichever
@@ -1351,7 +1449,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (key === LIGHT_SWITCH_KEY) {
       /* A little above the lamp on the post, so the marker clears the object
          it names rather than sitting on the control. */
-      return world.lightSwitchAnchor();
+      return islandAnchor(world.lightSwitchAnchor());
     }
     if (key.startsWith('place:')) {
       const id = key.slice(6) as DestinationId;
@@ -1359,19 +1457,23 @@ export function mountShell(root: WorldHost): ShellHandle {
         /* Above the dome, but not so far above it that the label is pushed
            off the top of the frame on a wide, short view. */
         const node = world.places.get('campus');
-        return node ? node.anchor.clone().add(new THREE.Vector3(0, 2.5, 0)) : null;
+        return node
+          ? islandAnchor(node.anchor.clone().add(new THREE.Vector3(0, 2.5, 0)))
+          : null;
       }
       const node = world.places.get(id);
-      return node ? node.anchor.clone() : null;
+      return node ? islandAnchor(node.anchor) : null;
     }
     const parts = key.split(':');
     if (parts[1] === 'index') {
       const node = world.places.get(parts[2] as DestinationId);
       /* Above the place, so it never sits on top of an object's caption. */
-      return node ? node.anchor.clone().add(new THREE.Vector3(0, 2.6, 0)) : null;
+      return node
+        ? islandAnchor(node.anchor.clone().add(new THREE.Vector3(0, 2.6, 0)))
+        : null;
     }
     const marker = world.objectMarkers.find((m) => m.kind === parts[1] && m.id === parts[2]);
-    return marker ? marker.anchor.clone() : null;
+    return marker ? islandAnchor(marker.anchor) : null;
   }
 
   function measurePanel(): void {
@@ -1507,6 +1609,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     const placed: { x: number; y: number; w: number; h: number }[] = [];
     /** The markers among them, which are allowed to crowd each other. */
     const markers: { x: number; y: number; w: number; h: number }[] = [];
+    const stableMarkerCenters: { x: number; y: number }[] = [];
     /*
      * The identity card and the open document. A caption that lands under
      * either is not a caption any more, it is part of the furniture — so
@@ -1560,6 +1663,14 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (bar) {
       const rect = bar.getBoundingClientRect();
       if (rect.width > 8 && rect.height > 8) {
+        menuBlocked.push({ x: rect.left, y: rect.top, w: rect.width, h: rect.height });
+      }
+    }
+    const dock = document.querySelector<HTMLElement>('.world-dock');
+    if (dock) {
+      const rect = dock.getBoundingClientRect();
+      if (rect.width > 8 && rect.height > 8) {
+        blocked.push({ x: rect.left, y: rect.top, w: rect.width, h: rect.height });
         menuBlocked.push({ x: rect.left, y: rect.top, w: rect.width, h: rect.height });
       }
     }
@@ -1747,12 +1858,115 @@ export function mountShell(root: WorldHost): ShellHandle {
       /* A caption the visitor is on shows its name, even where a pill would
          not fit — that is what makes a marker a label on hover or focus. */
       const isRevealed = revealedKey === candidate.key;
+      const before = lastSpot.get(candidate.key);
+      const visibleBefore = wasVisible.get(candidate.key) === true;
+      const flying = rig.travelling;
+      const isOverviewPlace =
+        menu && candidate.key.startsWith('place:') && candidate.key !== 'place:campus';
+      /*
+       * Project and article markers at a destination (e.g. HyperRAN and the
+       * education platform in the workshop) sit close in screen space. The
+       * pill-placement pass swaps them frame to frame when one is hovered or
+       * focused — pin them like the campus overview instead.
+       */
+      const isStableObject =
+        !menu &&
+        focusPlace !== 'campus' &&
+        candidate.key.startsWith('object:') &&
+        !candidate.key.startsWith('object:index:');
+
+      if (isOverviewPlace || isStableObject) {
+        if (
+          flying &&
+          !visibleBefore &&
+          !isFocused &&
+          !isRevealed &&
+          !isStableObject
+        ) {
+          link.dataset.visible = 'false';
+          link.setAttribute('aria-hidden', 'true');
+          link.tabIndex = -1;
+          wasVisible.set(candidate.key, false);
+          continue;
+        }
+        if (isStableObject && candidate.occluded && !isFocused && !isRevealed) {
+          link.dataset.visible = 'false';
+          link.setAttribute('aria-hidden', 'true');
+          link.tabIndex = -1;
+          wasVisible.set(candidate.key, false);
+          continue;
+        }
+        const markerAnchor = markerBoxFor(link);
+        if (!markerAnchor) {
+          link.dataset.visible = 'false';
+          wasVisible.set(candidate.key, false);
+          continue;
+        }
+        const expanded = isFocused || isRevealed;
+        link.dataset.compact = 'true';
+        link.dataset.expanded = expanded ? 'true' : 'false';
+        const margin = 8;
+        const halfW = MARKER_SIZE / 2;
+        const halfH = MARKER_SIZE / 2;
+        const isWorkbenchRepo =
+          focusPlace === 'workbench' && candidate.key.startsWith('object:repo:');
+        let x = markerAnchor.x + markerAnchor.w / 2;
+        let y = markerAnchor.y + markerAnchor.h / 2;
+        if (!isWorkbenchRepo) {
+          const minGap = isStableObject ? DESTINATION_MARKER_GAP : OVERVIEW_MARKER_GAP;
+          x = markerAnchor.x + halfW;
+          y = markerAnchor.y + halfH;
+          for (let pass = 0; pass < 5; pass++) {
+            for (const other of stableMarkerCenters) {
+              const dx = x - other.x;
+              const dy = y - other.y;
+              const dist = Math.hypot(dx, dy);
+              if (dist >= minGap) continue;
+              const push = dist > 0.5 ? (minGap - dist) * 0.6 : minGap;
+              const nx = dist > 0.5 ? dx / dist : 0;
+              const ny = dist > 0.5 ? dy / dist : -1;
+              x += nx * push;
+              y += ny * push;
+            }
+            x = THREE.MathUtils.clamp(
+              x,
+              halfW + margin,
+              Math.max(halfW + margin, width - halfW - margin),
+            );
+            y = THREE.MathUtils.clamp(
+              y,
+              halfH + margin,
+              Math.max(halfH + margin, height - halfH - margin),
+            );
+          }
+        } else {
+          x = THREE.MathUtils.clamp(
+            x,
+            halfW + margin,
+            Math.max(halfW + margin, width - halfW - margin),
+          );
+          y = THREE.MathUtils.clamp(
+            y,
+            halfH + margin,
+            Math.max(halfH + margin, height - halfH - margin),
+          );
+        }
+        link.dataset.visible = 'true';
+        link.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
+        link.setAttribute('aria-hidden', 'false');
+        link.tabIndex = 0;
+        wasVisible.set(candidate.key, true);
+        lastSpot.delete(candidate.key);
+        if (!isWorkbenchRepo) stableMarkerCenters.push({ x, y });
+        markers.push(markerAnchor);
+        continue;
+      }
+
       /*
        * A destination caption on the campus overview belongs to the menu, so
        * it is placed even when the island is standing in front of it. Every
        * other caption keeps the old rule: behind something is not on screen.
        */
-      const menu = focusPlace === 'campus' && !reading;
       const isHead = candidate.key === 'place:campus';
       const guaranteed = menu && candidate.key.startsWith('place:');
       /* The sun and the light switch are icon-only: they are placed like
@@ -1767,8 +1981,6 @@ export function mountShell(root: WorldHost): ShellHandle {
         b: { x: number; y: number; w: number; h: number } | null,
       ): { x: number; y: number; w: number; h: number } | null =>
         b && floor !== null && b.y < floor ? { ...b, y: floor } : b;
-      const before = lastSpot.get(candidate.key);
-      const visibleBefore = wasVisible.get(candidate.key) === true;
 
       /*
        * Nothing is decided while the camera is flying between shots.
@@ -1780,7 +1992,6 @@ export function mountShell(root: WorldHost): ShellHandle {
        * the place being arrived at brings its own when the camera is still,
        * where they fade in once instead of strobing all the way there.
        */
-      const flying = rig.travelling;
       const wantsOut =
         !isFocused && !isRevealed && !guaranteed && (flying ? !visibleBefore : candidate.occluded);
       let leaving = false;
@@ -2018,13 +2229,35 @@ export function mountShell(root: WorldHost): ShellHandle {
     return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
   }
 
+  function dockReserved(): Reserved | null {
+    if (focusPlace !== 'campus' || reading) return null;
+    const dock = document.querySelector<HTMLElement>('.world-dock');
+    if (!dock) return null;
+    const style = getComputedStyle(dock);
+    if (style.display === 'none' || style.visibility === 'hidden') return null;
+    const rect = dock.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8) return null;
+    const pad = 12;
+    return {
+      left: rect.left - pad,
+      top: rect.top - pad,
+      right: rect.right + pad,
+      bottom: rect.bottom + pad,
+    };
+  }
+
   /** The region of the stage the interfaces do not cover. */
   function viewMetrics(): ViewMetrics {
     const stageWidth = stageEl.clientWidth || 1;
     const stageHeight = stageEl.clientHeight || 1;
     const reserved: Reserved[] = [];
-    const card = identityReserved();
-    if (card) reserved.push(card);
+    /*
+     * The identity card is a translucent overlay: it sits on top of the scenery
+     * rather than beside it, so the campus stays centred on the stage. Hotspot
+     * placement still treats the card as blocked; only the camera ignores it.
+     */
+    const dock = dockReserved();
+    if (dock) reserved.push(dock);
     const whole = { left: 0, top: 0, right: stageWidth, bottom: stageHeight };
     if (!panelRect) {
       return { stageWidth, stageHeight, free: whole, reserved };
@@ -2156,14 +2389,32 @@ export function mountShell(root: WorldHost): ShellHandle {
      * phone with a document open the free region is a strip, and the subject
      * belongs in the middle of the strip. `readingShot` is what puts it there.
      */
-    const subject = {
+    let subject = {
       x: (free.left + free.right) / 2,
       y: (free.top + free.bottom) / 2,
     };
 
-    /* The campus *is* the overview: whatever is open there, the visitor
-       should still be looking at the whole place. */
-    if (focusPlace === 'campus') {
+    /* The campus *is* the overview: centre the island on the stage, not in a
+       strip carved for the identity card. Only the top chrome and bottom dock
+       shift the vertical aim. */
+    const immersive = isImmersiveWorld(state);
+    if (focusPlace === 'campus' && immersive) {
+      const dock = dockReserved();
+      const phone = view.stageWidth <= 860;
+      const bandTop = view.stageHeight * (phone ? 0.11 : 0.07);
+      const dockClearance = phone ? 20 : 48;
+      const bandBottom = dock ? dock.top - dockClearance : view.stageHeight * 0.84;
+      const bandHeight = Math.max(bandBottom - bandTop, 120);
+      /*
+       * Larger `bandCentre` raises the island on screen — `readingShot` shifts
+       * the look-at opposite to the requested pixel, so shrinking this value
+       * (as in earlier attempts) pushed the campus toward the dock.
+       */
+      const bandCentre = phone ? 0.44 : 0.42;
+      subject = {
+        x: view.stageWidth * 0.5,
+        y: bandTop + bandHeight * bandCentre,
+      };
       return readingShot(overview, view, subject);
     }
     /*
@@ -2171,10 +2422,22 @@ export function mountShell(root: WorldHost): ShellHandle {
      * lengthened when the visible region is a short band — a phone with a
      * document open — so the whole building stays in the strip.
      */
-    const band = freeHeight < view.stageHeight * 0.5;
+    const band = !immersive && freeHeight < view.stageHeight * 0.5;
     const node = world.places.get(focusPlace);
     if (!node) return readingShot(overview, view, subject);
-    const base = placeShot(node.shot, aspect, band ? 1.45 : 1);
+    if (focusPlace === 'workbench' && immersive) {
+      const dock = dockReserved();
+      const topInset = view.stageHeight * 0.07;
+      const bottomInset = dock ? dock.top - 28 : view.stageHeight * 0.84;
+      const bandHeight = Math.max(bottomInset - topInset, 120);
+      subject = {
+        x: view.stageWidth * 0.5,
+        y: topInset + bandHeight * 0.4,
+      };
+    }
+    const reach =
+      focusPlace === 'workbench' && immersive ? 1.22 : band ? 1.45 : 1;
+    const base = placeShot(node.shot, aspect, reach);
     return readingShot(base, view, subject);
   }
 
@@ -2185,14 +2448,6 @@ export function mountShell(root: WorldHost): ShellHandle {
   /* ── Chrome sync ─────────────────────────────────────────────────── */
 
   function syncChromeLocation(): void {
-    const readout = document.querySelector<HTMLElement>('[data-world-location]');
-    if (readout) {
-      const place = state.destination;
-      const name =
-        DESTINATIONS.find((d) => d.id === place)?.name ?? 'The observatory campus';
-      const label = state.surface === 'none' ? 'Campus overview' : surfaceLabel(state.surface);
-      readout.textContent = state.surface === 'none' ? name : `${name} · ${label}`;
-    }
     for (const link of document.querySelectorAll<HTMLElement>('[data-world-dest]')) {
       const id = link.dataset.worldDest;
       const active =
@@ -2200,6 +2455,14 @@ export function mountShell(root: WorldHost): ShellHandle {
         (id === 'studio' && state.destination === 'studio' && state.surface === 'cv');
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
+    }
+    for (const button of document.querySelectorAll<HTMLElement>('[data-world-dock]')) {
+      const id = button.dataset.worldDock;
+      const active =
+        id === focusPlace ||
+        (id === 'campus' && focusPlace === 'campus' && state.surface === 'none');
+      if (active) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
     }
   }
 
@@ -2455,18 +2718,7 @@ export function mountShell(root: WorldHost): ShellHandle {
        * the control, and nothing else in the sky is clickable.
        */
       if (!pointers.has(event.pointerId) && event.pointerType === 'mouse') {
-        const body = celestialTarget();
-        let over = false;
-        if (body) {
-          const rect = canvasEl.getBoundingClientRect();
-          /* `celestialTarget` answers in stage pixels; the pointer arrives in
-             viewport ones. */
-          over = Math.hypot(
-            event.clientX - (rect.left + body.x),
-            event.clientY - (rect.top + body.y),
-          ) <= body.reach;
-        }
-        canvasEl.style.cursor = over ? 'pointer' : '';
+        canvasEl.style.cursor = pickCelestialAt(event.clientX, event.clientY) ? 'pointer' : '';
       }
 
       const gesture = pointers.get(event.pointerId);
@@ -2616,6 +2868,55 @@ export function mountShell(root: WorldHost): ShellHandle {
     return hits[0]?.object ?? null;
   }
 
+  function pointerNdc(x: number, y: number): { ndcX: number; ndcY: number; rect: DOMRect } | null {
+    const rect = canvasEl.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    return {
+      ndcX: ((x - rect.left) / rect.width) * 2 - 1,
+      ndcY: -((y - rect.top) / rect.height) * 2 + 1,
+      rect,
+    };
+  }
+
+  /**
+   * The sun or moon under a screen point. Raycast first, then a generous
+   * screen-radius fallback so the bodies stay easy to press.
+   */
+  function pickCelestialAt(x: number, y: number): 'sun' | 'moon' | null {
+    if (focusPlace !== 'campus' || !atmosphere.celestialDiagnostics().enabled) return null;
+    const pointer = pointerNdc(x, y);
+    if (!pointer) return null;
+    refreshCamera();
+    atmosphere.follow(rig.camera, rig.focus);
+    const hit = atmosphere.probeBody(pointer.ndcX, pointer.ndcY, rig.camera);
+    if (hit) return hit;
+    const height = pointer.rect.height;
+    const diag = atmosphere.celestialDiagnostics();
+    const kinds: ('sun' | 'moon')[] =
+      diag.moonVisible && !diag.sunVisible
+        ? ['moon', 'sun']
+        : diag.sunVisible && !diag.moonVisible
+          ? ['sun', 'moon']
+          : ['sun', 'moon'];
+    for (const kind of kinds) {
+      const ndc = atmosphere.projectBody(kind, rig.camera);
+      if (!ndc) continue;
+      const screenX = pointer.rect.left + (ndc.x * 0.5 + 0.5) * pointer.rect.width;
+      const screenY = pointer.rect.top + (-ndc.y * 0.5 + 0.5) * pointer.rect.height;
+      const reach = Math.max(
+        CELESTIAL_TAP_RADIUS,
+        atmosphere.celestialBodyRadius(kind, rig.camera) * height,
+      );
+      if (Math.hypot(x - screenX, y - screenY) <= reach) return kind;
+    }
+    return null;
+  }
+
+  function applyCelestialLighting(_kind: 'sun' | 'moon'): void {
+    const next: ThemeName = currentTheme() === 'light' ? 'dark' : 'light';
+    setTheme(next, { animate: true, persist: true, source: 'visitor' });
+  }
+
   /**
    * A tap that never became a drag. What the visitor can see wins: a caption
    * under the finger is activated exactly as if it had been pressed, and
@@ -2629,11 +2930,6 @@ export function mountShell(root: WorldHost): ShellHandle {
   function handleTap(x: number, y: number): void {
     if (currentMode() !== 'world') return;
 
-    if (rayAt(x, y, world.switchTargets())) {
-      toggleTheme({ animate: true });
-      return;
-    }
-
     /*
      * The sky body, resolved by casting a ray at the sprites themselves.
      *
@@ -2646,9 +2942,13 @@ export function mountShell(root: WorldHost): ShellHandle {
      * the visitor pressed was where the moon was *drawn*, and only a raycast
      * against the drawn sprites answers that.
      */
-    const ndcX = (x / stageEl.clientWidth) * 2 - 1;
-    const ndcY = -(y / stageEl.clientHeight) * 2 + 1;
-    if (atmosphere.probeBody(ndcX, ndcY, rig.camera)) {
+    const celestial = pickCelestialAt(x, y);
+    if (celestial) {
+      applyCelestialLighting(celestial);
+      return;
+    }
+
+    if (rayAt(x, y, world.switchTargets())) {
       toggleTheme({ animate: true });
       return;
     }
@@ -2726,6 +3026,27 @@ export function mountShell(root: WorldHost): ShellHandle {
   };
   document.addEventListener(RESET_VIEW_EVENT, onResetView);
   cleanups.push(() => document.removeEventListener(RESET_VIEW_EVENT, onResetView));
+
+  const onTravel = (event: Event) => {
+    if (disposed) return;
+    const detail = (event as CustomEvent<TravelDetail>).detail;
+    if (!detail?.destination) return;
+    const destination = detail.destination;
+    travelTo(destination);
+    /*
+     * Dock travel also opens the place's page when it is not already showing,
+     * so Contact (and the other destinations) are readable without a second
+     * hunt for a hatch or caption.
+     */
+    if (destination === 'campus') return;
+    const target = destinationMeta(destination).href;
+    const here = typeof location === 'undefined' ? '/' : location.pathname;
+    const normalizedHere = here.endsWith('/') ? here : `${here}/`;
+    const normalizedTarget = target.endsWith('/') ? target : `${target}/`;
+    if (normalizedHere !== normalizedTarget) void navigate(target);
+  };
+  document.addEventListener(TRAVEL_EVENT, onTravel);
+  cleanups.push(() => document.removeEventListener(TRAVEL_EVENT, onTravel));
 
   /* ── Loop ────────────────────────────────────────────────────────── */
   let frameHandle = 0;
@@ -2820,6 +3141,7 @@ export function mountShell(root: WorldHost): ShellHandle {
 
     atmosphere.follow(rig.camera, rig.focus);
     renderer.render(scene, rig.camera);
+    scene.updateMatrixWorld(true);
 
     updateOcclusion(delta);
     projectHotspots();
@@ -3101,6 +3423,11 @@ export function mountShell(root: WorldHost): ShellHandle {
       })(),
       /** The solid volumes the camera's clearance rule tests against. */
       solids: world.cameraSolids().map((solid) => ({ ...solid })),
+      /** The campus lamps: posts, pools, glows and how many are really lit. */
+      lamps: world.lampDiagnostics(),
+      skyFauna: world.skyFaunaDiagnostics(),
+      /** The moon's sprite and the star field, read back from the live objects. */
+      skyCraft: atmosphere.craftDiagnostics(),
       /**
        * Whether the campus may still turn itself. False from the first press
        * on the world onwards, and true again only after the Reset view
@@ -3554,7 +3881,6 @@ export function mountShell(root: WorldHost): ShellHandle {
       stopThemes();
       stopAmbient();
       stopSkyTime();
-      stopLightPin();
       textures?.dispose();
       for (const cleanup of cleanups) cleanup();
       world.dispose();
@@ -3653,6 +3979,8 @@ export function bootstrapShell(): void {
 
   const existing = root[MOUNT_KEY];
   if (existing && !existing.lost) {
+    setWorldState(root, 'ready');
+    reportProgress(100);
     existing.handle.applyState();
     return;
   }

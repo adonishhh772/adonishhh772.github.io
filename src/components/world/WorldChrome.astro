@@ -9,7 +9,10 @@
  * while the CV, an article or a case study is open.
  */
 import Icon from '../Icon.astro';
-import { WORLD_NAV } from '../../lib/world/destinations';
+import { DESTINATIONS, WORLD_NAV } from '../../lib/world/destinations';
+import { liveGithubProjects } from '../../data/github-projects';
+
+const dockDestinations = DESTINATIONS.filter((destination) => destination.id !== 'workbench');
 import { hero, rootUrl } from '../../site.config';
 
 const currentPath = Astro.url.pathname;
@@ -60,12 +63,35 @@ const captionIcons = [
   <h2 class="visually-hidden">World controls</h2>
 
   <div class="world-chrome-bar">
-    <p class="world-chrome-where">
-      <span class="world-chrome-mark" aria-hidden="true"></span>
-      <span class="world-chrome-place" data-world-location>Campus overview</span>
-    </p>
-
     <div class="world-chrome-actions">
+      {
+        liveGithubProjects.map((build, index) => (
+          <div class="world-live-wrap">
+            <a
+              class="world-control world-control--icon world-control--live"
+              href={build.liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-world-live
+              data-live-pulse="true"
+              data-world-live-name={build.name}
+              aria-label={`${build.name} — open live meeting transcriber in a new tab`}
+            >
+              <Icon name="mic" size={16} />
+            </a>
+            {
+              index === 0 && (
+                <p class="world-live-tip" data-world-live-tip role="status" hidden>
+                  <span class="world-live-tip-text">
+                    Try <strong>{build.name}</strong> — tap the mic for the live transcriber
+                  </span>
+                </p>
+              )
+            }
+          </div>
+        ))
+      }
+
       <button
         class="world-control world-control--map"
         type="button"
@@ -74,7 +100,7 @@ const captionIcons = [
         aria-controls="world-map-menu"
       >
         <Icon name="grid" size={15} />
-        <span class="world-control-label">Map</span>
+        <span class="world-control-label">All pages</span>
       </button>
 
       {/*
@@ -167,6 +193,29 @@ const captionIcons = [
     <p class="world-map-title">
       <span class="mono">Campus map</span>
     </p>
+    {
+      liveGithubProjects.length > 0 && (
+        <div class="world-map-live">
+          <p class="world-map-live-title mono">Live builds</p>
+          <ul class="world-map-live-list">
+            {liveGithubProjects.map((build) => (
+              <li>
+                <a
+                  class="world-map-live-link"
+                  href={build.liveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span class="world-map-label">{build.name}</span>
+                  <span class="world-map-detail">Open live app</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )
+    }
+
     <ul>
       {
         WORLD_NAV.map((entry) => (
@@ -256,6 +305,49 @@ const captionIcons = [
       moon and stars at any hour.
     </p>
   </nav>
+
+  <nav class="world-dock" aria-label="Campus navigation">
+    {
+      dockDestinations.map((destination) => (
+        <button
+          class="world-dock-item"
+          type="button"
+          data-world-dock={destination.id}
+          aria-label={destination.name}
+          title={destination.name}
+          aria-current={destination.id === 'campus' && isCurrent('/') ? 'page' : undefined}
+        >
+          <span class="world-dock-icon" aria-hidden="true">
+            <Icon name={destination.dockIcon} size={18} />
+          </span>
+          <span class="world-dock-label">{destination.label}</span>
+        </button>
+      ))
+    }
+    <button
+      class="world-dock-item world-dock-item--more"
+      type="button"
+      data-world-dock="workbench"
+      aria-label="Open source"
+      title="Open source"
+    >
+      <span class="world-dock-icon" aria-hidden="true">
+        <Icon name="github" size={18} />
+      </span>
+      <span class="world-dock-label">Open source</span>
+    </button>
+  </nav>
+
+  <div class="world-sound-gate" data-world-sound-gate hidden>
+    <div class="world-sound-gate-card">
+      <p class="world-sound-gate-title">Enter the campus</p>
+      <p class="world-sound-gate-lead">Ambient music is optional and stays off until you choose.</p>
+      <div class="world-sound-gate-actions">
+        <button class="btn btn--primary" type="button" data-world-enter-sound>Enter with sound</button>
+        <button class="btn btn--ghost" type="button" data-world-enter-silent>Enter silently</button>
+      </div>
+    </div>
+  </div>
 
   {/*
     The failure screen. It is deliberately not a fallback to a conventional
@@ -462,6 +554,7 @@ const captionIcons = [
     position: fixed;
     inset: 0;
     z-index: 60;
+    isolation: isolate;
     pointer-events: none;
     display: none;
   }
@@ -480,55 +573,25 @@ const captionIcons = [
   .world-chrome-bar {
     position: absolute;
     top: calc(0.85rem + env(safe-area-inset-top, 0px));
-    left: calc(0.85rem + env(safe-area-inset-left, 0px));
+    right: calc(0.85rem + env(safe-area-inset-right, 0px));
+    left: auto;
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.5rem;
     transition: left var(--dur-3) var(--ease-out), right var(--dur-3) var(--ease-out);
   }
 
   :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-chrome-bar {
-    left: auto;
     right: calc(0.85rem + env(safe-area-inset-right, 0px));
-  }
-
-  .world-chrome-where {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0;
-    padding: 0.4rem 0.8rem;
-    border: 1px solid var(--hairline-strong);
-    border-radius: 999px;
-    background: var(--bg-raised);
-    box-shadow: var(--shadow-1);
-    font-family: var(--font-mono);
-    font-size: 0.64rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--muted);
-    max-width: min(38vw, 18rem);
-  }
-
-  .world-chrome-place {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .world-chrome-mark {
-    flex: 0 0 auto;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
+    left: auto;
   }
 
   .world-chrome-actions {
     display: flex;
     align-items: center;
     gap: 0.35rem;
+    overflow: visible;
   }
 
   /* 44px targets everywhere, by touch or by mouse. */
@@ -561,6 +624,143 @@ const captionIcons = [
     background: var(--accent-soft);
   }
 
+  .world-live-wrap {
+    position: relative;
+    display: inline-flex;
+    overflow: visible;
+  }
+
+  .world-control--live {
+    color: var(--signal);
+    border-color: color-mix(in srgb, var(--signal) 40%, var(--hairline-strong));
+    text-decoration: none;
+    width: 44px;
+    padding: 0;
+    animation: world-live-blink 1.05s ease-in-out infinite;
+  }
+
+  .world-control--live :global(svg) {
+    animation: world-live-icon-pulse 1.05s ease-in-out infinite;
+  }
+
+  .world-control--live:hover,
+  .world-control--live:focus-visible {
+    color: var(--text);
+    border-color: var(--signal-line);
+    background: var(--signal-soft);
+  }
+
+  @keyframes world-live-blink {
+    0%,
+    100% {
+      border-color: color-mix(in srgb, var(--signal) 30%, var(--hairline-strong));
+      box-shadow: var(--shadow-1);
+      transform: scale(1);
+      filter: brightness(1);
+    }
+    50% {
+      border-color: var(--signal);
+      box-shadow:
+        0 0 0 4px var(--signal-soft),
+        0 0 22px color-mix(in srgb, var(--signal) 70%, transparent);
+      transform: scale(1.1);
+      filter: brightness(1.15);
+    }
+  }
+
+  @keyframes world-live-icon-pulse {
+    0%,
+    100% {
+      opacity: 0.85;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .world-live-tip {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    z-index: 200;
+    width: max-content;
+    max-width: min(16rem, 72vw);
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--signal-line);
+    border-radius: var(--radius-sm);
+    background: var(--bg-raised);
+    box-shadow: var(--shadow-2);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .world-live-tip.world-live-tip--open {
+    animation: world-live-tip-in 480ms var(--ease-out) both, world-live-tip-float 2.6s ease-in-out 0.5s infinite;
+  }
+
+  .world-live-tip::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    right: 14px;
+    width: 10px;
+    height: 10px;
+    border-top: 1px solid var(--signal-line);
+    border-left: 1px solid var(--signal-line);
+    background: var(--bg-raised);
+    transform: rotate(45deg);
+  }
+
+  .world-live-tip strong {
+    color: var(--signal);
+    font-weight: 600;
+  }
+
+  .world-live-tip[hidden] {
+    display: none;
+  }
+
+  @keyframes world-live-tip-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes world-live-tip-float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(4px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .world-control--live,
+    .world-control--live :global(svg) {
+      animation: none;
+    }
+
+    .world-control--live {
+      outline: 2px solid var(--signal-line);
+      outline-offset: 2px;
+    }
+
+    .world-live-tip.world-live-tip--open {
+      animation: world-live-tip-in 200ms var(--ease-out) both;
+    }
+  }
+
   .world-control--icon {
     padding: 0;
   }
@@ -569,6 +769,50 @@ const captionIcons = [
   .world-control--sound {
     padding: 0;
     width: 44px;
+  }
+
+  /* ── The light control ────────────────────────────────────────────── */
+
+  .world-control--light {
+    padding: 0;
+    width: 44px;
+  }
+
+  .world-control--light[aria-pressed='true'] {
+    color: var(--accent);
+    border-color: var(--accent-line);
+  }
+
+  /*
+    The two faces of the switch, cross-faded. The moon is what the world shows
+    when it is dark and the sun what it shows when it is light, so the control
+    always pictures the light the visitor is looking at — and a press is always
+    a move to the other one.
+  */
+  .light-icon {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transition: opacity var(--dur-2) var(--ease-out),
+      transform var(--dur-2) var(--ease-out);
+  }
+
+  .light-icon--sun {
+    opacity: 0;
+    transform: rotate(-40deg) scale(0.7);
+  }
+
+  :global(html[data-theme='light']) .light-icon--moon {
+    opacity: 0;
+    transform: rotate(40deg) scale(0.7);
+  }
+
+  :global(html[data-theme='light']) .light-icon--sun {
+    opacity: 1;
+    transform: none;
   }
 
   .world-control[aria-expanded='true'] {
@@ -839,6 +1083,47 @@ const captionIcons = [
       opacity: 1;
       transform: none;
     }
+  }
+
+  .world-map-live {
+    margin-bottom: 0.85rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .world-map-live-title {
+    margin: 0 0 0.55rem;
+    color: var(--signal);
+    font-size: 0.62rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .world-map-live-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .world-map-live-link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-height: 44px;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    text-decoration: none;
+    transition: background-color var(--dur-2) var(--ease-out),
+      border-color var(--dur-2) var(--ease-out);
+  }
+
+  .world-map-live-link:hover,
+  .world-map-live-link:focus-visible {
+    background: var(--signal-soft);
+    border-color: var(--signal-line);
   }
 
   .world-map-title {
@@ -1154,42 +1439,30 @@ const captionIcons = [
 
   /* ── Phones ───────────────────────────────────────────────────────── */
 
-  @media (max-width: 1200px) {
-    /*
-      With a reading surface open on a narrower screen the readout is the first
-      thing to give way: the panel's own bar already names the place and the
-      document, and the controls must keep their 44px targets. The rule is
-      written with the same specificity at every width on purpose — the phone
-      block below does not try to bring it back.
-    */
-    :global(html[data-mode='world'] body:not([data-surface='none'])) .world-chrome-where {
-      display: none;
-    }
-  }
-
   @media (max-width: 860px) {
     .world-chrome-bar {
-      left: calc(0.6rem + env(safe-area-inset-left, 0px));
+      left: auto;
       right: calc(0.6rem + env(safe-area-inset-right, 0px));
       top: calc(0.6rem + env(safe-area-inset-top, 0px));
-      justify-content: space-between;
-      gap: 0.4rem;
+      justify-content: flex-end;
+      gap: 0.35rem;
+      max-width: calc(100vw - 1.2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
     }
 
-    /* The sheet occupies the bottom, so the bar never needs to move sides. */
     :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-chrome-bar {
-      left: calc(0.6rem + env(safe-area-inset-left, 0px));
+      left: auto;
       right: calc(0.6rem + env(safe-area-inset-right, 0px));
     }
 
-    .world-chrome-where {
-      max-width: none;
-      flex: 1 1 auto;
-      min-width: 0;
+    .world-chrome-actions {
+      flex-wrap: nowrap;
+      justify-content: flex-end;
     }
 
-    .world-chrome-place {
-      white-space: nowrap;
+    .world-live-tip {
+      right: 0;
+      left: auto;
+      max-width: min(15rem, calc(100vw - 1.4rem));
     }
 
     .world-map {
@@ -1298,6 +1571,136 @@ const captionIcons = [
 
     .world-map-setting-state {
       display: none;
+    }
+  }
+
+  .world-dock {
+    position: absolute;
+    left: 50%;
+    bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    gap: 0.15rem;
+    max-width: min(42rem, calc(100vw - 1.4rem));
+    padding: 0.35rem 0.45rem;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-raised) 97%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--shadow-2), 0 12px 40px color-mix(in srgb, var(--bg) 55%, transparent);
+    transform: translate3d(-50%, 0, 2px);
+    pointer-events: auto;
+  }
+
+  .world-dock-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    min-height: 44px;
+    padding: 0 0.75rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 520;
+    cursor: pointer;
+    transition: color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
+  }
+
+  .world-dock-item:hover,
+  .world-dock-item:focus-visible {
+    color: var(--text);
+    background: var(--accent-soft);
+  }
+
+  .world-dock-item[aria-current='page'] {
+    color: var(--accent);
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+  }
+
+  .world-dock-item--more {
+    padding-inline: 0.65rem;
+  }
+
+  .world-dock-icon {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+  }
+
+  .world-sound-gate {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 1rem calc(5.5rem + env(safe-area-inset-bottom, 0px));
+    pointer-events: auto;
+    background: linear-gradient(
+      to top,
+      color-mix(in srgb, var(--bg) 72%, transparent),
+      transparent 55%
+    );
+  }
+
+  .world-sound-gate-card {
+    width: min(22rem, 100%);
+    padding: 1rem 1.1rem 1.1rem;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 1rem;
+    background: var(--bg-raised);
+    box-shadow: var(--shadow-2);
+  }
+
+  .world-sound-gate-title {
+    margin: 0 0 0.35rem;
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+  }
+
+  .world-sound-gate-lead {
+    margin: 0 0 0.85rem;
+    font-size: 0.84rem;
+    color: var(--text-soft);
+    line-height: 1.5;
+  }
+
+  .world-sound-gate-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 860px) {
+    .world-dock {
+      gap: 0.05rem;
+      padding: 0.3rem;
+      max-width: calc(100vw - 1rem);
+    }
+
+    .world-dock-label {
+      display: none;
+    }
+
+    .world-dock-icon {
+      display: inline-flex;
+    }
+
+    .world-dock-item {
+      width: 44px;
+      min-width: 44px;
+      padding: 0;
+    }
+
+    .world-dock-item--more {
+      padding-inline: 0;
     }
   }
 

@@ -11,6 +11,9 @@ interface Props {
 
 const { project, delay = 0 } = Astro.props;
 
+const primaryHref = project.liveUrl ?? project.url;
+const showRepoLink = Boolean(project.liveUrl && project.url);
+
 /** Category slug used by the /work filter buttons. */
 const categorySlug =
   project.category === 'AI & agents'
@@ -36,14 +39,30 @@ const categorySlug =
   <p class="mini-project-desc">{project.description}</p>
   <a
     class="link-arrow mini-project-link"
-    href={project.url}
+    href={primaryHref}
     target="_blank"
     rel="noopener noreferrer"
-    aria-label={`${project.name} on GitHub (opens in a new tab)`}
+    aria-label={
+      project.liveUrl
+        ? `${project.name} live app (opens in a new tab)`
+        : `${project.name} on GitHub (opens in a new tab)`
+    }
   >
-    View repository
+    {project.liveUrl ? 'Open live app' : 'View repository'}
     <Icon name="arrow-up-right" size={14} />
   </a>
+  {
+    showRepoLink && (
+      <a
+        class="link-inline mini-project-source"
+        href={project.url}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Source on GitHub
+      </a>
+    )
+  }
 </article>
 
 <style>
@@ -91,6 +110,11 @@ const categorySlug =
     padding-top: 0.4rem;
     font-size: 0.84rem;
     color: var(--muted);
+  }
+
+  .mini-project-source {
+    margin-top: 0.25rem;
+    font-size: 0.78rem;
   }
 
   .mini-project:hover .mini-project-link {

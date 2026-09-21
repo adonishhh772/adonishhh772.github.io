@@ -183,25 +183,35 @@ export function skyMaterial(colors: SkyColors, haze = 0.3): THREE.ShaderMaterial
 /* ── The stars ───────────────────────────────────────────────────────── */
 
 /**
- * A dark-sky star map, as an equirectangular texture.
+ * A dark-sky star field, as points rather than as a painted map.
  *
- * Roughly 1400 stars, distributed by a simple galactic-plane model: a uniform
- * sprinkle plus a heavy concentration along a tilted great circle, because the
- * real sky is not evenly populated and a uniform sprinkle reads as noise. The
- * colour index is sampled too — blue-white through amber — since the brightest
- * stars are visibly coloured.
+ * This started as an equirectangular canvas mapped onto the dome, and it was
+ * wrong in a way that only shows up on a screen: a star drawn as a radial
+ * gradient eight texels wide on a 2048-texel map is one and a half degrees of
+ * sky, which is a *blob*. Every star in the night sky was a soft grey smudge
+ * twenty-odd pixels across, and the brightest were worse. A star map is the
+ * right structure for a star *chart* and the wrong one for a sky.
  *
- * Brightness follows the real distribution closely enough to matter: a great
- * many faint points and a handful of dominating ones. A field of equally bright
- * dots is the single most common giveaway of a procedural starfield.
+ * Points have no such problem. Each star is a sprite of a fixed angular size on
+ * screen whatever the camera is doing, so it stays a point when the visitor
+ * zooms and does not shimmer when the field turns. Everything that makes a
+ * starfield readable is per-star data instead of brushwork: magnitude decides
+ * the size *and* the brightness, the colour index runs blue-white through
+ * amber, and the brightest few get a faint four-point flare — which is a lens
+ * artefact rather than a property of the star, but it is what the eye reads as
+ * "bright".
+ *
+ * The distribution is the same simple galactic model as before: a sprinkle plus
+ * a heavy concentration along a tilted great circle, so the Milky Way is a band
+ * rather than an average. A fraction of those band stars are drawn as a wide,
+ * very faint haze, which is what the unaided eye actually sees there.
  */
-export function starTexture(seed = 20260913, count = 1400): THREE.CanvasTexture {
-  const width = 2048;
-  const height = 1024;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
+export function starGeometry(seed = 20260913, count = 8000): THREE.BufferGeometry {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const phases = new Float32Array(count);
+  const flares = new Float32Array(count);
 
   let state = seed >>> 0;
   const random = () => {
@@ -211,91 +221,218 @@ export function starTexture(seed = 20260913, count = 1400): THREE.CanvasTexture 
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 
-  if (ctx) {
-    ctx.clearRect(0, 0, width, height);
+  /* The galactic plane: a great circle inclined to the celestial equator. */
+  const planeTilt = 62 * (Math.PI / 180);
+  const planeNormal = new THREE.Vector3(Math.sin(planeTilt), Math.cos(planeTilt), 0).normalize();
+  const direction = new THREE.Vector3();
 
-    /* The galactic plane: a great circle inclined to the celestial equator. */
-    const planeTilt = 62 * (Math.PI / 180);
-    const planeNormal = new THREE.Vector3(
-      Math.sin(planeTilt),
-      Math.cos(planeTilt),
-      0,
-    ).normalize();
+  for (let i = 0; i < count; i++) {
+    /*
+     * Two thirds of the stars are drawn toward the galactic plane. Sampling the
+     * gap-to-plane with a power curve concentrates them without producing the
+     * hard edge a rejection test would.
+     */
+    const inPlane = random() < 0.66;
+    const azimuth = random() * Math.PI * 2;
+    const declination = inPlane
+      ? Math.asin(Math.max(-1, Math.min(1, (random() * 2 - 1) * Math.pow(random(), 0.6))))
+      : Math.acos(1 - 2 * random()) - Math.PI / 2;
 
-    for (let i = 0; i < count; i++) {
-      /*
-       * Two thirds of the stars are drawn toward the galactic plane. Sampling
-       * the gap-to-plane with a power curve concentrates them without producing
-       * the hard edge a rejection test would.
-       */
-      const inPlane = random() < 0.66;
-      const azimuth = random() * Math.PI * 2;
-      const declination = inPlane
-        ? Math.asin(Math.max(-1, Math.min(1, (random() * 2 - 1) * Math.pow(random(), 0.6))))
-        : Math.acos(1 - 2 * random()) - Math.PI / 2;
+    direction.set(
+      Math.cos(declination) * Math.cos(azimuth),
+      Math.sin(declination),
+      Math.cos(declination) * Math.sin(azimuth),
+    );
 
-      const direction = new THREE.Vector3(
-        Math.cos(declination) * Math.cos(azimuth),
-        Math.sin(declination),
-        Math.cos(declination) * Math.sin(azimuth),
-      );
-
-      /* Reject the ones that fell outside the band when they should be in it. */
-      if (inPlane && Math.abs(direction.dot(planeNormal)) > 0.24) continue;
-
-      const u = ((Math.atan2(direction.z, direction.x) / (Math.PI * 2)) + 0.5) * width;
-      /* The texture's v axis runs to the zenith, so the sphere is not flipped. */
-      const v = (0.5 - Math.asin(Math.max(-1, Math.min(1, direction.y))) / Math.PI) * height;
-
-      /*
-       * Magnitude: `random()^4` gives many faint stars and a few bright ones.
-       * Squaring it again for the very brightest makes the first-magnitude
-       * stars stand out the way they do in a real sky.
-       */
-      const magnitude = Math.pow(random(), 4);
-      const brightness = 0.18 + magnitude * 0.82;
-      const radius = 0.5 + magnitude * 2.1;
-
-      /* Colour index: cool blue-white through white to warm amber. */
-      const warmth = Math.pow(random(), 2) * (random() < 0.5 ? -1 : 1);
-      const r = Math.round(255 * Math.min(1, 1 + warmth * 0.22));
-      const g = Math.round(255 * Math.min(1, 1 - Math.abs(warmth) * 0.06));
-      const b = Math.round(255 * Math.min(1, 1 - warmth * 0.26));
-
-      const glow = ctx.createRadialGradient(u, v, 0, u, v, radius * 3.4);
-      glow.addColorStop(0, `rgba(${r},${g},${b},${brightness})`);
-      glow.addColorStop(0.28, `rgba(${r},${g},${b},${brightness * 0.42})`);
-      glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(u, v, radius * 3.4, 0, Math.PI * 2);
-      ctx.fill();
-
-      /* A hard core, so the brightest stars have a point rather than a smudge. */
-      if (magnitude > 0.55) {
-        ctx.fillStyle = `rgba(255,255,255,${(magnitude - 0.55) * 1.6})`;
-        ctx.beginPath();
-        ctx.arc(u, v, radius * 0.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+    /*
+     * Stars that fell well outside the band when they were meant to be in it
+     * are pushed back onto it rather than dropped, so a rejection never leaves
+     * a hole in the count.
+     */
+    if (inPlane) {
+      const gap = direction.dot(planeNormal);
+      if (Math.abs(gap) > 0.24) direction.addScaledVector(planeNormal, -gap * 0.85).normalize();
     }
+
+    positions[i * 3] = direction.x;
+    positions[i * 3 + 1] = direction.y;
+    positions[i * 3 + 2] = direction.z;
+
+    /*
+     * Magnitude: `random()^4` gives many faint stars and a handful of
+     * dominating ones. A field of equally bright dots is the single most common
+     * giveaway of a procedural starfield, so the exponent matters more than the
+     * count does.
+     */
+    const magnitude = Math.pow(random(), 4);
+    const brightness = 0.34 + magnitude * 0.8;
+
+    /* Colour index: cool blue-white through white to warm amber. */
+    const warmth = Math.pow(random(), 2) * (random() < 0.5 ? -1 : 1);
+    const r = Math.min(1, 1 + warmth * 0.2) * brightness;
+    const g = Math.min(1, 1 - Math.abs(warmth) * 0.06) * brightness;
+    const b = Math.min(1, 1 - warmth * 0.24) * brightness;
+    colors[i * 3] = r;
+    colors[i * 3 + 1] = g;
+    colors[i * 3 + 2] = b;
+
+    /*
+     * Size in CSS pixels on screen, which is the whole point of drawing these
+     * as points: a first-magnitude star is a hard point two or three pixels
+     * across however far away the camera is, and a faint one is a single pixel.
+     *
+     * Nothing here is drawn wide. An earlier version added a "galactic haze" of
+     * very large, very faint sprites to suggest the Milky Way, and at any size
+     * that could be rendered without costing a frame it read as exactly what it
+     * was: a scatter of small grey smudges. The band is carried by the
+     * *density* of stars instead, which is what it actually is.
+     */
+    sizes[i] = 0.9 + magnitude * 2.4 + (random() < 0.06 ? 0.6 : 0);
+
+    /* Scintillation: a tiny, slow difference between one star and the next. */
+    phases[i] = random();
+    /* Only the brightest handful get a flare; a sky of crosses is a cartoon. */
+    flares[i] = magnitude > 0.62 ? 1 : 0;
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  texture.needsUpdate = true;
-  return texture;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  geometry.setAttribute('aFlare', new THREE.BufferAttribute(flares, 1));
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1);
+  return geometry;
 }
 
-/** The magnitude band of the star map, for the fade-in at dusk. */
-export function starLimits(): { fadeStart: number; full: number } {
-  return { fadeStart: 0.02, full: 0.26 };
+export interface StarUniforms {
+  opacity: { value: number };
+  tint: { value: THREE.Color };
+  time: { value: number };
+  /** Device pixels per CSS pixel, so a star is the same size on any screen. */
+  pixelScale: { value: number };
 }
+
+/**
+ * The star shader.
+ *
+ * Additive, and unmoved by depth: the field hangs beyond everything and must
+ * never be occluded by the island's own ridge. A star is a point source, so its
+ * profile is a tight Gaussian core with a very small halo — a wide falloff here
+ * is what turns a star back into the smudge this replaced.
+ */
+export function starMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      opacity: { value: 0 },
+      tint: { value: new THREE.Color(0xffffff) },
+      time: { value: 0 },
+      pixelScale: { value: 1 },
+    } as unknown as Record<string, THREE.IUniform>,
+    vertexShader: /* glsl */ `
+      attribute vec3 aColor;
+      attribute float aSize;
+      attribute float aPhase;
+      attribute float aFlare;
+
+      uniform float opacity;
+      uniform float time;
+      uniform float pixelScale;
+
+      varying vec3 vColor;
+      varying float vBrightness;
+      varying float vFlare;
+      varying float vPhase;
+
+      void main() {
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * viewPosition;
+
+        /*
+         * A fixed size on screen rather than a size in the world. Scintillation
+         * is folded in here as well as in the fragment stage so a twinkling star
+         * breathes rather than merely brightens.
+         */
+        vPhase = aPhase;
+        float twinkle = 1.0 + 0.16 * sin(time * (0.7 + aPhase * 1.4) + aPhase * 6.2831853);
+        /*
+         * Half the sphere is below the island. The field is turned by the
+         * sidereal angle every frame, so "which way is down" has to be asked of
+         * the world matrix rather than of the vertex itself.
+         */
+        float above = smoothstep(-0.03, 0.07, normalize(mat3(modelMatrix) * position).y);
+        vBrightness = opacity * above;
+        vFlare = aFlare;
+        vColor = aColor;
+
+        float flare = aFlare > 0.5 ? 1.35 : 1.0;
+        gl_PointSize = max(1.0, aSize * pixelScale * flare * twinkle);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      precision highp float;
+
+      uniform vec3 tint;
+      uniform float time;
+
+      varying vec3 vColor;
+      varying float vBrightness;
+      varying float vFlare;
+      varying float vPhase;
+
+      void main() {
+        vec2 point = gl_PointCoord * 2.0 - 1.0;
+        float distance = length(point);
+        if (distance > 1.0) discard;
+
+        /*
+         * The profile: a solid core out to about a third of the sprite, a sharp
+         * Gaussian halo outside it, and nothing at the edge — so a star is a
+         * point of light rather than a disc with a visible rim.
+         */
+        float core = smoothstep(0.5, 0.12, distance);
+        float halo = exp(-distance * distance * 9.0) * 0.42;
+        float profile = core + halo;
+
+        /*
+         * A four-point flare on the brightest few, drawn as two thin, tapering
+         * lines. It is a lens artefact, and it is the thing that reads as
+         * "bright" in a sky where nothing else can be.
+         */
+        if (vFlare > 0.5) {
+          float horizontal =
+            max(0.0, 1.0 - abs(point.x) * 5.0) * max(0.0, 1.0 - abs(point.y) * 1.9);
+          float vertical =
+            max(0.0, 1.0 - abs(point.y) * 5.0) * max(0.0, 1.0 - abs(point.x) * 1.9);
+          profile += pow(horizontal + vertical, 2.2) * 0.5;
+        }
+
+        float twinkle = 1.0 + 0.16 * sin(time * (0.7 + vPhase * 1.4) + vPhase * 6.2831853);
+        /*
+         * The gain is what makes a star *bright* rather than merely present.
+         * Everything upstream of here is a fraction — of a colour index, of a
+         * magnitude, of a night exposure — and the product of three fractions
+         * is a grey dot. This is the one place the field is allowed to be
+         * brighter than the sky it is drawn on, and it is why the brightest
+         * stars read as points of light rather than as pale specks.
+         */
+        gl_FragColor = vec4(vColor * tint * profile * vBrightness * twinkle * 2.6, 1.0);
+
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    fog: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: true,
+  });
+}
+
+/** The axis the star field turns about, and by how much per sidereal angle. */
+export const STAR_POLE_AXIS = new THREE.Vector3(Math.sqrt(1 - 0.72 * 0.72), 0.72, 0).normalize();
 
 /* ── The moon ────────────────────────────────────────────────────────── */
 
@@ -321,15 +458,32 @@ export function moonTexture(elongation: number, size = 256): THREE.CanvasTexture
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
   const centre = size / 2;
-  const radius = size * 0.34;
+  const radius = size * 0.38;
 
   if (ctx) {
     ctx.clearRect(0, 0, size, size);
 
-    /* A nimbus, so the moon is not a disc pasted onto the sky. */
-    const nimbus = ctx.createRadialGradient(centre, centre, radius, centre, centre, radius * 2.4);
-    nimbus.addColorStop(0, 'rgba(206,220,246,0.3)');
-    nimbus.addColorStop(0.5, 'rgba(190,206,238,0.09)');
+    /*
+     * A nimbus, so the moon is not a disc pasted onto the sky.
+     *
+     * The gradient has to reach zero *inside* the canvas, which the first
+     * version of this did not do: its outer radius was 0.816 of the sprite, so
+     * the falloff was still at five percent opacity where the canvas ended, and
+     * the cut-off drew a visible square around the moon. The fix is an outer
+     * radius of exactly half the sprite — the last stop is fully transparent, so
+     * everything past it, corners included, is nothing at all.
+     */
+    const nimbus = ctx.createRadialGradient(
+      centre,
+      centre,
+      radius * 0.88,
+      centre,
+      centre,
+      size * 0.46,
+    );
+    nimbus.addColorStop(0, 'rgba(206,220,246,0.34)');
+    nimbus.addColorStop(0.45, 'rgba(190,206,238,0.11)');
+    nimbus.addColorStop(0.82, 'rgba(180,198,232,0.012)');
     nimbus.addColorStop(1, 'rgba(180,198,232,0)');
     ctx.fillStyle = nimbus;
     ctx.fillRect(0, 0, size, size);
@@ -416,6 +570,20 @@ export function moonTexture(elongation: number, size = 256): THREE.CanvasTexture
         sctx.stroke();
       }
       sctx.restore();
+
+      /*
+       * Earthshine, drawn before the lit side so the two never fight: the whole
+       * disc at a fraction of full opacity. Without it a crescent is a bright
+       * sliver floating beside nothing, and the moon stops reading as a *body*
+       * — which is most of what the unaided eye actually sees at dusk.
+       */
+      ctx.save();
+      ctx.globalAlpha = 0.1;
+      ctx.beginPath();
+      ctx.arc(centre, centre, radius, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(surface, 0, 0);
+      ctx.restore();
 
       /*
        * The phase mask. `cos(elongation)` is the terminator's horizontal

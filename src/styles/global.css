@@ -1119,11 +1119,9 @@ html[data-mode='world'] body {
 .world-loader {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: clamp(1.8rem, 5vh, 3rem);
-  padding: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
   pointer-events: none;
   background:
@@ -1133,6 +1131,43 @@ html[data-mode='world'] body {
       transparent 72%
     ),
     linear-gradient(180deg, var(--world-sky-top) 0%, var(--world-fog) 58%, var(--world-fog) 100%);
+}
+
+.loader-stack {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(1.4rem, 4vh, 2.4rem);
+  width: min(22rem, calc(100vw - 3rem));
+  max-width: 100%;
+  box-sizing: border-box;
+  transform: translateY(-4vh);
+}
+
+.loader-orbit-frame {
+  --orbit: clamp(6.5rem, 16vh, 9rem);
+  display: grid;
+  place-items: center;
+  width: var(--orbit);
+  height: var(--orbit);
+  flex-shrink: 0;
+  margin-inline: auto;
+}
+
+html[data-theme='light'] .world-loader {
+  background:
+    radial-gradient(
+      85% 55% at 50% 8%,
+      color-mix(in srgb, var(--world-sky-horizon) 45%, transparent),
+      transparent 70%
+    ),
+    linear-gradient(180deg, var(--world-sky-top) 0%, color-mix(in srgb, var(--world-fog) 88%, #fff) 100%);
+}
+
+html[data-theme='light'] .loader-sky {
+  opacity: 0.28;
 }
 
 /* Stars: two layers, drifting at different speeds, twinkling out of phase. */
@@ -1173,15 +1208,12 @@ html[data-mode='world'] body {
 }
 
 .loader-orbit {
-  --orbit: clamp(9rem, 22vh, 13rem);
   position: relative;
   width: var(--orbit);
   height: var(--orbit);
-  display: grid;
-  place-items: center;
-  /* The whole mechanism precesses, which is what makes the tilted rings read
-     as rings rather than as flat ellipses. */
-  animation: loader-spin 26s linear infinite;
+  margin: 0;
+  flex-shrink: 0;
+  transform-origin: 50% 50%;
 }
 
 .loader-ring {
@@ -1203,42 +1235,49 @@ html[data-mode='world'] body {
 .loader-ring--equator {
   width: 100%;
   height: 100%;
-  transform: rotateX(76deg) rotateZ(8deg);
+  transform: rotateX(72deg);
+  transform-origin: 50% 50%;
   border-color: color-mix(in srgb, var(--world-signal) 70%, transparent);
 }
 
 .loader-ring--meridian {
-  width: 82%;
-  height: 82%;
-  transform: rotateY(74deg) rotateZ(-16deg);
+  width: 86%;
+  height: 86%;
+  transform: rotateY(72deg);
+  transform-origin: 50% 50%;
   border-color: color-mix(in srgb, var(--world-key) 55%, transparent);
 }
 
 .loader-ring--outer {
-  width: 124%;
-  height: 124%;
+  width: 100%;
+  height: 100%;
   border-style: dashed;
   border-color: color-mix(in srgb, var(--world-signal) 38%, transparent);
-  animation: loader-spin 34s linear infinite reverse;
+  transform-origin: 50% 50%;
+  animation: loader-spin 12s linear infinite;
 }
 
-.loader-satellite {
+.loader-ring--outer .loader-satellite {
   position: absolute;
-  top: 50%;
+  top: 0;
   left: 50%;
   width: 7px;
   height: 7px;
-  margin: -3.5px 0 0 -3.5px;
+  margin-left: -3.5px;
+  margin-top: -3.5px;
   border-radius: 50%;
   background: var(--world-practical);
   box-shadow: 0 0 14px color-mix(in srgb, var(--world-practical) 70%, transparent);
-  animation: loader-satellite 3.6s linear infinite;
+  pointer-events: none;
 }
 
 .loader-core {
-  position: relative;
+  position: absolute;
+  top: 50%;
+  left: 50%;
   width: 16px;
   height: 16px;
+  margin: -8px 0 0 -8px;
   border-radius: 50%;
   background: var(--world-signal);
   box-shadow:
@@ -1267,32 +1306,22 @@ html[data-mode='world'] body {
 .loader-copy {
   display: grid;
   justify-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
+  width: 100%;
   text-align: center;
   animation: loader-copy-in 700ms var(--ease-out) both;
 }
 
-.loader-eyebrow {
-  margin: 0;
-  color: var(--accent);
-  font-size: 0.62rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.loader-name {
+.loader-title {
   margin: 0;
   font-family: var(--font-display);
   font-variation-settings: 'SOFT' 8, 'WONK' 1;
-  font-size: clamp(1.9rem, 4.6vw, 2.9rem);
-  font-weight: 620;
-  line-height: 1.05;
-  letter-spacing: -0.03em;
+  font-size: clamp(1.15rem, 2.8vw, 1.45rem);
+  font-weight: 560;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   color: var(--text);
-}
-
-.loader-name .dot {
-  color: var(--accent);
+  text-wrap: balance;
 }
 
 .loader-step {
@@ -1303,9 +1332,11 @@ html[data-mode='world'] body {
 
 .loader-rule {
   position: relative;
-  width: min(20rem, 64vw);
+  width: 100%;
+  max-width: 18rem;
   height: 3px;
   margin-top: 0.7rem;
+  margin-inline: auto;
   overflow: hidden;
   border-radius: 999px;
   background: color-mix(in srgb, var(--world-metal) 70%, transparent);
@@ -1336,18 +1367,10 @@ html[data-mode='world'] body {
   animation: loader-sheen 1.7s var(--ease-in-out) infinite;
 }
 
-.loader-meta {
-  margin: 0;
-  color: var(--faint);
-  font-size: 0.62rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 /* The campus failed: the mechanism stops rather than turning for a world that
    is never going to arrive, and the failure screen explains it. */
 .world-loader[data-stalled='true'] .loader-ring,
-.world-loader[data-stalled='true'] .loader-satellite,
+.world-loader[data-stalled='true'] .loader-ring--outer,
 .world-loader[data-stalled='true'] .loader-core,
 .world-loader[data-stalled='true'] .loader-sweep,
 .world-loader[data-stalled='true'] .loader-sky::before,
@@ -1356,7 +1379,7 @@ html[data-mode='world'] body {
   animation-play-state: paused;
 }
 
-.world-loader[data-stalled='true'] .loader-orbit {
+.world-loader[data-stalled='true'] .loader-orbit-frame {
   opacity: 0.4;
 }
 
@@ -1389,15 +1412,6 @@ html[data-mode='world'] body {
   }
   to {
     transform: rotate(-360deg);
-  }
-}
-
-@keyframes loader-satellite {
-  from {
-    transform: rotate(0deg) translateX(calc(var(--orbit) / 2));
-  }
-  to {
-    transform: rotate(360deg) translateX(calc(var(--orbit) / 2));
   }
 }
 
@@ -1455,20 +1469,19 @@ html[data-mode='world'] body {
 */
 @media (max-height: 660px) {
   .world-loader {
-    gap: 1.1rem;
     padding: 1.1rem;
   }
 
-  .loader-orbit {
-    --orbit: clamp(5.5rem, 26vh, 9rem);
+  .loader-stack {
+    gap: 1rem;
   }
 
-  .loader-eyebrow {
-    display: none;
+  .loader-orbit-frame {
+    --orbit: clamp(4.5rem, 22vh, 7rem);
   }
 
-  .loader-name {
-    font-size: clamp(1.35rem, 3.4vw, 1.8rem);
+  .loader-title {
+    font-size: 1.05rem;
   }
 
   .loader-step {
@@ -1476,7 +1489,7 @@ html[data-mode='world'] body {
   }
 
   .loader-rule {
-    margin-top: 0.45rem;
+    margin-top: 0.35rem;
   }
 }
 
@@ -1484,6 +1497,11 @@ html[data-mode='world'] body {
   z-index: 2;
   opacity: 0;
   transition: opacity var(--dur-4) var(--ease-out);
+}
+
+/* Keep the campus dock above the WebGL layer when the island fills the frame. */
+html[data-mode='world'] .world-chrome .world-dock {
+  z-index: 25;
 }
 
 .world[data-world-state='ready'] .world-poster {
@@ -1533,11 +1551,21 @@ html[data-mode='world']:has(
         [data-world-state='recovering']
       )
   )
-  :is(.world-chrome-bar, .world-map, .world-identity) {
+  :is(.world-chrome-bar, .world-map, .world-identity, .world-dock) {
+  display: none;
+}
+
+/* At a destination (including dock travel from Home), the world is the focus. */
+html[data-mode='world'] body:has(.world[data-focus]:not([data-focus='campus'])) .world-identity {
   display: none;
 }
 
 /* Status and in-scene affordance --------------------------------------- */
+
+.world:is([data-world-state='idle'], [data-world-state='loading'], [data-world-state='recovering'])
+  .world-status {
+  display: none;
+}
 
 .world-status {
   position: absolute;
@@ -1619,14 +1647,17 @@ html[data-mode='world']:has(
   color: var(--text-soft);
   font-size: 0.82rem;
   font-weight: 500;
+  max-width: min(18rem, 78vw);
   white-space: nowrap;
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--dur-3) var(--ease-out),
-    transform var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out),
+  /*
+    Position is set every frame from the 3D anchor. Animating transform makes
+    captions lag behind a turning island and look detached from the buildings.
+  */
+  transition: opacity var(--dur-3) var(--ease-out), border-color var(--dur-2) var(--ease-out),
     color var(--dur-2) var(--ease-out), background-color var(--dur-2) var(--ease-out);
-  will-change: transform;
 }
 
 .world-hotspot[data-visible='false'] {
@@ -1748,12 +1779,49 @@ html[data-mode='world']:has(
 .world-hotspot[data-compact='true'] .world-hotspot-mark {
   width: 40px;
   height: 40px;
-  border-color: var(--hairline-strong);
-  background: color-mix(in srgb, var(--bg-raised) 80%, transparent);
+  border-color: var(--signal-line);
+  background: color-mix(in srgb, var(--signal-soft) 88%, transparent);
+  color: var(--signal);
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   transition: transform var(--dur-2) var(--ease-out),
     border-color var(--dur-2) var(--ease-out);
+}
+
+.world-hotspot--place .world-hotspot-index {
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.world-hotspot--place[data-expanded='true'],
+.world-hotspot--object[data-expanded='true'] {
+  z-index: 2;
+}
+
+.world-hotspot--place[data-expanded='true'] .world-hotspot-name,
+.world-hotspot--object[data-expanded='true'] .world-hotspot-name {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: auto;
+  max-width: min(14rem, 72vw);
+  height: auto;
+  margin: 0;
+  padding: 0.35rem 0.65rem;
+  clip: auto;
+  clip-path: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-1);
+  font-size: 0.78rem;
 }
 
 .world-hotspot[data-compact='true'] .world-hotspot-mark svg {
@@ -1767,15 +1835,37 @@ html[data-mode='world']:has(
   border-color: var(--accent-line);
 }
 
+/*
+  Daylight: markers sit on a bright sky, so a nearly transparent fill reads as
+  invisible. Give compact circles an opaque glass backing in light theme.
+*/
+:root[data-theme='light'] .world-hotspot[data-compact='true'] .world-hotspot-mark {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--text) 38%, transparent);
+  background: color-mix(in srgb, var(--bg-raised) 96%, white);
+  box-shadow: 0 2px 16px rgba(15, 23, 42, 0.22);
+}
+
+:root[data-theme='light'] .world-hotspot[data-compact='true']:hover .world-hotspot-mark,
+:root[data-theme='light'] .world-hotspot[data-compact='true']:focus-visible .world-hotspot-mark {
+  border-color: var(--accent-line);
+  background: var(--bg-raised-2);
+}
+
 .world-hotspot--object .world-hotspot-mark {
   border-color: var(--signal-line);
   background: var(--signal-soft);
 }
 
-.world-hotspot--object .world-hotspot-name {
-  max-width: 16rem;
+.world-hotspot .world-hotspot-name {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.world-hotspot--object .world-hotspot-name {
+  max-width: 16rem;
 }
 
 .world-hotspot-meta {
@@ -1856,6 +1946,31 @@ html[data-mode='world'] body[data-panel='left'] .surface-host {
 
 html[data-mode='world'] body[data-surface='none'] .surface-host {
   display: none;
+}
+
+/*
+  Repository index: a catalogue, not a long read — keep the panel narrower so
+  the workbench stays in view and list cards stay single-column.
+*/
+html[data-mode='world'] body[data-surface='repos'] .surface-host {
+  width: min(32rem, 34vw);
+  padding-bottom: 2.5rem;
+}
+
+html[data-mode='world'] body[data-surface='repos'] .surface-frame .page-head--repos {
+  padding-block: 0 0.75rem;
+}
+
+html[data-mode='world'] body[data-surface='repos'] .surface-frame .section--repos {
+  padding-block: 0.75rem 1.5rem;
+}
+
+html[data-mode='world'] body[data-surface='repos'] .surface-frame .repo-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html[data-mode='world'] body[data-surface='repos'] .surface-frame .mini-project {
+  padding: 0.9rem 1rem 1rem;
 }
 
 /* The conventional pages only appear in simple mode. */
@@ -2067,7 +2182,7 @@ html[data-mode='world'] .surface-bar::after {
     left: 0;
     right: 0;
     width: auto;
-    height: min(62vh, 38rem);
+    height: min(85vh, 42rem);
     border-left: 0;
     border-top: 1px solid var(--hairline-strong);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;

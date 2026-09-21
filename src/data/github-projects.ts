@@ -6,27 +6,32 @@
 export interface GithubProject {
   name: string;
   description: string;
+  /** Repository URL, or primary link when there is no separate live app. */
   url: string;
   language: string;
   category: 'AI & agents' | 'ML & RL research' | 'Automation & platform';
+  /** Live deployment — opens in a new tab from cards and world hotspots. */
+  liveUrl?: string;
   /** Show this one on the home page strip. */
   featured?: boolean;
 }
 
 export const githubProjects: GithubProject[] = [
   {
-    name: 'Regshift',
+    name: 'Gather',
     description:
-      'Conduct-style change assurance layer with LangGraph orchestration and policy governance.',
-    url: 'https://github.com/adonishhh772/Regshift',
-    language: 'Python',
+      'Local-first meeting transcriber — Whisper in the browser, optional AI notes, private by default.',
+    url: 'https://github.com/adonishhh772/Transcriber-agent',
+    liveUrl: 'https://adonishhh772.github.io/Transcriber-agent/',
+    language: 'TypeScript',
     category: 'AI & agents',
     featured: true,
   },
   {
-    name: 'NTTDATA',
-    description: 'Production-shaped ACL GraphRAG interview demo (NTT DATA Option 1).',
-    url: 'https://github.com/adonishhh772/NTTDATA',
+    name: 'Regshift',
+    description:
+      'Conduct-style change assurance layer with LangGraph orchestration and policy governance.',
+    url: 'https://github.com/adonishhh772/Regshift',
     language: 'Python',
     category: 'AI & agents',
     featured: true,
@@ -119,3 +124,6 @@ export const githubProjects: GithubProject[] = [
 ];
 
 export const featuredGithubProjects = githubProjects.filter((p) => p.featured);
+
+/** Curated apps with a public deployment — surfaced in world chrome, not on the pegboard. */
+export const liveGithubProjects = githubProjects.filter((project) => Boolean(project.liveUrl));

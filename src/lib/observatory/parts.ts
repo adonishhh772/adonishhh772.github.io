@@ -542,15 +542,27 @@ export function paintIsland(
 export function cloudGeometry(seed: number, lobes = 7): THREE.BufferGeometry {
   const random = mulberry32(seed);
   const parts: THREE.BufferGeometry[] = [];
-  const span = 1.7;
+  /*
+   * Wider than it is tall, and the lobes are spread far enough apart that they
+   * only partly merge. The first version packed seven of them into a span of
+   * 1.7, which fused into a single smooth ellipsoid — an egg, which is what
+   * every cloud in the sky was. A cloud reads as a cloud because its silhouette
+   * is *lumpy*, so the lumps have to survive the merge.
+   */
+  const span = 2.35;
   for (let i = 0; i < lobes; i++) {
     const t = lobes === 1 ? 0.5 : i / (lobes - 1);
-    /* A wide, flat footprint: a cloud is much broader than it is tall. */
-    const x = (t - 0.5) * span * (0.9 + random() * 0.25);
-    const radius = 0.42 + Math.sin(Math.PI * t) * 0.4 + random() * 0.14;
+    const x = (t - 0.5) * span * (0.88 + random() * 0.3);
+    const radius = 0.32 + Math.sin(Math.PI * t) * 0.42 + random() * 0.2;
     const lobe = new THREE.IcosahedronGeometry(radius, 1);
-    lobe.scale(1.5, 0.62 + random() * 0.18, 1.05);
-    lobe.translate(x, (random() - 0.5) * 0.09, (random() - 0.5) * 0.32);
+    /* A wide, flat footprint: a cloud is much broader than it is tall, and its
+       base is flatter than its crown. */
+    lobe.scale(1.3, 0.5 + random() * 0.22, 1.05);
+    lobe.translate(
+      x,
+      0.08 + Math.sin(Math.PI * t) * random() * 0.2,
+      (random() - 0.5) * 0.4,
+    );
     parts.push(lobe);
   }
   const merged = mergePositions(parts);
@@ -584,25 +596,94 @@ function mergePositions(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
 
 /**
  * Bake the cloud's own shading into a vertex colour attribute: bright on the
- * upper-left of every lobe, cooler and dimmer underneath.
- */export function paintCloud(geometry: THREE.BufferGeometry, light: number, shade: number): void {
+ * upper-left of every lobe, cooler and dimmer underneath, and *fading out* at
+ * the base and the fringe.
+ *
+ * The alpha is the part that matters. A cloud drawn as an opaque solid has a
+ * silhouette, and a silhouette in a scene made of soft light reads as a paper
+ * cut-out — which is exactly what these were: flat white eggs with a hard rim.
+ * Dissolving the underside and the outer edge into the sky is what turns the
+ * same geometry into vapour.
+ *
+ * `dim` is how much light the cloud is carrying — the theme's own `dayness`.
+ * A cloud is not white: at midnight it is a dark blue-grey darker than the sky
+ * behind it, and one that keeps a noon brightness after dark is the single most
+ * conspicuous thing in a night scene.
+ */
+export function paintCloud(
+  geometry: THREE.BufferGeometry,
+  light: number,
+  shade: number,
+  dim = 1,
+): void {
   const position = geometry.attributes.position as THREE.BufferAttribute;
   const normal = geometry.attributes.normal as THREE.BufferAttribute;
-  const bright = new THREE.Color(light);
-  const dark = new THREE.Color(shade);
+  const scale = 0.16 + 0.84 * THREE.MathUtils.clamp(dim, 0, 1);
+  const bright = new THREE.Color(light).multiplyScalar(scale);
+  const dark = new THREE.Color(shade).multiplyScalar(scale * 0.82);
   const scratch = new THREE.Color();
-  const colors = new Float32Array(position.count * 3);
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  }
+  const height = Math.max(maxY - minY, 0.001);
+  const centreX = (minX + maxX) / 2;
+  const centreZ = (minZ + maxZ) / 2;
+  const radiusX = Math.max((maxX - minX) / 2, 0.001);
+  const radiusZ = Math.max((maxZ - minZ) / 2, 0.001);
+
+  const colors = new Float32Array(position.count * 4);
   for (let i = 0; i < position.count; i++) {
     /* A fixed direction rather than the scene's key light: the cloud reads the
        same at every hour, which is what keeps it from turning grey at night. */
     const facing = normal.getX(i) * 0.4 + normal.getY(i) * 0.8 + normal.getZ(i) * 0.2;
     const t = THREE.MathUtils.clamp(facing * 0.5 + 0.5, 0, 1);
     scratch.copy(dark).lerp(bright, Math.pow(t, 0.8));
-    colors[i * 3] = scratch.r;
-    colors[i * 3 + 1] = scratch.g;
-    colors[i * 3 + 2] = scratch.b;
+    colors[i * 4] = scratch.r;
+    colors[i * 4 + 1] = scratch.g;
+    colors[i * 4 + 2] = scratch.b;
+
+    /*
+     * The soft edge, in three parts.
+     *
+     * A cloud drawn as a solid has a silhouette, and a silhouette in a scene
+     * made of soft light reads as a paper cut-out — which is exactly what these
+     * were: pale eggs with a hard rim. So the base dissolves into the sky, the
+     * underside of every lobe is thinner than its top, and the whole body fades
+     * out toward its own edges. What is left opaque is the crown, which is the
+     * part that has to hold the shape.
+     */
+    const up = (position.getY(i) - minY) / height;
+    const base = 0.18 + 0.82 * smoothstep01(up / 0.42);
+    const crown = 0.45 + 0.55 * smoothstep01((normal.getY(i) + 0.75) / 1.1);
+    const fromCentre = Math.hypot(
+      (position.getX(i) - centreX) / radiusX,
+      (position.getZ(i) - centreZ) / radiusZ,
+    );
+    const rim = 1 - smoothstep01((fromCentre - 0.52) / 0.46);
+    colors[i * 4 + 3] = THREE.MathUtils.clamp(base * crown * rim, 0, 1);
   }
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+}
+
+/** A local smoothstep, so this module stays free of shader-side helpers. */
+function smoothstep01(value: number): number {
+  const t = value < 0 ? 0 : value > 1 ? 1 : value;
+  return t * t * (3 - 2 * t);
 }
 
 /** A box with softened edges — the tactile vocabulary of the small props. */
