@@ -100,12 +100,6 @@ export const hero = {
   headline: 'I build AI systems people can rely on.',
   lead: 'Production-grade agents, RAG and GraphRAG platforms for enterprise teams — with the unglamorous parts designed in: evaluation, guardrails, observability and clear limits.',
   currently: 'Building and delivering enterprise AI systems at AWTG in London.',
-  /** Live product called out in the campus identity card. */
-  spotlight: {
-    name: 'Gather',
-    href: 'https://adonishhh772.github.io/Transcriber-agent/',
-    tagline: 'local-first meeting transcriber — live',
-  },
   stage: {
     loadingLabel: 'Building the campus',
     readyLabel: 'Campus online',

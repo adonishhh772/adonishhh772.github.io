@@ -27,7 +27,6 @@ import * as THREE from 'three';
 import { navigate } from 'astro:transitions/client';
 import {
   DESTINATIONS,
-  destinationMeta,
   PLACE_INDEX,
   hostsObjects,
   placeIndexSurface,
@@ -1274,6 +1273,14 @@ export function mountShell(root: WorldHost): ShellHandle {
    */
   function travelTo(id: DestinationId, immediate = false): void {
     if (disposed) return;
+    const alreadyCampusOverview =
+      focusPlace === 'campus' && id === 'campus' && state.surface === 'none';
+    if (alreadyCampusOverview) {
+      takeControl();
+      syncChromeLocation();
+      return;
+    }
+
     takeControl();
     focusPlace = id;
     root.dataset.focus = id;
@@ -1302,19 +1309,16 @@ export function mountShell(root: WorldHost): ShellHandle {
     const activeKey =
       active instanceof HTMLElement ? active.dataset.worldHotspot ?? null : null;
 
+    const prevVisible = new Map(wasVisible);
+    const prevSpot = new Map(lastSpot);
+    const prevHideWanted = new Map(hideWanted);
+    const prevPillSizes = new Map(pillSizes);
+
     hotspotEl.replaceChildren();
     hotspots.clear();
-    /*
-     * A new set of captions, and nothing is known about any of them yet. This
-     * is what makes a travel calm: the captions of the place being arrived at
-     * are new, so they are not placed until the camera is still, and then they
-     * fade in once instead of strobing through the flight.
-     */
     lastSpot.clear();
     wasVisible.clear();
     hideWanted.clear();
-    /* Captions are new elements with their own labels: nothing measured about
-       the last set of them applies to this one. */
     pillSizes.clear();
 
     const place = world.places.get(focusPlace);
@@ -1388,6 +1392,17 @@ export function mountShell(root: WorldHost): ShellHandle {
     }
 
     updateCelestialHotspot();
+
+    for (const key of hotspots.keys()) {
+      const prevVis = prevVisible.get(key);
+      if (prevVis !== undefined) wasVisible.set(key, prevVis);
+      const spot = prevSpot.get(key);
+      if (spot) lastSpot.set(key, spot);
+      const hide = prevHideWanted.get(key);
+      if (hide !== undefined) hideWanted.set(key, hide);
+      const pill = prevPillSizes.get(key);
+      if (pill) pillSizes.set(key, pill);
+    }
 
     if (activeKey) {
       hotspots.get(activeKey)?.focus({ preventScroll: true });
@@ -1876,19 +1891,6 @@ export function mountShell(root: WorldHost): ShellHandle {
         !candidate.key.startsWith('object:index:');
 
       if (isOverviewPlace || isStableObject) {
-        if (
-          flying &&
-          !visibleBefore &&
-          !isFocused &&
-          !isRevealed &&
-          !isStableObject
-        ) {
-          link.dataset.visible = 'false';
-          link.setAttribute('aria-hidden', 'true');
-          link.tabIndex = -1;
-          wasVisible.set(candidate.key, false);
-          continue;
-        }
         if (isStableObject && candidate.occluded && !isFocused && !isRevealed) {
           link.dataset.visible = 'false';
           link.setAttribute('aria-hidden', 'true');
@@ -2493,6 +2495,8 @@ export function mountShell(root: WorldHost): ShellHandle {
   let nowDocument = false;
   /** False until the first state has been applied, so boot does not travel. */
   let ready = false;
+  /** Dock travel after a reading surface is closed via navigation to home. */
+  let pendingPlaceTravel: DestinationId | null = null;
 
   function applyState(): void {
     const previous = state;
@@ -2620,6 +2624,12 @@ export function mountShell(root: WorldHost): ShellHandle {
 
     currentHref = typeof location === 'undefined' ? '/' : location.pathname;
     renderOnce();
+
+    if (pendingPlaceTravel !== null) {
+      const place = pendingPlaceTravel;
+      pendingPlaceTravel = null;
+      travelTo(place);
+    }
   }
 
   /* ── Closing a document ──────────────────────────────────────────── */
@@ -3032,18 +3042,21 @@ export function mountShell(root: WorldHost): ShellHandle {
     const detail = (event as CustomEvent<TravelDetail>).detail;
     if (!detail?.destination) return;
     const destination = detail.destination;
-    travelTo(destination);
+    const current = readState();
     /*
-     * Dock travel also opens the place's page when it is not already showing,
-     * so Contact (and the other destinations) are readable without a second
-     * hunt for a hatch or caption.
+     * The dock moves the camera only. Documents open from captions and map
+     * links. If a reading surface is open, return to the campus URL first so
+     * the panel closes, then finish the move once the page state is applied.
      */
-    if (destination === 'campus') return;
-    const target = destinationMeta(destination).href;
-    const here = typeof location === 'undefined' ? '/' : location.pathname;
-    const normalizedHere = here.endsWith('/') ? here : `${here}/`;
-    const normalizedTarget = target.endsWith('/') ? target : `${target}/`;
-    if (normalizedHere !== normalizedTarget) void navigate(target);
+    if (isReading(current)) {
+      pendingPlaceTravel = destination;
+      const here = typeof location === 'undefined' ? '/' : location.pathname;
+      const normalizedHere = here.endsWith('/') ? here : `${here}/`;
+      if (normalizedHere !== '/') void navigate('/');
+      else applyState();
+      return;
+    }
+    travelTo(destination);
   };
   document.addEventListener(TRAVEL_EVENT, onTravel);
   cleanups.push(() => document.removeEventListener(TRAVEL_EVENT, onTravel));

@@ -1555,6 +1555,31 @@ html[data-mode='world']:has(
   display: none;
 }
 
+/*
+  While the loader is finishing its handover, the world is already "ready" in
+  state but the poster still owns the screen. Keep the chrome hidden until the
+  hold clears so controls do not flash over the loading experience.
+*/
+html[data-mode='world'][data-world-hold='true']
+  :is(.world-chrome-bar, .world-map, .world-identity, .world-dock) {
+  display: none;
+}
+
+/* Bar, dock and identity appear together once the campus is visible. */
+html[data-mode='world']:not([data-world-hold='true'])
+  :is(.world-chrome-bar, .world-dock, .world-identity) {
+  animation: world-chrome-reveal 520ms var(--ease-out) both;
+}
+
+@keyframes world-chrome-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* At a destination (including dock travel from Home), the world is the focus. */
 html[data-mode='world'] body:has(.world[data-focus]:not([data-focus='campus'])) .world-identity {
   display: none;
@@ -1623,6 +1648,18 @@ html[data-mode='world'] body:has(.world[data-focus]:not([data-focus='campus'])) 
   inset: 0;
   z-index: 6;
   pointer-events: none;
+}
+
+html[data-mode='world']:has(
+    .world:is(
+        [data-world-state='idle'],
+        [data-world-state='loading'],
+        [data-world-state='recovering']
+      )
+  )
+  .world-hotspots,
+html[data-mode='world'][data-world-hold='true'] .world-hotspots {
+  visibility: hidden;
 }
 
 /*
@@ -1921,8 +1958,8 @@ html[data-mode='world'] .surface-host {
   z-index: 30;
   top: 0;
   bottom: 0;
-  right: 0;
-  left: auto;
+  left: 0;
+  right: auto;
   width: min(44rem, 52vw);
   max-width: none;
   margin: 0;
@@ -1932,16 +1969,16 @@ html[data-mode='world'] .surface-host {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   background: var(--bg-raised);
-  border-left: 1px solid var(--hairline-strong);
+  border-right: 1px solid var(--hairline-strong);
   box-shadow: var(--shadow-2);
   animation: surface-in var(--dur-3) var(--ease-out) both;
 }
 
-html[data-mode='world'] body[data-panel='left'] .surface-host {
-  right: auto;
-  left: 0;
-  border-left: 0;
-  border-right: 1px solid var(--hairline-strong);
+html[data-mode='world'] body[data-panel='right'] .surface-host {
+  left: auto;
+  right: 0;
+  border-right: 0;
+  border-left: 1px solid var(--hairline-strong);
 }
 
 html[data-mode='world'] body[data-surface='none'] .surface-host {
@@ -3411,6 +3448,13 @@ html[data-mode='world'] .surface-frame .lead-rail {
 }
 
 /* ── 14. Reduced motion & print ────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-mode='world']:not([data-world-hold='true'])
+    :is(.world-chrome-bar, .world-dock, .world-identity) {
+    animation: none;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   html {

@@ -26,15 +26,6 @@ import { site, hero } from '../../site.config';
   <p class="identity-currently">
     <strong>Currently</strong>
     {hero.currently}
-    <a
-      class="identity-spotlight identity-spotlight--live"
-      href={hero.spotlight.href}
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      {hero.spotlight.name}
-    </a>
-    — {hero.spotlight.tagline}.
   </p>
 </section>
 
@@ -114,37 +105,6 @@ import { site, hero } from '../../site.config';
     margin-right: 0.4rem;
   }
 
-  .identity-spotlight {
-    margin-left: 0.35rem;
-    color: var(--accent);
-    font-weight: 600;
-    text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
-    text-underline-offset: 0.14em;
-  }
-
-  .identity-spotlight--live {
-    animation: identity-spotlight-blink 1.4s ease-in-out infinite;
-  }
-
-  @keyframes identity-spotlight-blink {
-    0%,
-    100% {
-      color: var(--accent);
-      text-shadow: none;
-    }
-    50% {
-      color: var(--signal);
-      text-shadow: 0 0 12px color-mix(in srgb, var(--signal) 55%, transparent);
-    }
-  }
-
-  .identity-spotlight:hover,
-  .identity-spotlight:focus-visible {
-    color: var(--text);
-    text-decoration-color: var(--accent-line);
-  }
-
   /*
     While the world is running this is a caption in the corner: it must not
     read as navigation and must not swallow a drag, so it ignores the pointer
@@ -167,18 +127,6 @@ import { site, hero } from '../../site.config';
     padding: 0 clamp(0.2rem, 1vw, 0.6rem) 0 0;
     pointer-events: none;
     transform: translateY(-50%);
-    animation: identity-in 900ms var(--ease-out) 320ms both;
-  }
-
-  :global(html[data-mode='world']) .identity-spotlight {
-    pointer-events: auto;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .identity-spotlight--live {
-      animation: none;
-      text-decoration-color: var(--signal-line);
-    }
   }
 
   :global(html[data-mode='world']) .world-identity::before {

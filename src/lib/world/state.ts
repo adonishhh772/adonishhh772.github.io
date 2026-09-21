@@ -48,7 +48,7 @@ export function readState(root: ParentNode = document): WorldState {
     destination: isDestinationId(destination) ? destination : 'campus',
     surface: isSurfaceKind(surface) && surface ? (surface as SurfaceKind) : 'none',
     surfaceId,
-    panel: panel === 'left' ? 'left' : 'right',
+    panel: panel === 'right' ? 'right' : 'left',
   };
 }
 

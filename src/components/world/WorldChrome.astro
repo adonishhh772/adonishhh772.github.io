@@ -49,7 +49,7 @@ const captionIcons = [
 ] as const;
 ---
 
-<div class="world-icon-bank" data-world-icon-bank aria-hidden="true">
+<div class="world-icon-bank" data-world-icon-bank aria-hidden="true" hidden>
   {
     captionIcons.map((name) => (
       <template data-world-icon={name}>
@@ -189,7 +189,14 @@ const captionIcons = [
     </div>
   </div>
 
-  <nav class="world-map" id="world-map-menu" data-world-map-menu hidden aria-label="Destinations">
+  <nav
+    class="world-map"
+    id="world-map-menu"
+    data-world-map-menu
+    hidden
+    tabindex="-1"
+    aria-label="Destinations"
+  >
     <p class="world-map-title">
       <span class="mono">Campus map</span>
     </p>
@@ -561,6 +568,10 @@ const captionIcons = [
 
   :global(html[data-mode='world']) .world-chrome {
     display: block;
+  }
+
+  .world-icon-bank {
+    display: none !important;
   }
 
   .world-chrome-bar,
@@ -1066,7 +1077,25 @@ const captionIcons = [
     border-radius: var(--radius-lg);
     background: var(--bg-raised);
     box-shadow: var(--shadow-2);
-    animation: world-map-in var(--dur-3) var(--ease-out) both;
+  }
+
+  .world-map[hidden] {
+    display: none !important;
+  }
+
+  .world-map:not(.is-open) {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .world-map.is-opening {
+    visibility: visible;
+    opacity: 0;
+  }
+
+  .world-map.is-open {
+    visibility: visible;
+    opacity: 1;
   }
 
   :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-map {

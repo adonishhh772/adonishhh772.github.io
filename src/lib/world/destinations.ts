@@ -59,7 +59,7 @@ export const DESTINATIONS: DestinationMeta[] = [
     dockIcon: 'compass',
     name: 'Home',
     href: '/',
-    panel: 'right',
+    panel: 'left',
   },
   {
     id: 'studio',
@@ -67,7 +67,7 @@ export const DESTINATIONS: DestinationMeta[] = [
     dockIcon: 'user',
     name: 'CV',
     href: '/cv/',
-    panel: 'right',
+    panel: 'left',
   },
   {
     id: 'workshop',
@@ -91,7 +91,7 @@ export const DESTINATIONS: DestinationMeta[] = [
     dockIcon: 'github',
     name: 'Open source',
     href: '/open-source/',
-    panel: 'right',
+    panel: 'left',
   },
   {
     id: 'contact',
@@ -99,7 +99,7 @@ export const DESTINATIONS: DestinationMeta[] = [
     dockIcon: 'mail',
     name: 'Contact',
     href: '/contact/',
-    panel: 'right',
+    panel: 'left',
   },
 ];
 

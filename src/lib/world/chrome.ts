@@ -63,7 +63,21 @@ function showLiveTipBurst(): void {
   }, LIVE_TIP_VISIBLE_MS);
 }
 
+function campusChromeReady(): boolean {
+  if (document.documentElement.dataset.worldHold === 'true') return false;
+  const world = document.querySelector('[data-world]');
+  const state = world?.getAttribute('data-world-state');
+  return state === 'ready' || state === 'degraded';
+}
+
 function ensureLivePromoCycle(): void {
+  if (!campusChromeReady()) {
+    const world = document.querySelector('[data-world]');
+    const state = world?.getAttribute('data-world-state');
+    if (state === 'error' || state === 'idle') return;
+    window.requestAnimationFrame(ensureLivePromoCycle);
+    return;
+  }
   setLivePulse();
   if (liveTipIntervalId !== null) return;
   showLiveTipBurst();
@@ -198,7 +212,8 @@ export function closeMapMenu(restoreFocus = false): void {
   const button = mapButton();
   if (!menu || !button) return;
   menuOpen = false;
-  menu.hidden = true;
+  menu.classList.remove('is-open', 'is-opening');
+  menu.setAttribute('hidden', '');
   button.setAttribute('aria-expanded', 'false');
   if (restoreFocus) button.focus();
 }
@@ -208,11 +223,22 @@ export function openMapMenu(): void {
   const button = mapButton();
   if (!menu || !button) return;
   menuOpen = true;
-  menu.hidden = false;
   button.setAttribute('aria-expanded', 'true');
-  /* Move focus into the menu so the keyboard travels with it. */
-  const first = menu.querySelector<HTMLElement>('a, button');
-  first?.focus();
+  menu.classList.remove('is-open');
+  menu.classList.add('is-opening');
+  menu.removeAttribute('hidden');
+  /*
+   * The play/pause and other controls must not paint a frame ahead of the
+   * panel chrome. Two frames guarantees layout + background, then the whole
+   * menu appears together; focus stays on the panel, not the first link.
+   */
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      menu.classList.remove('is-opening');
+      menu.classList.add('is-open');
+      menu.focus({ preventScroll: true });
+    });
+  });
 }
 
 export function toggleMapMenu(): void {
