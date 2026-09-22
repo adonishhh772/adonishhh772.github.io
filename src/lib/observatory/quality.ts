@@ -148,6 +148,12 @@ export function isCoarsePhoneViewport(): boolean {
 
 export function detectTier(): QualityTier {
   if (typeof navigator === 'undefined') return 'medium';
+  /*
+   * Phones need the lite path at boot. A synchronous island build plus an
+   * image-based lighting probe can block the main thread long enough that the
+   * loading bar never creeps and the campus never appears to finish.
+   */
+  if (isCoarsePhoneViewport()) return 'low';
   const nav = navigator as NavigatorWithHints;
   const cores = nav.hardwareConcurrency ?? 4;
   const memory = nav.deviceMemory ?? 4;

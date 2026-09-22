@@ -146,7 +146,14 @@ export class Atmosphere {
     this.group.add(this.skyMesh);
 
     /* Stars ---------------------------------------------------------- */
-    const starCount = this.quality.tier === 'low' ? 3200 : this.quality.tier === 'medium' ? 5200 : 8000;
+    const phone = isCoarsePhoneViewport();
+    const starCount = phone
+      ? 1600
+      : this.quality.tier === 'low'
+        ? 3200
+        : this.quality.tier === 'medium'
+          ? 5200
+          : 8000;
     this.stars = new THREE.Points(starGeometry(20260913, starCount), starMaterial());
     this.starUniforms = (this.stars.material as THREE.ShaderMaterial)
       .uniforms as unknown as StarUniforms;
@@ -232,8 +239,15 @@ export class Atmosphere {
     this.pmrem = new THREE.PMREMGenerator(renderer);
     this.pmrem.compileEquirectangularShader();
 
-    this.setTheme(theme, { environment: true });
+    const deferEnvironment = phone || quality.tier === 'low';
+    this.setTheme(theme, { environment: !deferEnvironment });
     this.setQuality(quality);
+  }
+
+  /** Image-based lighting probe — skipped at boot on phones, then filled in here. */
+  ensureEnvironment(): void {
+    if (this.environment) return;
+    this.refreshEnvironment();
   }
 
   /**
@@ -466,8 +480,18 @@ export class Atmosphere {
 
   /** Regenerate the image-based lighting from the current sky. */
   refreshEnvironment(): void {
-    const cube = new THREE.WebGLCubeRenderTarget(64, {
-      type: THREE.HalfFloatType,
+    const phone = isCoarsePhoneViewport();
+    const cubeSize = phone ? 32 : 64;
+    const sphereSegments = phone ? 16 : 24;
+    const sphereRings = phone ? 12 : 16;
+    const halfFloatSupported =
+      this.renderer.capabilities.isWebGL2 ||
+      (this.renderer.extensions.has('EXT_color_buffer_half_float') &&
+        this.renderer.extensions.has('OES_texture_half_float'));
+    const colorType = halfFloatSupported ? THREE.HalfFloatType : THREE.UnsignedByteType;
+
+    const cube = new THREE.WebGLCubeRenderTarget(cubeSize, {
+      type: colorType,
       generateMipmaps: true,
       minFilter: THREE.LinearMipmapLinearFilter,
     });
@@ -476,17 +500,24 @@ export class Atmosphere {
     const probeMaterial = this.skyMaterial.clone();
     /* The probe borrows the live uniforms, so it sees the current sky. */
     probeMaterial.uniforms = this.skyUniforms as unknown as Record<string, THREE.IUniform>;
-    const probe = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 24, 16), probeMaterial);
+    const probe = new THREE.Mesh(
+      new THREE.SphereGeometry(SKY_RADIUS, sphereSegments, sphereRings),
+      probeMaterial,
+    );
     scene.add(probe);
-    camera.update(this.renderer, scene);
-
-    const generated = this.pmrem.fromCubemap(cube.texture);
-    this.environment?.dispose();
-    this.environment = generated.texture;
-
-    probe.geometry.dispose();
-    probeMaterial.dispose();
-    cube.dispose();
+    try {
+      camera.update(this.renderer, scene);
+      const generated = this.pmrem.fromCubemap(cube.texture);
+      this.environment?.dispose();
+      this.environment = generated.texture;
+    } catch {
+      this.environment?.dispose();
+      this.environment = null;
+    } finally {
+      probe.geometry.dispose();
+      probeMaterial.dispose();
+      cube.dispose();
+    }
   }
 
   /**

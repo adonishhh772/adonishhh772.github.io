@@ -184,6 +184,7 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
    * jump — and the canvas is held back until it has.
    */
   const complete = () => {
+    clearStallTimer();
     if (handedOver) return;
     const from = shown;
     const left = MIN_VISIBLE_MS - (performance.now() - startedAt);
@@ -282,6 +283,30 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
 
   let shellLoaded = false;
 
+  const STALL_MS = 28000;
+  let stallTimer = 0;
+
+  const clearStallTimer = () => {
+    if (stallTimer) window.clearTimeout(stallTimer);
+    stallTimer = 0;
+  };
+
+  const armStallTimer = () => {
+    clearStallTimer();
+    stallTimer = window.setTimeout(() => {
+      if (handedOver) return;
+      const state = worldState();
+      if (state === 'ready' || state === 'error' || state === 'degraded') return;
+      loader?.setAttribute('data-stalled', 'true');
+      const alert = window.__worldAlert;
+      if (typeof alert === 'function') {
+        alert(
+          'The campus is taking longer than usual on this device. Try again, or use a Wi‑Fi connection.',
+        );
+      }
+    }, STALL_MS);
+  };
+
   const boot = async () => {
     if (document.documentElement.dataset.mode === 'simple') return;
     try {
@@ -295,10 +320,14 @@ const portrait = rootUrl('/images/abd-bastola.jpg');
        */
       report(46, STEP_BUILD);
       ceiling = 92;
+      armStallTimer();
       await nextFrame();
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
       bootstrapShell();
+      clearStallTimer();
       document.addEventListener('astro:page-load', () => bootstrapShell());
     } catch (error) {
+      clearStallTimer();
       loader?.setAttribute('data-stalled', 'true');
       const message = error instanceof Error ? error.message : String(error);
       const alert = window.__worldAlert;

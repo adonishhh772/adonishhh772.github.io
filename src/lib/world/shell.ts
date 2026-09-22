@@ -3867,6 +3867,19 @@ export function mountShell(root: WorldHost): ShellHandle {
      hour rather than on whatever the markup was authored with. */
   publishSkyState();
   renderOnce();
+  const scheduleEnvironmentProbe = () => {
+    if (disposed) return;
+    atmosphere.ensureEnvironment();
+    if (scene.environment !== atmosphere.environment) {
+      scene.environment = atmosphere.environment;
+      scene.environmentIntensity = theme.environmentIntensity;
+    }
+  };
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(() => scheduleEnvironmentProbe(), { timeout: 5000 });
+  } else {
+    window.setTimeout(scheduleEnvironmentProbe, 1500);
+  }
   syncLoop();
 
   const handle: ShellHandle = {
