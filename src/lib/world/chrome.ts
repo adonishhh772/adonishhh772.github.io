@@ -35,6 +35,7 @@ import {
 const BOOT_KEY = '__abdWorldChrome';
 const LIVE_TIP_VISIBLE_MS = 5_500;
 const LIVE_TIP_CYCLE_MS = 14_000;
+const PHONE_CHROME_MEDIA = '(max-width: 860px)';
 
 let liveTipIntervalId: ReturnType<typeof setInterval> | null = null;
 let liveTipHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -45,7 +46,33 @@ function setLivePulse(): void {
   }
 }
 
+function isPhoneChromeViewport(): boolean {
+  if (typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia(PHONE_CHROME_MEDIA).matches;
+}
+
+function hideLiveTip(): void {
+  const tip = document.querySelector<HTMLElement>('[data-world-live-tip]');
+  if (tip) {
+    tip.hidden = true;
+    tip.classList.remove('world-live-tip--open');
+  }
+  if (liveTipHideTimeoutId !== null) {
+    clearTimeout(liveTipHideTimeoutId);
+    liveTipHideTimeoutId = null;
+  }
+}
+
+function stopLivePromoCycle(): void {
+  if (liveTipIntervalId !== null) {
+    clearInterval(liveTipIntervalId);
+    liveTipIntervalId = null;
+  }
+  hideLiveTip();
+}
+
 function showLiveTipBurst(): void {
+  if (isPhoneChromeViewport()) return;
   const tip = document.querySelector<HTMLElement>('[data-world-live-tip]');
   if (!tip) return;
   tip.hidden = false;
@@ -79,6 +106,10 @@ function ensureLivePromoCycle(): void {
     return;
   }
   setLivePulse();
+  if (isPhoneChromeViewport()) {
+    stopLivePromoCycle();
+    return;
+  }
   if (liveTipIntervalId !== null) return;
   showLiveTipBurst();
   liveTipIntervalId = setInterval(() => {
@@ -417,6 +448,15 @@ export function bootstrapChrome(): void {
       media.addEventListener('change', () => syncAmbientControls());
     } catch {
       /* older engines: the initial value still applies */
+    }
+    try {
+      const phoneChrome = window.matchMedia(PHONE_CHROME_MEDIA);
+      phoneChrome.addEventListener('change', () => {
+        if (phoneChrome.matches) stopLivePromoCycle();
+        else syncLiveBuildTip();
+      });
+    } catch {
+      /* matchMedia unavailable */
     }
   }
 }

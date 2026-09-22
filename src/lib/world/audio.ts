@@ -204,6 +204,27 @@ class AmbientEngine {
     for (const listener of this.listeners) listener(state);
   }
 
+  /**
+   * Create or resume the context inside the same user-gesture turn.
+   * iOS Safari and Chrome require this before any async work; calling only
+   * from `play()` after an await often leaves the context suspended.
+   */
+  unlockFromUserGesture(): void {
+    const context = this.ensureContext();
+    if (!context) return;
+    if (context.state === 'suspended') {
+      void context.resume().then(() => {
+        if (context.state === 'running') {
+          this.blocked = false;
+          this.emit();
+        }
+      }).catch(() => {
+        this.blocked = true;
+        this.emit();
+      });
+    }
+  }
+
   /** Build the graph. Only ever called from a visitor's gesture. */
   private ensureContext(): AudioContext | null {
     if (this.disposed) return null;
@@ -334,7 +355,8 @@ class AmbientEngine {
   async play(options: { fadeMs?: number } = {}): Promise<boolean> {
     this.wanted = true;
     writePreferences({ sound: 'on', volume: this.volume, effects: this.effects });
-    const context = this.ensureContext();
+    this.unlockFromUserGesture();
+    const context = this.context ?? this.ensureContext();
     if (!context || !this.master) {
       this.playing = false;
       this.emit();
@@ -757,12 +779,18 @@ export function armFirstGesture(): void {
     document.removeEventListener('keydown', fire, true);
     document.removeEventListener('wheel', fire, true);
     document.removeEventListener('touchstart', fire, true);
+    document.removeEventListener('touchend', fire, true);
+    document.removeEventListener('click', fire, true);
+    const sound = ambient();
+    sound.unlockFromUserGesture();
     void resumeIfWanted();
   };
   document.addEventListener('pointerdown', fire, true);
   document.addEventListener('keydown', fire, true);
   document.addEventListener('wheel', fire, { capture: true, passive: true });
   document.addEventListener('touchstart', fire, { capture: true, passive: true });
+  document.addEventListener('touchend', fire, { capture: true, passive: true });
+  document.addEventListener('click', fire, true);
 }
 
 export { DEFAULT_VOLUME };

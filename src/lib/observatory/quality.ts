@@ -140,6 +140,12 @@ interface NavigatorWithHints extends Navigator {
  * Pick a starting tier. Deliberately pessimistic: a wrong guess costs a
  * few frames, and the monitor below can always promote.
  */
+/** Touch-first phones (iOS Safari / Chrome) — used to tame sky/mist artefacts. */
+export function isCoarsePhoneViewport(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(max-width: 860px) and (pointer: coarse)').matches;
+}
+
 export function detectTier(): QualityTier {
   if (typeof navigator === 'undefined') return 'medium';
   const nav = navigator as NavigatorWithHints;

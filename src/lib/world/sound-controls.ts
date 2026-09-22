@@ -204,6 +204,7 @@ export function watchSoundControls(): void {
     }
 
     if (target.closest('[data-world-sound-mute]')) {
+      engine.unlockFromUserGesture();
       void engine.toggle();
       return;
     }
@@ -215,7 +216,7 @@ export function watchSoundControls(): void {
         /* storage unavailable */
       }
       syncSoundGate();
-      armFirstGesture();
+      engine.unlockFromUserGesture();
       void engine.play({ fadeMs: 1200 });
       return;
     }

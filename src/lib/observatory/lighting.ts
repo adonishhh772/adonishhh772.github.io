@@ -20,7 +20,7 @@
  */
 
 import * as THREE from 'three';
-import type { QualitySettings } from './quality';
+import { isCoarsePhoneViewport, type QualitySettings } from './quality';
 import type { WorldTheme } from './theme';
 import { radialFalloffTexture } from './parts';
 import {
@@ -146,7 +146,8 @@ export class Atmosphere {
     this.group.add(this.skyMesh);
 
     /* Stars ---------------------------------------------------------- */
-    this.stars = new THREE.Points(starGeometry(), starMaterial());
+    const starCount = this.quality.tier === 'low' ? 3200 : this.quality.tier === 'medium' ? 5200 : 8000;
+    this.stars = new THREE.Points(starGeometry(20260913, starCount), starMaterial());
     this.starUniforms = (this.stars.material as THREE.ShaderMaterial)
       .uniforms as unknown as StarUniforms;
     this.starUniforms.pixelScale.value = renderer.getPixelRatio();
@@ -322,12 +323,16 @@ export class Atmosphere {
     this.skyUniforms.sunStrength.value = 0.5 + day * 0.9 + theme.golden * 0.4;
 
     /* Stars ----------------------------------------------------------- */
-    this.starOpacity = theme.starOpacity * (this.quality.detail ? 1 : 0.75);
+    const starHorizon = isCoarsePhoneViewport() ? -10 : -5;
+    const starsAllowed = theme.sunAltitude < starHorizon;
+    this.starOpacity = starsAllowed
+      ? theme.starOpacity * (this.quality.detail ? 1 : 0.75)
+      : 0;
     this.starUniforms.opacity.value = this.starOpacity;
     /* The stars are tinted by the sky they hang in, so they never read as a
        layer pasted over it. */
     this.starUniforms.tint.value.setHex(theme.snow).lerp(new THREE.Color(theme.skyTop), 0.35);
-    this.stars.visible = this.starOpacity > 0.01;
+    this.stars.visible = starsAllowed && this.starOpacity > 0.01;
 
     /* The bodies' colour: the sun's disc warms at the horizon, the moon is
        always the same pale body and only its glow takes the sky's colour. */
@@ -688,8 +693,18 @@ export class Atmosphere {
      * that rotates, so the quaternion is the whole of it.
      */
     this.stars.quaternion.setFromAxisAngle(STAR_POLE_AXIS, this.siderealAngle);
-    this.starUniforms.pixelScale.value = this.renderer.getPixelRatio();
+    const pixelRatio = this.renderer.getPixelRatio();
+    this.starUniforms.pixelScale.value = isCoarsePhoneViewport()
+      ? Math.min(pixelRatio, 1.35)
+      : pixelRatio;
     this.starUniforms.time.value = performance.now() * 0.001;
+
+    const starHorizon = isCoarsePhoneViewport() ? -10 : -5;
+    if (theme.sunAltitude > starHorizon) {
+      this.stars.visible = false;
+      this.starUniforms.opacity.value = 0;
+      return;
+    }
 
     /* A slow twinkle, which is atmospheric scintillation compressed to
        something a viewer will actually notice. */

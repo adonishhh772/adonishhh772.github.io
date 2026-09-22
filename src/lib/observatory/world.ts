@@ -61,7 +61,7 @@ import { GrassField } from './grass';
 import { bedMatrix, heightAt, slopeAt } from './terrain';
 import type { TextureLibrary } from './textures';
 import type { Atmosphere } from './lighting';
-import type { QualitySettings } from './quality';
+import { isCoarsePhoneViewport, type QualitySettings } from './quality';
 import type { WorldTheme } from './theme';
 
 /** Height of the island's flat plateau. */
@@ -3436,9 +3436,15 @@ export class ObservatoryWorld {
 
   setQuality(quality: QualitySettings): void {
     this.quality = quality;
+    const phone = isCoarsePhoneViewport();
     this.mistLayers.forEach((layer, index) => {
-      layer.visible = index < quality.mistLayers;
+      layer.visible = !phone && index < quality.mistLayers;
+      if (phone) {
+        const material = layer.material as THREE.MeshBasicMaterial;
+        material.opacity = 0.14;
+      }
     });
+    this.mistGroup.visible = !phone && quality.mistLayers > 0;
     this.signals.forEach((signal, index) => {
       signal.mesh.visible = index < quality.signalCount;
     });

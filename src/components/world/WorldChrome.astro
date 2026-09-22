@@ -590,23 +590,29 @@ const captionIcons = [
   .world-chrome-bar {
     position: absolute;
     top: calc(0.85rem + env(safe-area-inset-top, 0px));
-    right: calc(0.85rem + env(safe-area-inset-right, 0px));
-    left: auto;
     display: flex;
     align-items: center;
-    justify-content: flex-end;
     gap: 0.5rem;
-    transition: left var(--dur-3) var(--ease-out), right var(--dur-3) var(--ease-out);
   }
 
-  :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-chrome-bar {
-    right: calc(0.85rem + env(safe-area-inset-right, 0px));
-    left: auto;
+  @media (min-width: 861px) {
+    .world-chrome-bar {
+      right: calc(0.85rem + env(safe-area-inset-right, 0px));
+      left: auto;
+      justify-content: flex-end;
+      transition: left var(--dur-3) var(--ease-out), right var(--dur-3) var(--ease-out);
+    }
+
+    :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-chrome-bar {
+      right: calc(0.85rem + env(safe-area-inset-right, 0px));
+      left: auto;
+    }
   }
 
   .world-chrome-actions {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.35rem;
     overflow: visible;
   }
@@ -776,6 +782,7 @@ const captionIcons = [
     .world-live-tip.world-live-tip--open {
       animation: world-live-tip-in 200ms var(--ease-out) both;
     }
+
   }
 
   .world-control--icon {
@@ -1104,9 +1111,11 @@ const captionIcons = [
     opacity: 1;
   }
 
-  :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-map {
-    left: auto;
-    right: calc(0.85rem + env(safe-area-inset-right, 0px));
+  @media (min-width: 861px) {
+    :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-map {
+      left: auto;
+      right: calc(0.85rem + env(safe-area-inset-right, 0px));
+    }
   }
 
   @keyframes world-map-in {
@@ -1475,43 +1484,99 @@ const captionIcons = [
   /* ── Phones ───────────────────────────────────────────────────────── */
 
   @media (max-width: 860px) {
-    .world-chrome-bar {
-      left: auto;
-      right: calc(0.6rem + env(safe-area-inset-right, 0px));
-      top: calc(0.6rem + env(safe-area-inset-top, 0px));
-      justify-content: flex-end;
-      gap: 0.35rem;
+    :global(html[data-mode='world'] .world-chrome-bar) {
+      left: 50%;
+      right: auto;
+      top: calc(0.55rem + env(safe-area-inset-top, 0px));
+      width: max-content;
       max-width: calc(100vw - 1.2rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+      justify-content: center;
+      transform: translateX(-50%);
+      transition: none;
     }
 
-    :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-chrome-bar {
-      left: auto;
-      right: calc(0.6rem + env(safe-area-inset-right, 0px));
+    :global(
+        html[data-mode='world']
+          body[data-panel='left'][data-surface]:not([data-surface='none'])
+          .world-chrome-bar
+      ) {
+      left: 50%;
+      right: auto;
+      transform: translateX(-50%);
     }
 
     .world-chrome-actions {
       flex-wrap: nowrap;
-      justify-content: flex-end;
+      justify-content: center;
+      gap: 0.3rem;
+      padding: 0.22rem 0.4rem;
+      border: 1px solid var(--hairline-strong);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
+      box-shadow: var(--shadow-1);
+      backdrop-filter: blur(12px);
+    }
+
+    .world-chrome-actions .world-control {
+      box-sizing: border-box;
+      width: 44px;
+      height: 44px;
+      min-width: 44px;
+      max-width: 44px;
+      padding: 0;
+      border-radius: 50%;
+      box-shadow: none;
+      border-color: color-mix(in srgb, var(--hairline-strong) 70%, transparent);
+      background: transparent;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .world-chrome-actions .world-control-label {
+      display: none;
+    }
+
+    .world-chrome-actions .world-control:hover,
+    .world-chrome-actions .world-control:focus-visible,
+    .world-chrome-actions .world-control:active {
+      border-radius: 50%;
+    }
+
+    .world-chrome-actions .world-control--map {
+      padding: 0;
     }
 
     .world-live-tip {
-      right: 0;
-      left: auto;
-      max-width: min(15rem, calc(100vw - 1.4rem));
+      display: none !important;
     }
 
     .world-map {
       left: calc(0.6rem + env(safe-area-inset-left, 0px));
       right: calc(0.6rem + env(safe-area-inset-right, 0px));
       width: auto;
-      top: calc(3.9rem + env(safe-area-inset-top, 0px));
-      max-height: calc(100vh - 4.9rem - env(safe-area-inset-top, 0px));
-      max-height: calc(100dvh - 4.9rem - env(safe-area-inset-top, 0px));
+      top: calc(5.15rem + env(safe-area-inset-top, 0px));
+      max-height: calc(100vh - 6.2rem - env(safe-area-inset-top, 0px));
+      max-height: calc(100dvh - 6.2rem - env(safe-area-inset-top, 0px));
     }
 
     :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-map {
       left: calc(0.6rem + env(safe-area-inset-left, 0px));
       right: calc(0.6rem + env(safe-area-inset-right, 0px));
+    }
+
+    /*
+      The bar is centered; anchoring the panel to the sound button (especially
+      with translateX(-50%)) shoves it off the right edge. Pin it under the bar
+      inside the safe area instead.
+    */
+    .world-sound-panel {
+      position: fixed;
+      top: calc(3.85rem + env(safe-area-inset-top, 0px));
+      right: calc(0.75rem + env(safe-area-inset-right, 0px));
+      left: calc(0.75rem + env(safe-area-inset-left, 0px));
+      width: auto;
+      max-width: none;
+      transform: none;
+      z-index: 210;
     }
   }
 
@@ -1529,13 +1594,6 @@ const captionIcons = [
     .world-control-icon {
       width: 18px;
       height: 18px;
-    }
-
-    .world-sound-panel {
-      right: auto;
-      left: 50%;
-      transform: translateX(-50%);
-      width: min(18rem, calc(100vw - 1.4rem));
     }
   }
 
@@ -1731,7 +1789,17 @@ const captionIcons = [
     .world-dock-item {
       width: 44px;
       min-width: 44px;
+      height: 44px;
       padding: 0;
+      border-radius: 50%;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .world-dock-item:hover,
+    .world-dock-item:focus-visible,
+    .world-dock-item:active,
+    .world-dock-item[aria-current='page'] {
+      border-radius: 50%;
     }
 
     .world-dock-item--more {

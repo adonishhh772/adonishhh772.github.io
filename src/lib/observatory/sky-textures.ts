@@ -360,7 +360,7 @@ export function starMaterial(): THREE.ShaderMaterial {
          * sidereal angle every frame, so "which way is down" has to be asked of
          * the world matrix rather than of the vertex itself.
          */
-        float above = smoothstep(-0.03, 0.07, normalize(mat3(modelMatrix) * position).y);
+        float above = smoothstep(0.05, 0.16, normalize(mat3(modelMatrix) * position).y);
         vBrightness = opacity * above;
         vFlare = aFlare;
         vColor = aColor;
@@ -408,6 +408,9 @@ export function starMaterial(): THREE.ShaderMaterial {
         }
 
         float twinkle = 1.0 + 0.16 * sin(time * (0.7 + vPhase * 1.4) + vPhase * 6.2831853);
+        if (vBrightness < 0.02) {
+          discard;
+        }
         /*
          * The gain is what makes a star *bright* rather than merely present.
          * Everything upstream of here is a fraction — of a colour index, of a

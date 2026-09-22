@@ -64,7 +64,22 @@ const enabled = isVisitorStatsEnabled();
 
   @media (max-width: 860px) {
     :global(html[data-mode='world']) .visitor-stats {
-      display: none;
+      display: grid;
+      margin-top: 0.45rem;
+      max-width: 20rem;
+      font-size: 0.68rem;
+      line-height: 1.35;
+    }
+
+    :global(html[data-mode='world']) .visitor-stats-you {
+      font-size: 0.62rem;
+      letter-spacing: 0.1em;
+    }
+
+    :global(html[data-mode='world']) .visitor-stats-meta {
+      display: block;
+      font-size: 0.6rem;
+      line-height: 1.35;
     }
   }
 </style>
