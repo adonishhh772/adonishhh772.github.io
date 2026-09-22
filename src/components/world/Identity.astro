@@ -173,22 +173,32 @@ const eyebrowRole = hero.eyebrow.split(' · ')[0] ?? hero.eyebrow;
   @media (max-width: 860px) {
     :global(html[data-mode='world']) .world-identity {
       left: calc(0.9rem + env(safe-area-inset-left, 0px));
-      right: calc(0.9rem + env(safe-area-inset-right, 0px));
+      right: auto;
       bottom: auto;
       top: calc(5.65rem + env(safe-area-inset-top, 0px));
-      width: auto;
+      width: min(11.5rem, calc(100vw - 13rem - env(safe-area-inset-left, 0px)));
       max-width: none;
       box-sizing: border-box;
       padding-right: 0;
       transform: none;
       text-align: left;
+      z-index: 25;
+    }
+
+    :global(html[data-mode='world'][data-sound-panel='open']) .world-identity {
+      top: calc(11.5rem + env(safe-area-inset-top, 0px));
+      width: min(13rem, calc(100vw - 1.8rem - env(safe-area-inset-left, 0px)));
     }
 
     :global(html[data-mode='world']) .identity-eyebrow {
-      align-items: flex-start;
+      align-items: center;
     }
 
     :global(html[data-mode='world']) .identity-eyebrow-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.15rem 0.35rem;
       white-space: normal;
       text-wrap: balance;
     }

@@ -160,6 +160,7 @@ class AmbientEngine {
   private effectsBus: GainNode | null = null;
   private reverbSend: GainNode | null = null;
   private noiseSource: AudioBufferSourceNode | null = null;
+  private noiseBedStarted = false;
 
   private readonly listeners = new Set<(state: AudioState) => void>();
   private timer = 0;
@@ -241,6 +242,7 @@ class AmbientEngine {
       this.emit();
       return;
     }
+    this.primeOutput(context);
     const begin = () => {
       if (context.state !== 'running') {
         this.blocked = true;
@@ -271,6 +273,13 @@ class AmbientEngine {
   private applyPlay(options: { fadeMs?: number }): void {
     const context = this.context;
     if (!context || !this.master) return;
+    if (context.state !== 'running') {
+      this.blocked = true;
+      this.playing = false;
+      this.emit();
+      return;
+    }
+    this.startNoiseBed(context);
     this.blocked = false;
     this.playing = true;
     const fade = Math.max(0.4, (options.fadeMs ?? 2400) / 1000);
@@ -369,10 +378,33 @@ class AmbientEngine {
     noiseFilter.connect(noiseGain);
     noiseGain.connect(bus);
     noiseGain.connect(send);
-    noise.start();
     this.noiseSource = noise;
 
     return context;
+  }
+
+  /** iOS unlock: a one-sample blip on the destination in the gesture turn. */
+  private primeOutput(context: AudioContext): void {
+    try {
+      const tick = context.createBuffer(1, 1, context.sampleRate);
+      const blip = context.createBufferSource();
+      blip.buffer = tick;
+      blip.connect(context.destination);
+      blip.start(0);
+      blip.stop(context.currentTime + 0.05);
+    } catch {
+      /* some WebViews reject the blip */
+    }
+  }
+
+  private startNoiseBed(context: AudioContext): void {
+    if (!this.noiseSource || this.noiseBedStarted) return;
+    try {
+      this.noiseSource.start(0);
+      this.noiseBedStarted = true;
+    } catch {
+      this.noiseBedStarted = true;
+    }
   }
 
   /** A decaying noise burst, used as a small, cheap room. */

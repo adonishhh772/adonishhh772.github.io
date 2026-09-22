@@ -504,18 +504,32 @@ const captionIcons = [
       });
     }
 
-    /* A renderer that has not reported ready by now is not on its way. */
+    var world = worldRoot();
+    if (world) {
+      var hideWhenReady = new MutationObserver(function () {
+        if (world.getAttribute('data-world-state') === 'ready') hide();
+      });
+      hideWhenReady.observe(world, { attributes: true, attributeFilter: ['data-world-state'] });
+    }
+
+    /*
+     * Phones often need twenty-plus seconds for the first 3D build; an early
+     * watchdog looked like "the world cannot load" even when it was still working.
+     */
+    var coarse =
+      window.matchMedia && window.matchMedia('(max-width: 860px) and (pointer: coarse)').matches;
+    var loadBudgetMs = coarse ? 32000 : 12000;
     window.setTimeout(function () {
-      var world = worldRoot();
-      if (!world) return;
-      var state = world.getAttribute('data-world-state');
+      var root = worldRoot();
+      if (!root) return;
+      var state = root.getAttribute('data-world-state');
       if (state === 'ready' || state === 'error' || state === 'recovering' || state === 'degraded') {
         return;
       }
       show(
         'The interactive world did not finish starting. This is usually a slow or interrupted download of the 3D module.'
       );
-    }, 9000);
+    }, loadBudgetMs);
 
     /* Reading without the scene is an explicit choice, made here and never
        made for the visitor: the world is not silently replaced by a
@@ -1572,8 +1586,8 @@ const captionIcons = [
       position: fixed;
       top: calc(3.85rem + env(safe-area-inset-top, 0px));
       right: calc(0.75rem + env(safe-area-inset-right, 0px));
-      left: calc(0.75rem + env(safe-area-inset-left, 0px));
-      width: auto;
+      left: auto;
+      width: min(19rem, calc(100vw - 1.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
       max-width: none;
       transform: none;
       z-index: 210;

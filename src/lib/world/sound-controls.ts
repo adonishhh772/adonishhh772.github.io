@@ -67,6 +67,12 @@ interface BoundWindow extends Window {
   [PANEL_KEY]?: boolean;
 }
 
+function syncSoundPanelOpen(isOpen: boolean): void {
+  const html = document.documentElement;
+  if (isOpen) html.dataset.soundPanel = 'open';
+  else delete html.dataset.soundPanel;
+}
+
 function togglePanel(open: boolean | null): void {
   const panel = document.querySelector<HTMLElement>('[data-world-sound-panel]');
   const button = document.querySelector<HTMLElement>('[data-world-sound-toggle]');
@@ -74,6 +80,7 @@ function togglePanel(open: boolean | null): void {
   const next = open ?? panel.hidden;
   panel.hidden = !next;
   button.setAttribute('aria-expanded', next ? 'true' : 'false');
+  syncSoundPanelOpen(next);
 }
 
 export function closeSoundPanel(restoreFocus = false): void {
@@ -217,6 +224,14 @@ export function watchSoundControls(): void {
 
       if (target.closest('[data-world-sound-toggle]')) {
         engine.unlockFromUserGesture();
+        const panel = document.querySelector<HTMLElement>('[data-world-sound-panel]');
+        if (
+          panel?.hidden &&
+          !engine.state.playing &&
+          readSoundPreference() !== 'off'
+        ) {
+          engine.playFromGesture({ fadeMs: 1200 });
+        }
       }
 
       const control = target.closest('button, a[href], [role="button"], input[type="range"]');
