@@ -45,6 +45,23 @@ function syncSoundGate(): void {
   gate.hidden = world?.dataset.worldState !== 'ready';
 }
 
+/** Arm the first-gesture listener once the campus is up — not only after the entry card. */
+function tryArmMusic(): void {
+  const world = document.querySelector<HTMLElement>('[data-world]');
+  if (!world || world.dataset.worldState !== 'ready') return;
+  if (readSoundPreference() === 'off') return;
+  armFirstGesture();
+}
+
+function dismissSoundGate(): void {
+  try {
+    window.sessionStorage.setItem(SOUND_GATE_KEY, '1');
+  } catch {
+    /* storage unavailable */
+  }
+  syncSoundGate();
+}
+
 interface BoundWindow extends Window {
   [BOOT_KEY]?: boolean;
   [PANEL_KEY]?: boolean;
@@ -186,6 +203,22 @@ export function watchSoundControls(): void {
     (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
+
+      if (target.closest('[data-world-enter-sound]')) {
+        dismissSoundGate();
+        engine.playFromGesture({ fadeMs: 1200 });
+        return;
+      }
+
+      if (target.closest('[data-world-sound-mute]')) {
+        engine.toggle();
+        return;
+      }
+
+      if (target.closest('[data-world-sound-toggle]')) {
+        engine.unlockFromUserGesture();
+      }
+
       const control = target.closest('button, a[href], [role="button"], input[type="range"]');
       if (!control) return;
       engine.click('tap');
@@ -204,20 +237,10 @@ export function watchSoundControls(): void {
     }
 
     if (target.closest('[data-world-sound-mute]')) {
-      engine.unlockFromUserGesture();
-      void engine.toggle();
       return;
     }
 
     if (target.closest('[data-world-enter-sound]')) {
-      try {
-        window.sessionStorage.setItem(SOUND_GATE_KEY, '1');
-      } catch {
-        /* storage unavailable */
-      }
-      syncSoundGate();
-      engine.unlockFromUserGesture();
-      void engine.play({ fadeMs: 1200 });
       return;
     }
 
@@ -249,16 +272,19 @@ export function watchSoundControls(): void {
   });
 
   /*
-   * The music is on unless the visitor turned it off, and this is what starts
-   * it: the first press, scroll, key or touch anywhere on the page — but only
-   * after the one-time entry gate has been answered.
+   * The music is on unless the visitor turned it off. The first press, scroll,
+   * key or touch anywhere on the page starts it once the campus is ready — the
+   * entry card is optional and does not block arming.
    */
-  if (soundGateDismissed() && readSoundPreference() !== 'off') armFirstGesture();
+  tryArmMusic();
 
   syncSoundGate();
   const worldRoot = document.querySelector<HTMLElement>('[data-world]');
   if (worldRoot) {
-    const observer = new MutationObserver(() => syncSoundGate());
+    const observer = new MutationObserver(() => {
+      syncSoundGate();
+      tryArmMusic();
+    });
     observer.observe(worldRoot, { attributes: true, attributeFilter: ['data-world-state'] });
   }
 

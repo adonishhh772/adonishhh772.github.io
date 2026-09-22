@@ -3124,8 +3124,9 @@ export class ObservatoryWorld {
 
   private syncSkyFaunaVisibility(): void {
     const craftLimit = this.skyFaunaCraftLimit();
+    const hideForNightPhone = isCoarsePhoneViewport() && this.theme.nightness > 0.45;
     for (let index = 0; index < this.skyFauna.length; index += 1) {
-      this.skyFauna[index].root.visible = index < craftLimit;
+      this.skyFauna[index].root.visible = !hideForNightPhone && index < craftLimit;
     }
     this.skyFaunaGroup.visible = this.skyFauna.some((agent) => agent.root.visible);
     this.drone.visible = true;
@@ -3402,6 +3403,8 @@ export class ObservatoryWorld {
       this.lampGlowMaterial.color.setHex(theme.practical);
       this.lampGlowMaterial.opacity = 0.05 + theme.nightness * 0.5;
     }
+
+    this.syncSkyFaunaVisibility();
   }
 
   /**
@@ -3452,9 +3455,10 @@ export class ObservatoryWorld {
       cyclist.root.visible = index < quality.cyclistCount;
     });
     this.clouds.forEach((cloud, index) => {
-      cloud.visible = index < (quality.detail ? 5 : quality.mistLayers >= 3 ? 3 : 2);
+      cloud.visible =
+        !phone && index < (quality.detail ? 5 : quality.mistLayers >= 3 ? 3 : 2);
     });
-    this.cloudGroup.visible = this.clouds.some((cloud) => cloud.visible);
+    this.cloudGroup.visible = !phone && this.clouds.some((cloud) => cloud.visible);
     this.searchlight.visible = quality.detail;
     this.syncSkyFaunaVisibility();
   }

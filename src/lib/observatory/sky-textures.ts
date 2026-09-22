@@ -430,7 +430,7 @@ export function starMaterial(): THREE.ShaderMaterial {
     depthTest: false,
     fog: false,
     blending: THREE.AdditiveBlending,
-    toneMapped: true,
+    toneMapped: false,
   });
 }
 

@@ -225,6 +225,65 @@ class AmbientEngine {
     }
   }
 
+  /**
+   * Start the score from inside a user-gesture handler (pointerdown / touchstart).
+   *
+   * iOS Chrome and Safari only unlock audio if `resume()` is invoked in that
+   * turn. An `await` in `click` — which fires ~300ms later — is too late, so
+   * controls arm on pointerdown and this method never awaits before `resume()`.
+   */
+  playFromGesture(options: { fadeMs?: number } = {}): void {
+    this.wanted = true;
+    writePreferences({ sound: 'on', volume: this.volume, effects: this.effects });
+    const context = this.ensureContext();
+    if (!context || !this.master) {
+      this.playing = false;
+      this.emit();
+      return;
+    }
+    const begin = () => {
+      if (context.state !== 'running') {
+        this.blocked = true;
+        this.playing = false;
+        this.emit();
+        return;
+      }
+      this.applyPlay(options);
+    };
+    if (context.state === 'running') {
+      begin();
+      return;
+    }
+    try {
+      const pending = context.resume();
+      void pending.then(begin).catch(() => {
+        this.blocked = true;
+        this.playing = false;
+        this.emit();
+      });
+    } catch {
+      this.blocked = true;
+      this.playing = false;
+      this.emit();
+    }
+  }
+
+  private applyPlay(options: { fadeMs?: number }): void {
+    const context = this.context;
+    if (!context || !this.master) return;
+    this.blocked = false;
+    this.playing = true;
+    const fade = Math.max(0.4, (options.fadeMs ?? 2400) / 1000);
+    const now = context.currentTime;
+    const target = this.effectiveGain();
+    this.master.gain.cancelScheduledValues(now);
+    this.master.gain.setValueAtTime(this.master.gain.value, now);
+    this.master.gain.linearRampToValueAtTime(target, now + fade);
+    this.scheduled = Math.max(this.scheduled, now + 0.25);
+    this.startScheduler();
+    this.emit();
+  }
+
   /** Build the graph. Only ever called from a visitor's gesture. */
   private ensureContext(): AudioContext | null {
     if (this.disposed) return null;
@@ -363,7 +422,8 @@ class AmbientEngine {
       return false;
     }
     try {
-      if (context.state === 'suspended') await context.resume();
+      if (context.state === 'suspended') void context.resume();
+      if (context.state !== 'running') await context.resume();
     } catch {
       this.blocked = true;
       this.playing = false;
@@ -376,19 +436,7 @@ class AmbientEngine {
       this.emit();
       return false;
     }
-    this.blocked = false;
-    this.playing = true;
-    /* A gentle fade in, so the music arrives rather than starts. */
-    const fade = Math.max(0.4, (options.fadeMs ?? 2400) / 1000);
-    const now = context.currentTime;
-    const target = this.effectiveGain();
-    this.master.gain.cancelScheduledValues(now);
-    this.master.gain.setValueAtTime(this.master.gain.value, now);
-    this.master.gain.linearRampToValueAtTime(target, now + fade);
-    /* Line the clock up with the next bar boundary before scheduling. */
-    this.scheduled = Math.max(this.scheduled, now + 0.25);
-    this.startScheduler();
-    this.emit();
+    this.applyPlay(options);
     return true;
   }
 
@@ -422,12 +470,13 @@ class AmbientEngine {
   }
 
   /** Mute without giving up the visitor's preference to hear it. */
-  async toggle(): Promise<boolean> {
+  toggle(): boolean {
     if (this.playing) {
       this.pause();
       return false;
     }
-    return this.play();
+    this.playFromGesture();
+    return true;
   }
 
   setVolume(value: number): void {
@@ -754,11 +803,13 @@ export function ambient(): AmbientEngine {
  * is claimed and the controls report it — which is the only honest way to
  * handle a rule the page cannot override.
  */
-export async function resumeIfWanted(): Promise<void> {
+export function resumeIfWanted(): void {
   const sound = ambient();
   if (readSoundPreference() === 'off') return;
-  await sound.play({ fadeMs: 3400 });
+  sound.playFromGesture({ fadeMs: 3400 });
 }
+
+let firstGestureArmed = false;
 
 /**
  * Arm the first gesture anywhere on the page.
@@ -770,7 +821,8 @@ export async function resumeIfWanted(): Promise<void> {
  * listener disarms itself, so a later gesture cannot start a second attempt.
  */
 export function armFirstGesture(): void {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || firstGestureArmed) return;
+  firstGestureArmed = true;
   let armed = true;
   const fire = () => {
     if (!armed) return;
@@ -781,9 +833,7 @@ export function armFirstGesture(): void {
     document.removeEventListener('touchstart', fire, true);
     document.removeEventListener('touchend', fire, true);
     document.removeEventListener('click', fire, true);
-    const sound = ambient();
-    sound.unlockFromUserGesture();
-    void resumeIfWanted();
+    resumeIfWanted();
   };
   document.addEventListener('pointerdown', fire, true);
   document.addEventListener('keydown', fire, true);

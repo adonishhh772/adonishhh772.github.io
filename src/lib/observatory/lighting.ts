@@ -172,6 +172,8 @@ export class Atmosphere {
 
     /* The sun and the moon ------------------------------------------- */
     this.hazeTexture = radialFalloffTexture(96);
+    this.hazeTexture.minFilter = THREE.LinearFilter;
+    this.hazeTexture.magFilter = THREE.LinearFilter;
     this.sunTexture = sunTexture();
     this.moonTexture = moonTexture(0);
     this.moonPhaseKey = 0;
@@ -281,7 +283,11 @@ export class Atmosphere {
     });
     const glow = new THREE.Sprite(glowMaterial);
     glow.name = 'glow';
-    glow.scale.setScalar(discScale * 4.4);
+    const phone = isCoarsePhoneViewport();
+    glow.scale.setScalar(discScale * (phone ? 3.1 : 4.4));
+    if (phone) {
+      glowMaterial.opacity = glowOpacity * 0.7;
+    }
     glow.renderOrder = 80;
     group.add(glow);
 
@@ -337,11 +343,9 @@ export class Atmosphere {
     this.skyUniforms.sunStrength.value = 0.5 + day * 0.9 + theme.golden * 0.4;
 
     /* Stars ----------------------------------------------------------- */
-    const starHorizon = isCoarsePhoneViewport() ? -10 : -5;
-    const starsAllowed = theme.sunAltitude < starHorizon;
-    this.starOpacity = starsAllowed
-      ? theme.starOpacity * (this.quality.detail ? 1 : 0.75)
-      : 0;
+    const starsAllowed = theme.starOpacity > 0.05;
+    const starScale = this.quality.detail || isCoarsePhoneViewport() ? 1 : 0.75;
+    this.starOpacity = starsAllowed ? theme.starOpacity * starScale : 0;
     this.starUniforms.opacity.value = this.starOpacity;
     /* The stars are tinted by the sky they hang in, so they never read as a
        layer pasted over it. */
@@ -703,7 +707,9 @@ export class Atmosphere {
     this.sunMaterials.glow.opacity =
       0.28 * sunFade * (0.45 + theme.golden * 0.45 + theme.dayness * 0.35);
     this.moonMaterials.disc.opacity = moonFade;
-    this.moonMaterials.glow.opacity = 0.3 * moonFade * theme.nightness + 0.12 * moonFade;
+    const moonGlowStrength = isCoarsePhoneViewport() ? 0.82 : 1;
+    this.moonMaterials.glow.opacity =
+      (0.3 * moonFade * theme.nightness + 0.12 * moonFade) * moonGlowStrength;
 
     this.sunBody.visible = this.celestialEnabled && sunFade > 0.01;
     this.moonBody.visible = this.celestialEnabled && moonFade > 0.01;
@@ -725,26 +731,28 @@ export class Atmosphere {
      */
     this.stars.quaternion.setFromAxisAngle(STAR_POLE_AXIS, this.siderealAngle);
     const pixelRatio = this.renderer.getPixelRatio();
-    this.starUniforms.pixelScale.value = isCoarsePhoneViewport()
-      ? Math.min(pixelRatio, 1.35)
+    const phone = isCoarsePhoneViewport();
+    this.starUniforms.pixelScale.value = phone
+      ? Math.min(Math.max(pixelRatio, 2.25), 3)
       : pixelRatio;
     this.starUniforms.time.value = performance.now() * 0.001;
 
-    const starHorizon = isCoarsePhoneViewport() ? -10 : -5;
-    if (theme.sunAltitude > starHorizon) {
+    if (theme.starOpacity < 0.05) {
       this.stars.visible = false;
       this.starUniforms.opacity.value = 0;
       return;
     }
 
+    this.stars.visible = this.starOpacity > 0.01;
+
     /* A slow twinkle, which is atmospheric scintillation compressed to
        something a viewer will actually notice. */
-    if (this.starOpacity > 0.01 && this.quality.ambient) {
-      const twinkle = 0.9 + Math.sin(performance.now() * 0.0011) * 0.1;
-      this.starUniforms.opacity.value = this.starOpacity * twinkle;
-    } else {
-      this.starUniforms.opacity.value = this.starOpacity;
-    }
+    const twinkle =
+      this.starOpacity > 0.01 && this.quality.ambient
+        ? 0.9 + Math.sin(performance.now() * 0.0011) * 0.1
+        : 1;
+    const phoneBoost = phone ? 1.12 : 1;
+    this.starUniforms.opacity.value = this.starOpacity * twinkle * phoneBoost;
   }
 
   /**
