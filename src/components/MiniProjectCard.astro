@@ -1,6 +1,7 @@
 ---
 // Compact card for a public GitHub repository.
 import type { GithubProject } from '../data/github-projects';
+import { isGatherLiveUrl } from '../lib/visitor-stats/gather';
 import Icon from './Icon.astro';
 
 interface Props {
@@ -13,6 +14,7 @@ const { project, delay = 0 } = Astro.props;
 
 const primaryHref = project.liveUrl ?? project.url;
 const showRepoLink = Boolean(project.liveUrl && project.url);
+const trackGatherClick = Boolean(project.liveUrl && isGatherLiveUrl(project.liveUrl));
 
 /** Category slug used by the /work filter buttons. */
 const categorySlug =
@@ -42,6 +44,8 @@ const categorySlug =
     href={primaryHref}
     target="_blank"
     rel="noopener noreferrer"
+    data-track-gather={trackGatherClick ? '' : undefined}
+    data-track-gather-source={trackGatherClick ? 'open_source_card' : undefined}
     aria-label={
       project.liveUrl
         ? `${project.name} live app (opens in a new tab)`

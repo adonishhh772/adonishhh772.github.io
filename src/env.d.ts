@@ -19,6 +19,12 @@ interface ImportMetaEnv {
    * actions. Leave unset/empty to offer email instead.
    */
   readonly BOOKING_URL?: string;
+
+  /**
+   * Base URL of the visitor-stats worker (no trailing slash). When set, the site
+   * shows live visitor numbers and records unique visitors + Gather clicks.
+   */
+  readonly PUBLIC_VISITOR_STATS_URL?: string;
 }
 
 interface ImportMeta {

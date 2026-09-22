@@ -3,6 +3,8 @@
  * Descriptions are taken from the repositories themselves — no invented claims.
  * Add or reorder entries here to change the "Open source & builds" sections.
  */
+export const GATHER_PROJECT_NAME = 'Gather';
+
 export interface GithubProject {
   name: string;
   description: string;
@@ -18,7 +20,7 @@ export interface GithubProject {
 
 export const githubProjects: GithubProject[] = [
   {
-    name: 'Gather',
+    name: GATHER_PROJECT_NAME,
     description:
       'Local-first meeting transcriber — Whisper in the browser, optional AI notes, private by default.',
     url: 'https://github.com/adonishhh772/Transcriber-agent',

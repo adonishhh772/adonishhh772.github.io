@@ -1,0 +1,70 @@
+---
+/**
+ * On-site visitor counter. Numbers come from the visitor-stats worker
+ * (PUBLIC_VISITOR_STATS_URL). Hidden until the first successful sync.
+ */
+import { isVisitorStatsEnabled } from '../../lib/visitor-stats/api';
+
+const enabled = isVisitorStatsEnabled();
+---
+
+{
+  enabled && (
+    <p class="visitor-stats" data-visitor-stats hidden>
+      <span class="visitor-stats-you mono" data-visitor-stats-you />
+      <span class="visitor-stats-meta">
+        <span data-visitor-stats-total />
+        <span aria-hidden="true"> · </span>
+        <span data-visitor-stats-gather />
+      </span>
+    </p>
+  )
+}
+
+{
+  enabled && (
+    <script>
+      import { bootstrapVisitorStats } from '../../lib/visitor-stats/bootstrap';
+      bootstrapVisitorStats();
+    </script>
+  )
+}
+
+<style>
+  .visitor-stats {
+    margin: 0.85rem 0 0;
+    max-width: 52ch;
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+
+  .visitor-stats-you {
+    color: var(--accent);
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .visitor-stats-meta {
+    color: var(--faint);
+    font-size: 0.74rem;
+  }
+
+  :global(html[data-mode='world']) .visitor-stats {
+    margin-top: 0.65rem;
+    font-size: 0.72rem;
+  }
+
+  :global(html[data-mode='world']) .visitor-stats-meta {
+    display: none;
+  }
+
+  @media (max-width: 860px) {
+    :global(html[data-mode='world']) .visitor-stats {
+      display: none;
+    }
+  }
+</style>

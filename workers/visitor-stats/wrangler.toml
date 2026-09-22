@@ -1,0 +1,13 @@
+name = "abdbastola-visitor-stats"
+main = "src/index.ts"
+compatibility_date = "2024-09-01"
+workers_dev = true
+
+# Create a KV namespace, then paste its id here before deploy:
+#   npx wrangler kv namespace create VISITOR_STATS
+[[kv_namespaces]]
+binding = "VISITOR_STATS"
+id = "4105f875cf034cf2a7737bd9001c27b4"
+
+[vars]
+ALLOWED_ORIGINS = "https://adonishhh772.github.io,http://localhost:4321,http://127.0.0.1:4321"

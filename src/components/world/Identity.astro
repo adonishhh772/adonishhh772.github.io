@@ -8,6 +8,7 @@
  * world is running, the opening of the page when it is not.
  */
 import { site, hero } from '../../site.config';
+import VisitorStats from '../VisitorStats/VisitorStats.astro';
 ---
 
 <section class="world-identity" aria-labelledby="identity-title">
@@ -27,6 +28,8 @@ import { site, hero } from '../../site.config';
     <strong>Currently</strong>
     {hero.currently}
   </p>
+
+  <VisitorStats />
 </section>
 
 <style>

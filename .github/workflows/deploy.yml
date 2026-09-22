@@ -42,6 +42,7 @@ jobs:
           NEWSLETTER_FORM_URL: ${{ vars.NEWSLETTER_FORM_URL }}
           CONTACT_ACCESS_KEY: ${{ vars.CONTACT_ACCESS_KEY }}
           BOOKING_URL: ${{ vars.BOOKING_URL }}
+          PUBLIC_VISITOR_STATS_URL: ${{ vars.PUBLIC_VISITOR_STATS_URL }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

@@ -10,7 +10,7 @@
  */
 import Icon from '../Icon.astro';
 import { DESTINATIONS, WORLD_NAV } from '../../lib/world/destinations';
-import { liveGithubProjects } from '../../data/github-projects';
+import { GATHER_PROJECT_NAME, liveGithubProjects } from '../../data/github-projects';
 
 const dockDestinations = DESTINATIONS.filter((destination) => destination.id !== 'workbench');
 import { hero, rootUrl } from '../../site.config';
@@ -75,6 +75,8 @@ const captionIcons = [
               data-world-live
               data-live-pulse="true"
               data-world-live-name={build.name}
+              data-track-gather={build.name === GATHER_PROJECT_NAME ? '' : undefined}
+              data-track-gather-source={build.name === GATHER_PROJECT_NAME ? 'chrome_mic' : undefined}
               aria-label={`${build.name} — open live meeting transcriber in a new tab`}
             >
               <Icon name="mic" size={16} />
@@ -212,6 +214,10 @@ const captionIcons = [
                   href={build.liveUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  data-track-gather={build.name === GATHER_PROJECT_NAME ? '' : undefined}
+                  data-track-gather-source={
+                    build.name === GATHER_PROJECT_NAME ? 'chrome_map_live' : undefined
+                  }
                 >
                   <span class="world-map-label">{build.name}</span>
                   <span class="world-map-detail">Open live app</span>
