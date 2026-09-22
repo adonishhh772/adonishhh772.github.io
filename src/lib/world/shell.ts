@@ -63,7 +63,6 @@ import {
   subscribeSkyTime,
   subscribeTheme,
   THEME_TRANSITION_MS,
-  toggleTheme,
   TRAVEL_EVENT,
   type PublishedSkyState,
   type TravelDetail,
@@ -1163,7 +1162,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     href: string,
     label: string,
     meta: string,
-    kind: 'place' | 'object' | 'celestial',
+    kind: 'place' | 'object' | 'indicator',
   ): HTMLElement {
     /*
      * A place caption moves the camera, so it is a button; an object caption
@@ -1185,7 +1184,10 @@ export function mountShell(root: WorldHost): ShellHandle {
         link.dataset.worldExternal = 'true';
       }
     } else (link as HTMLButtonElement).type = 'button';
-    link.className = `world-hotspot world-hotspot--${kind}`;
+    link.className =
+      kind === 'indicator'
+        ? 'world-hotspot world-hotspot--celestial world-hotspot--indicator'
+        : `world-hotspot world-hotspot--${kind}`;
     link.dataset.worldHotspot = key;
     link.dataset.visible = 'false';
     link.tabIndex = -1;
@@ -1246,9 +1248,7 @@ export function mountShell(root: WorldHost): ShellHandle {
     if (kind === 'place') {
       const id = key.startsWith('place:') ? (key.slice(6) as DestinationId) : 'campus';
       link.addEventListener('click', () => travelTo(id));
-    } else if (kind === 'celestial') {
-      link.addEventListener('click', () => toggleTheme({ animate: true }));
-    } else {
+    } else if (kind !== 'indicator') {
       /* Remembered so closing the document can hand focus back to the caption
          the visitor opened it from. */
       link.addEventListener('click', () => {
@@ -1381,13 +1381,11 @@ export function mountShell(root: WorldHost): ShellHandle {
     }
 
     /*
-     * The light switch stands on the observatory terrace, so its caption
-     * belongs to the campus. It is a button that drives the same shared state
-     * as the labelled control in the chrome — the in-scene control and the
-     * interface control are two handles on one switch.
+     * The light switch stands on the observatory terrace. Its caption reflects
+     * whether the lamps are on; day and night change only from the sun and moon.
      */
     if (!atPlace) {
-      const lightSwitch = makeHotspot(LIGHT_SWITCH_KEY, '', '', '', 'celestial');
+      const lightSwitch = makeHotspot(LIGHT_SWITCH_KEY, '', '', '', 'indicator');
       hotspots.set(LIGHT_SWITCH_KEY, lightSwitch);
     }
 
@@ -2932,10 +2930,8 @@ export function mountShell(root: WorldHost): ShellHandle {
    * under the finger is activated exactly as if it had been pressed, and
    * otherwise the scene itself answers.
    *
-   * The world's light switch is checked first, in screen space. It is a small
-   * object standing inside the observatory's much larger hit volume, so a ray
-   * aimed at it can legitimately reach the building first — a visitor aiming
-   * at a visible switch should get the switch.
+   * Day and night change only when the visitor presses the sun or moon in the
+   * sky — not the terrace switch, not a caption, and not a chrome control.
    */
   function handleTap(x: number, y: number): void {
     if (currentMode() !== 'world') return;
@@ -2955,11 +2951,6 @@ export function mountShell(root: WorldHost): ShellHandle {
     const celestial = pickCelestialAt(x, y);
     if (celestial) {
       applyCelestialLighting(celestial);
-      return;
-    }
-
-    if (rayAt(x, y, world.switchTargets())) {
-      toggleTheme({ animate: true });
       return;
     }
 

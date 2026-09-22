@@ -75,6 +75,7 @@ import Icon from './Icon.astro';
       if (!target || !target.closest) return;
       var button = target.closest('[data-theme-toggle]');
       if (!button) return;
+      if (document.querySelector('[data-world-stage]')) return;
       var root = document.documentElement;
       var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
       root.setAttribute('data-theme', next);

@@ -13,6 +13,7 @@
 
 import type { DestinationId } from './destinations';
 import { preserveDocumentState, restoreDocumentState, sceneDeclined } from './document-state';
+import { currentMode } from './state';
 import {
   currentTheme,
   hideWorldAlert,
@@ -285,8 +286,10 @@ function onDocumentClick(event: MouseEvent): void {
 
   const themeButton = target.closest('[data-theme-toggle]');
   if (themeButton) {
-    toggleTheme({ animate: true });
-    syncThemeControls();
+    if (currentMode() !== 'world') {
+      toggleTheme({ animate: true });
+      syncThemeControls();
+    }
     return;
   }
 

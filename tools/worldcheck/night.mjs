@@ -443,13 +443,7 @@ const main = async () => {
       return readings.join(', ');
     });
 
-    await check('The light control in the bar brings the sun up when no body is in the sky', async () => {
-      /*
-       * Between moonset and sunrise there is nothing above the horizon to press
-       * — the sky bodies *are* the switch, and neither of them is up. That is
-       * exactly why the bar has a light control of its own, and this is the hour
-       * that proves it is needed.
-       */
+    await check('The bar light control does not change the sky — only the sun and moon do', async () => {
       await atHour(page, 3);
       await setLightQuiet(page, 'dark');
       const before = await page.evaluate(debug());
@@ -457,11 +451,20 @@ const main = async () => {
         throw new Error(`a sky body is up at 03:00 (${before.celestialHidden.kind})`);
       }
       const control = await page.boundingBox('[data-world-chrome] [data-theme-toggle]');
-      if (!control) throw new Error('the bar has no light control');
-      await page.click(control.x + control.width / 2, control.y + control.height / 2);
-      const after = await switched(page, { theme: 'light', hours: 12, sunUp: true });
-      await release(page);
-      return `03:00 with nothing in the sky → ${after.sky.hours.toFixed(2)}:00, sun ${after.sky.sunAltitude.toFixed(1)}° up`;
+      if (control) {
+        await page.click(control.x + control.width / 2, control.y + control.height / 2);
+        await sleep(400);
+      }
+      const headerToggle = await page.boundingBox('[data-theme-toggle]');
+      if (headerToggle) {
+        await page.click(headerToggle.x + headerToggle.width / 2, headerToggle.y + headerToggle.height / 2);
+        await sleep(400);
+      }
+      const after = await page.evaluate(debug());
+      if (after.theme !== 'dark') {
+        throw new Error('a chrome theme control changed the light while in the world');
+      }
+      return '03:00 with nothing in the sky — chrome controls left night as-is';
     });
 
     await check('The switch works in the other direction, and from the other end of the day', async () => {

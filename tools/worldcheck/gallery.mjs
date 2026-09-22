@@ -40,6 +40,19 @@ async function settleTheme() {
   await sleep(500);
 }
 
+async function setLight(page, theme) {
+  const hour = theme === 'light' ? 12 : 1;
+  await page.evaluate(`(() => {
+    document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+    try { localStorage.setItem('theme', ${JSON.stringify(theme)}); } catch (error) { /* storage off */ }
+    window.__worldSkyTime?.(${hour});
+    document.dispatchEvent(new CustomEvent('world:themechange', {
+      detail: { theme: ${JSON.stringify(theme)}, animate: true },
+    }));
+  })()`);
+  await settleTheme();
+}
+
 /** Choosing a destination from the map is how a visitor travels. */
 async function travel(href, destination) {
   await page.evaluate(`(() => {
@@ -87,8 +100,7 @@ try {
   await settleTheme();
   await page.screenshot(join(OUT, '01-overview-night.png'));
 
-  await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await settleTheme();
+  await setLight(page, 'light');
   await page.screenshot(join(OUT, '02-overview-day.png'));
 
   /* Every destination, in daylight. */
@@ -105,14 +117,12 @@ try {
   }
 
   /* Night, one destination at a time, to show the practical lights. */
-  await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await settleTheme();
+  await setLight(page, 'dark');
   await travel('/writing/', 'library');
   await page.screenshot(join(OUT, '24-library-night.png'));
   await travel('/contact/', 'contact');
   await page.screenshot(join(OUT, '25-contact-night.png'));
-  await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await settleTheme();
+  await setLight(page, 'light');
 
   /* Reading surfaces: the CV, the archive, a full article, a case study. */
   await page.navigate(`${BASE}/cv/`);
@@ -154,8 +164,7 @@ try {
   await sleep(300);
 
   /* Phones. */
-  await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await settleTheme();
+  await setLight(page, 'dark');
   await page.navigate(`${BASE}/`);
   await ready();
   await page.setViewport(390, 844, true);
@@ -163,8 +172,7 @@ try {
   await ready();
   await page.screenshot(join(OUT, '14-mobile-night.png'));
 
-  await page.clickSelector('[data-world-chrome] [data-theme-toggle]');
-  await settleTheme();
+  await setLight(page, 'light');
   await page.screenshot(join(OUT, '16-mobile-day.png'));
 
   await page.evaluate(`(() => {
