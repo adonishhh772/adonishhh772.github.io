@@ -13,7 +13,7 @@ import VisitorStats from '../VisitorStats/VisitorStats.astro';
 const eyebrowRole = hero.eyebrow.split(' · ')[0] ?? hero.eyebrow;
 ---
 
-<section class="world-identity" aria-labelledby="identity-title">
+<section class="world-identity" data-world-no-gesture aria-labelledby="identity-title">
   <p class="identity-eyebrow">
     <span class="status-dot" aria-hidden="true"></span>
     <span class="mono identity-eyebrow-line">
@@ -138,7 +138,7 @@ const eyebrowRole = hero.eyebrow.split(' · ')[0] ?? hero.eyebrow;
     max-width: none;
     margin: 0;
     padding: 0 clamp(0.2rem, 1vw, 0.6rem) 0 0;
-    pointer-events: none;
+    pointer-events: auto;
     transform: translateY(-50%);
   }
 

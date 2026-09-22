@@ -81,6 +81,7 @@ import { Materials } from '../observatory/materials';
 import {
   PerformanceMonitor,
   detectTier,
+  isCoarsePhoneViewport,
   loadPreference,
   nextDown,
   nextUp,
@@ -127,6 +128,8 @@ const DRAG_THRESHOLD = 6;
  * with a whole destination's hit volume.
  */
 const CELESTIAL_TAP_RADIUS = 34;
+/** Screen-space cap for the sun/moon fallback target on phones (glow is not tappable). */
+const CELESTIAL_TAP_MAX_COARSE = 40;
 
 /**
  * The clear space two caption boxes must leave between them, in pixels.
@@ -2246,6 +2249,32 @@ export function mountShell(root: WorldHost): ShellHandle {
     };
   }
 
+  /** True when a tap should not toggle day/night through the sky bodies. */
+  function tapExcludedFromSkyToggle(x: number, y: number): boolean {
+    const regions: (Reserved | null)[] = [identityReserved(), dockReserved()];
+    const bar = document.querySelector<HTMLElement>('[data-world-chrome] .world-chrome-bar');
+    if (bar) {
+      const rect = bar.getBoundingClientRect();
+      if (rect.width > 8 && rect.height > 8) {
+        regions.push({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom });
+      }
+    }
+    const soundPanel = document.querySelector<HTMLElement>('[data-world-sound-panel]:not([hidden])');
+    if (soundPanel) {
+      const rect = soundPanel.getBoundingClientRect();
+      if (rect.width > 8 && rect.height > 8) {
+        regions.push({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom });
+      }
+    }
+    for (const region of regions) {
+      if (!region) continue;
+      if (x >= region.left && x <= region.right && y >= region.top && y <= region.bottom) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** The region of the stage the interfaces do not cover. */
   function viewMetrics(): ViewMetrics {
     const stageWidth = stageEl.clientWidth || 1;
@@ -2892,6 +2921,7 @@ export function mountShell(root: WorldHost): ShellHandle {
    */
   function pickCelestialAt(x: number, y: number): 'sun' | 'moon' | null {
     if (focusPlace !== 'campus' || !atmosphere.celestialDiagnostics().enabled) return null;
+    if (tapExcludedFromSkyToggle(x, y)) return null;
     const pointer = pointerNdc(x, y);
     if (!pointer) return null;
     refreshCamera();
@@ -2906,15 +2936,18 @@ export function mountShell(root: WorldHost): ShellHandle {
         : diag.sunVisible && !diag.moonVisible
           ? ['sun', 'moon']
           : ['sun', 'moon'];
+    const coarse = isCoarsePhoneViewport();
     for (const kind of kinds) {
+      if (!atmosphere.pressableBody(kind)) continue;
       const ndc = atmosphere.projectBody(kind, rig.camera);
       if (!ndc) continue;
       const screenX = pointer.rect.left + (ndc.x * 0.5 + 0.5) * pointer.rect.width;
       const screenY = pointer.rect.top + (-ndc.y * 0.5 + 0.5) * pointer.rect.height;
-      const reach = Math.max(
+      let reach = Math.max(
         CELESTIAL_TAP_RADIUS,
         atmosphere.celestialBodyRadius(kind, rig.camera) * height,
       );
+      reach = coarse ? Math.min(reach, CELESTIAL_TAP_MAX_COARSE) : Math.min(reach, 64);
       if (Math.hypot(x - screenX, y - screenY) <= reach) return kind;
     }
     return null;

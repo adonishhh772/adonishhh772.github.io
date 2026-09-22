@@ -283,6 +283,7 @@ export class Atmosphere {
     });
     const glow = new THREE.Sprite(glowMaterial);
     glow.name = 'glow';
+    glow.raycast = () => {};
     const phone = isCoarsePhoneViewport();
     glow.scale.setScalar(discScale * (phone ? 3.1 : 4.4));
     if (phone) {
@@ -831,8 +832,22 @@ export class Atmosphere {
    * the screen position that bearing implies and getting the sun back.
    */
   probeBody(ndcX: number, ndcY: number, camera: THREE.Camera): 'sun' | 'moon' | null {
-    this.probe ??= new SkyProbe(this.sunBody, this.moonBody);
-    return this.probe.pick(ndcX, ndcY, camera);
+    const sunDisc = this.sunBody.getObjectByName('disc');
+    const moonDisc = this.moonBody.getObjectByName('disc');
+    if (!(sunDisc instanceof THREE.Sprite) || !(moonDisc instanceof THREE.Sprite)) return null;
+    this.probe ??= new SkyProbe(sunDisc, moonDisc);
+    const hit = this.probe.pick(ndcX, ndcY, camera);
+    if (!hit || !this.pressableBody(hit)) return null;
+    return hit;
+  }
+
+  /** True when a sky body is visible enough to act as the day/night control. */
+  pressableBody(kind: 'sun' | 'moon'): boolean {
+    if (!this.celestialEnabled) return false;
+    const body = kind === 'sun' ? this.sunBody : this.moonBody;
+    if (!body.visible) return false;
+    const opacity = kind === 'sun' ? this.sunOpacity : this.moonOpacity;
+    return opacity >= 0.12;
   }
 
   private probe: SkyProbe | null = null;
@@ -972,9 +987,11 @@ export class Atmosphere {
   /** On-screen radius in NDC-height units for a given body. */
   celestialBodyRadius(kind: 'sun' | 'moon', camera: THREE.Camera): number {
     const body = kind === 'sun' ? this.sunBody : this.moonBody;
+    const disc = body.getObjectByName('disc');
+    const discScale = disc instanceof THREE.Sprite ? disc.scale.x : 1;
     const perspective = camera as THREE.PerspectiveCamera;
     const distance = Math.max(camera.position.distanceTo(body.position), 1);
-    const worldRadius = 0.5 * body.scale.x;
+    const worldRadius = 0.5 * discScale * body.scale.x;
     const halfHeight = Math.tan(THREE.MathUtils.degToRad(perspective.fov ?? 40) / 2) * distance;
     return (worldRadius / Math.max(halfHeight, 0.001)) * 0.58;
   }
@@ -1030,22 +1047,18 @@ export class SkyProbe {
   private readonly pointer = new THREE.Vector2();
 
   constructor(
-    private readonly sunBody: THREE.Object3D,
-    private readonly moonBody: THREE.Object3D,
+    private readonly sunDisc: THREE.Sprite,
+    private readonly moonDisc: THREE.Sprite,
   ) {}
 
   /** Which sky body, if any, is under a normalized device coordinate. */
   pick(ndcX: number, ndcY: number, camera: THREE.Camera): 'sun' | 'moon' | null {
     this.pointer.set(ndcX, ndcY);
     this.raycaster.setFromCamera(this.pointer, camera);
-    const hits = this.raycaster.intersectObjects([this.sunBody, this.moonBody], true);
+    const hits = this.raycaster.intersectObjects([this.sunDisc, this.moonDisc], false);
     if (!hits.length) return null;
-    let node: THREE.Object3D | null = hits[0].object;
-    while (node) {
-      if (node === this.sunBody) return 'sun';
-      if (node === this.moonBody) return 'moon';
-      node = node.parent;
-    }
+    if (hits[0].object === this.sunDisc) return 'sun';
+    if (hits[0].object === this.moonDisc) return 'moon';
     return null;
   }
 }
