@@ -146,7 +146,33 @@
   --gutter: clamp(1.15rem, 4.5vw, 2.25rem);
   --header-h: 64px;
 
+  /* The reading sheet and the strip of world above it ------------------
+     On a phone the document is a sheet pinned to the bottom of the screen,
+     and the floating controls live in the strip of world above it. Both are
+     measured from these two numbers rather than from two separate guesses,
+     which is what used to let the control bar land on top of the sheet's own
+     bar whenever `vh` and the visible viewport disagreed — which is exactly
+     what iOS Safari does while its URL bar is collapsing. They are also what
+     `viewport-fit=cover` finally makes meaningful, since the insets below
+     resolve to 0 without it. */
+  --sheet-h: 85dvh;
+  /* The strip of world the controls must keep: a 53px pill, the air around
+     it, and the hairline the bar sits on above the sheet. */
+  --chrome-lane: 6rem;
+
   color-scheme: dark;
+}
+
+/*
+  The sheet has to leave the controls their lane. Without this cap the two
+  rules disagree at exactly the wrong moment: the browser hides its URL bar,
+  the dynamic viewport grows, the sheet grows with it, and the bar that was
+  drawn just above the sheet is drawn underneath it.
+*/
+@supports (height: 100dvh) {
+  :root {
+    --sheet-h: min(85dvh, 42rem, calc(100dvh - var(--chrome-lane) - env(safe-area-inset-top, 0px)));
+  }
 }
 
 /* Large monitors: give the diorama more room rather than more empty margin. */
@@ -2219,11 +2245,19 @@ html[data-mode='world'] .surface-bar::after {
     left: 0;
     right: 0;
     width: auto;
+    /*
+      `dvh`, not `vh`: on a phone the visible viewport changes as the browser's
+      own bar comes and goes, and `vh` is measured against the largest one it
+      can be. The controls above the sheet are placed against the same number,
+      so the two can no longer disagree. Extra bottom padding keeps the end of
+      the document clear of the campus dock, which floats over the sheet.
+    */
     height: min(85vh, 42rem);
+    height: var(--sheet-h);
     border-left: 0;
     border-top: 1px solid var(--hairline-strong);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    padding: 1rem 1.1rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    padding: 1rem 1.1rem calc(5.5rem + env(safe-area-inset-bottom, 0px));
     padding-left: calc(1.1rem + env(safe-area-inset-left, 0px));
     padding-right: calc(1.1rem + env(safe-area-inset-right, 0px));
   }

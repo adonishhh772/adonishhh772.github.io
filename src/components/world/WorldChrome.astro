@@ -146,49 +146,60 @@ const captionIcons = [
           </span>
           <span class="visually-hidden" data-sound-label>Sound off</span>
         </button>
-
-        <div
-          class="world-sound-panel"
-          id="world-sound-panel"
-          data-world-sound-panel
-          hidden
-        >
-          <p class="world-sound-title mono">Ambient score</p>
-          <button
-            class="world-sound-mute"
-            type="button"
-            data-world-sound-mute
-            aria-pressed="false"
-          >
-            <span class="sound-icon sound-icon--off" aria-hidden="true"><Icon name="sound-off" size={16} /></span>
-            <span class="sound-icon sound-icon--on" aria-hidden="true"><Icon name="sound-on" size={16} /></span>
-            <span data-sound-mute-label>Play</span>
-          </button>
-          <label class="world-sound-volume">
-            <span class="mono">
-              <Icon name="volume" size={13} />
-              Volume
-            </span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value="30"
-              data-world-volume
-              aria-label="Music volume"
-            />
-          </label>
-          <label class="world-sound-effects">
-            <input type="checkbox" data-world-effects checked />
-            <span>Interface sounds</span>
-          </label>
-          <p class="world-sound-note" data-sound-note>
-            Generated in your browser — no track is downloaded.
-          </p>
-        </div>
       </div>
     </div>
+  </div>
+
+  {/*
+    The sound panel is a sibling of the bar, not a child of the button.
+
+    The bar is centered with a transform, and a transform makes an element the
+    containing block for everything positioned inside it. A panel nested in the
+    bar was therefore measured against a 205x53 pill rather than the screen —
+    which is why the settings could only ever appear in a 53px-tall box, and
+    why the mobile overrides measured against the viewport had no effect.
+    Outside the bar it is positioned against the chrome layer, which is the
+    whole viewport.
+  */}
+  <div
+    class="world-sound-panel"
+    id="world-sound-panel"
+    data-world-sound-panel
+    hidden
+  >
+    <p class="world-sound-title mono">Ambient score</p>
+    <button
+      class="world-sound-mute"
+      type="button"
+      data-world-sound-mute
+      aria-pressed="false"
+    >
+      <span class="sound-icon sound-icon--off" aria-hidden="true"><Icon name="sound-off" size={16} /></span>
+      <span class="sound-icon sound-icon--on" aria-hidden="true"><Icon name="sound-on" size={16} /></span>
+      <span data-sound-mute-label>Play</span>
+    </button>
+    <label class="world-sound-volume">
+      <span class="mono">
+        <Icon name="volume" size={13} />
+        Volume
+      </span>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value="30"
+        data-world-volume
+        aria-label="Music volume"
+      />
+    </label>
+    <label class="world-sound-effects">
+      <input type="checkbox" data-world-effects checked />
+      <span>Interface sounds</span>
+    </label>
+    <p class="world-sound-note" data-sound-note>
+      Generated in your browser — no track is downloaded.
+    </p>
   </div>
 
   <nav
@@ -922,8 +933,8 @@ const captionIcons = [
 
   .world-sound-panel {
     position: absolute;
-    top: calc(100% + 0.5rem);
-    right: 0;
+    top: calc(0.85rem + env(safe-area-inset-top, 0px) + 3.95rem);
+    right: calc(0.85rem + env(safe-area-inset-right, 0px));
     width: min(17.5rem, calc(100vw - 1.6rem));
     padding: 0.85rem 0.9rem 0.9rem;
     border: 1px solid var(--hairline-strong);
@@ -1509,6 +1520,25 @@ const captionIcons = [
       transition: none;
     }
 
+    /*
+      Phones: the document is a sheet pinned to the bottom, and the controls
+      belong to the strip of world above it rather than to the very top of the
+      screen. Anchored to the top they overlapped the sheet's own bar — the
+      Archive button, the location readout and Close — which is the one row
+      that has to stay reachable. Taking the sheet's height from `--sheet-h`,
+      the same token the sheet is sized from, keeps the two in step through
+      every viewport change, including the ones iOS Safari makes while its own
+      bar collapses. The selector carries one more step of specificity than the
+      rule above on purpose, so the strip wins wherever a document is open.
+    */
+    :global(
+        html[data-mode='world'] body:not([data-surface='none']) .world-chrome-bar
+      ) {
+      top: auto;
+      bottom: calc(var(--sheet-h) + 0.5rem + env(safe-area-inset-bottom, 0px));
+      transition: none;
+    }
+
     :global(
         html[data-mode='world']
           body[data-panel='left'][data-surface]:not([data-surface='none'])
@@ -1517,6 +1547,21 @@ const captionIcons = [
       left: 50%;
       right: auto;
       transform: translateX(-50%);
+    }
+
+    /*
+      On a viewport too short for a sheet of its own the sheet is capped by the
+      controls' lane, which puts the bar back at the top of the screen. Pinning
+      it there — rather than deriving it from the sheet — keeps the strip below
+      it exactly as tall as the menu needs, with no arithmetic that can drift.
+    */
+    @media (max-height: 700px) {
+      :global(
+          html[data-mode='world'] body:not([data-surface='none']) .world-chrome-bar
+        ) {
+        bottom: auto;
+        top: calc(0.55rem + env(safe-area-inset-top, 0px));
+      }
     }
 
     .world-chrome-actions {
@@ -1567,9 +1612,39 @@ const captionIcons = [
       left: calc(0.6rem + env(safe-area-inset-left, 0px));
       right: calc(0.6rem + env(safe-area-inset-right, 0px));
       width: auto;
-      top: calc(5.15rem + env(safe-area-inset-top, 0px));
-      max-height: calc(100vh - 6.2rem - env(safe-area-inset-top, 0px));
-      max-height: calc(100dvh - 6.2rem - env(safe-area-inset-top, 0px));
+      top: calc(4.5rem + env(safe-area-inset-top, 0px));
+      /*
+        The strip the sheet leaves is a strip of sky, not a panel's worth of
+        room: eight destinations do not fit in it. The menu therefore opens
+        below the bar and rests over the document while it is open. The cap is
+        what is left of the screen below the menu's own top offset, so at any
+        height and any width it stops at the bottom edge rather than running
+        past it; the proportions only decide how much of the document it rests
+        over while it is open.
+      */
+      max-height: min(
+        48vh,
+        calc(100vh - 5.9rem - env(safe-area-inset-top, 0px))
+      );
+      /* A second, unit-free cap: eight destinations plus the live-builds block
+         never need more than this, whatever the viewport is doing. */
+      max-height: min(
+        24rem,
+        min(48vh, calc(100vh - 5.9rem - env(safe-area-inset-top, 0px)))
+      );
+      bottom: auto;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    /*
+      On a viewport tall enough for a real sheet the bar has moved down to the
+      sheet's edge, so the menu starts under it and uses what is left.
+    */
+    @media (min-height: 701px) {
+      .world-map {
+        top: calc(100dvh - var(--sheet-h) + 4.3rem + env(safe-area-inset-top, 0px));
+      }
     }
 
     :global(html[data-mode='world'] body[data-panel='left'][data-surface]:not([data-surface='none'])) .world-map {
@@ -1578,19 +1653,54 @@ const captionIcons = [
     }
 
     /*
-      The bar is centered; anchoring the panel to the sound button (especially
-      with translateX(-50%)) shoves it off the right edge. Pin it under the bar
-      inside the safe area instead.
+      The base rule sits later in this stylesheet, so the phone rule carries an
+      extra step of specificity to win rather than relying on source order.
+
+      The panel lives beside the bar, so these insets are measured against the
+      chrome layer, which is the whole viewport: it opens just under the bar
+      and never wider than the room the screen actually has.
     */
-    .world-sound-panel {
+    :global(html[data-mode='world']) .world-sound-panel {
       position: fixed;
-      top: calc(3.85rem + env(safe-area-inset-top, 0px));
-      right: calc(0.75rem + env(safe-area-inset-right, 0px));
-      left: auto;
-      width: min(19rem, calc(100vw - 1.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+      top: calc(4.8rem + env(safe-area-inset-top, 0px));
+      bottom: auto;
+      left: 50%;
+      right: auto;
+      width: min(
+        19rem,
+        calc(
+          100vw - 1.5rem - env(safe-area-inset-left, 0px) -
+            env(safe-area-inset-right, 0px)
+        )
+      );
       max-width: none;
-      transform: none;
-      z-index: 210;
+      max-height: 55vh;
+      transform: translateX(-50%);
+      animation: none;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    /*
+      With a document open the bar sits in the strip of world above the sheet.
+      The strip is not tall enough for these controls, so the panel opens from
+      under the bar's band and rests over the top of the document while it is
+      open — a popover, dismissed the way it was opened.
+
+      Its top is derived from the same two facts the bar is placed from — the
+      sheet's height and the bar's own 53px — so it follows the bar down the
+      screen instead of hanging from a fixed offset. The cap keeps it to a
+      readable size and leaves the sheet's own bar beneath it reachable.
+    */
+    :global(html[data-mode='world'] body:not([data-surface='none'])) .world-sound-panel {
+      position: fixed;
+      top: calc(
+        100dvh - var(--sheet-h) + 4.3rem + env(safe-area-inset-top, 0px)
+      );
+      bottom: auto;
+      max-height: 50vh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
   }
 

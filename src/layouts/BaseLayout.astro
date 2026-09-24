@@ -99,7 +99,14 @@ const hasSurface = surface !== 'none';
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/*
+      `viewport-fit=cover` is what makes the safe-area insets real. Without it
+      iOS lays the page out inside the notch and the home indicator — so every
+      `env(safe-area-inset-*)` in the interface resolves to 0, and the chrome
+      that reserves room for them reserves nothing. It also lets the campus
+      reach the true edges of the screen, which is the point of it.
+    */}
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     {/*
       Decide the experience before anything paints.
 
