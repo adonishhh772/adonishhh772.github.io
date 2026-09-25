@@ -53,9 +53,22 @@ const enabled = isVisitorStatsEnabled();
     font-size: 0.74rem;
   }
 
+  :global(html[data-mode='world']) .visitor-stats,
+  :global(html[data-mode='world']) .visitor-stats-you {
+    transition: color var(--caption-fade) var(--theme-ease);
+  }
+
   :global(html[data-mode='world']) .visitor-stats {
     margin-top: 0.65rem;
     font-size: 0.72rem;
+  }
+
+  :global(html[data-mode='world']:not([data-theme='light'])) .visitor-stats {
+    color: var(--caption-muted);
+  }
+
+  :global(html[data-mode='world']:not([data-theme='light'])) .visitor-stats-you {
+    color: var(--teal);
   }
 
   :global(html[data-mode='world']) .visitor-stats-meta {

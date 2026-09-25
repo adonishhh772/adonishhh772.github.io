@@ -36,7 +36,6 @@ import {
 const BOOT_KEY = '__abdWorldChrome';
 const LIVE_TIP_VISIBLE_MS = 5_500;
 const LIVE_TIP_CYCLE_MS = 14_000;
-const PHONE_CHROME_MEDIA = '(max-width: 860px)';
 
 let liveTipIntervalId: ReturnType<typeof setInterval> | null = null;
 let liveTipHideTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -47,14 +46,12 @@ function setLivePulse(): void {
   }
 }
 
-function isPhoneChromeViewport(): boolean {
-  if (typeof window.matchMedia !== 'function') return false;
-  return window.matchMedia(PHONE_CHROME_MEDIA).matches;
+function liveTips(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-world-live-tip]')];
 }
 
 function hideLiveTip(): void {
-  const tip = document.querySelector<HTMLElement>('[data-world-live-tip]');
-  if (tip) {
+  for (const tip of liveTips()) {
     tip.hidden = true;
     tip.classList.remove('world-live-tip--open');
   }
@@ -72,23 +69,35 @@ function stopLivePromoCycle(): void {
   hideLiveTip();
 }
 
-function showLiveTipBurst(): void {
-  if (isPhoneChromeViewport()) return;
-  const tip = document.querySelector<HTMLElement>('[data-world-live-tip]');
-  if (!tip) return;
+function openLiveTip(tip: HTMLElement): void {
   tip.hidden = false;
   tip.classList.remove('world-live-tip--open');
   void tip.offsetWidth;
   tip.classList.add('world-live-tip--open');
+}
+
+function showLiveTipAt(index: number): void {
+  const tips = liveTips();
+  if (tips.length === 0) return;
+  for (const tip of tips) {
+    tip.hidden = true;
+    tip.classList.remove('world-live-tip--open');
+  }
+  const tip = tips[index];
+  if (!tip) return;
+  openLiveTip(tip);
   if (liveTipHideTimeoutId !== null) clearTimeout(liveTipHideTimeoutId);
   liveTipHideTimeoutId = setTimeout(() => {
     liveTipHideTimeoutId = null;
-    const current = document.querySelector<HTMLElement>('[data-world-live-tip]');
-    if (current) {
-      current.hidden = true;
-      current.classList.remove('world-live-tip--open');
-    }
+    tip.hidden = true;
+    tip.classList.remove('world-live-tip--open');
+    const nextIndex = index + 1;
+    if (nextIndex < tips.length) showLiveTipAt(nextIndex);
   }, LIVE_TIP_VISIBLE_MS);
+}
+
+function showLiveTipBurst(): void {
+  showLiveTipAt(0);
 }
 
 function campusChromeReady(): boolean {
@@ -107,10 +116,6 @@ function ensureLivePromoCycle(): void {
     return;
   }
   setLivePulse();
-  if (isPhoneChromeViewport()) {
-    stopLivePromoCycle();
-    return;
-  }
   if (liveTipIntervalId !== null) return;
   showLiveTipBurst();
   liveTipIntervalId = setInterval(() => {
@@ -451,15 +456,6 @@ export function bootstrapChrome(): void {
       media.addEventListener('change', () => syncAmbientControls());
     } catch {
       /* older engines: the initial value still applies */
-    }
-    try {
-      const phoneChrome = window.matchMedia(PHONE_CHROME_MEDIA);
-      phoneChrome.addEventListener('change', () => {
-        if (phoneChrome.matches) stopLivePromoCycle();
-        else syncLiveBuildTip();
-      });
-    } catch {
-      /* matchMedia unavailable */
     }
   }
 }

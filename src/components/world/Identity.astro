@@ -128,6 +128,18 @@ const eyebrowRole = hero.eyebrow.split(' · ')[0] ?? hero.eyebrow;
     right keeps the words legible where they touch the scenery without drawing
     a visible panel across the picture — which is what a filled card would do.
   */
+  :global(
+    html[data-mode='world']:is(
+        [data-world-state='idle'],
+        [data-world-state='loading'],
+        [data-world-state='recovering'],
+        [data-world-hold='true']
+      )
+  )
+    .world-identity {
+    display: none;
+  }
+
   :global(html[data-mode='world']) .world-identity {
     position: fixed;
     left: clamp(1rem, 2.5vw, 2.2rem);
@@ -142,18 +154,76 @@ const eyebrowRole = hero.eyebrow.split(' · ')[0] ?? hero.eyebrow;
     transform: translateY(-50%);
   }
 
-  :global(html[data-mode='world']) .world-identity::before {
+  :global(html[data-mode='world']) .world-identity::before,
+  :global(html[data-mode='world']) .world-identity::after {
     content: '';
     position: absolute;
     inset: -2.5rem -4rem -2.5rem -2.5rem;
     z-index: -1;
     pointer-events: none;
+  }
+
+  :global(html[data-mode='world']) .world-identity::before {
     background: radial-gradient(
       120% 90% at 0% 50%,
-      color-mix(in srgb, var(--bg) 86%, transparent) 0%,
-      color-mix(in srgb, var(--bg) 52%, transparent) 48%,
+      color-mix(in srgb, var(--ivory) 86%, transparent) 0%,
+      color-mix(in srgb, var(--ivory) 52%, transparent) 48%,
       transparent 82%
     );
+  }
+
+  /*
+    The night wash sits on top of the day wash and fades with the island.
+    Swapping the gradient itself cannot animate, so it used to go dark in one
+    step while the campus was still catching up.
+  */
+  :global(html[data-mode='world']) .world-identity::after {
+    opacity: 1;
+    transition: opacity var(--theme-fade) var(--theme-ease);
+    background: radial-gradient(
+      130% 100% at 0% 42%,
+      color-mix(in srgb, var(--ink) 90%, transparent) 0%,
+      color-mix(in srgb, var(--ink) 68%, transparent) 46%,
+      transparent 80%
+    );
+  }
+
+  :global(html[data-mode='world'][data-theme='light']) .world-identity::after {
+    opacity: 0;
+  }
+
+  :global(html[data-mode='world']) .identity-name,
+  :global(html[data-mode='world']) .identity-headline,
+  :global(html[data-mode='world']) .identity-lead,
+  :global(html[data-mode='world']) .identity-currently,
+  :global(html[data-mode='world']) .identity-eyebrow .mono,
+  :global(html[data-mode='world']) .identity-currently strong {
+    transition: color var(--caption-fade) var(--theme-ease);
+  }
+
+  :global(html[data-mode='world']:not([data-theme='light'])) .world-identity {
+    color: var(--caption);
+  }
+
+  :global(html[data-mode='world']:not([data-theme='light'])) .identity-name {
+    color: var(--caption);
+  }
+
+  :global(html[data-mode='world']:not([data-theme='light'])) .identity-headline {
+    color: var(--caption-soft);
+  }
+
+  :global(html[data-mode='world']:not([data-theme='light'])) .identity-lead,
+  :global(html[data-mode='world']:not([data-theme='light'])) .identity-currently {
+    color: var(--caption-muted);
+  }
+
+  :global(html[data-mode='world']:not([data-theme='light'])) .identity-eyebrow .mono {
+    color: var(--teal);
+  }
+
+  :global(html[data-mode='world']:not([data-theme='light'])) .identity-currently strong {
+    color: var(--amber);
   }
 
   :global(html[data-mode='world']) .identity-lead {

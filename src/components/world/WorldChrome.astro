@@ -65,8 +65,8 @@ const captionIcons = [
   <div class="world-chrome-bar">
     <div class="world-chrome-actions">
       {
-        liveGithubProjects.map((build, index) => (
-          <div class="world-live-wrap">
+        liveGithubProjects.map((build) => (
+          <div class:list={['world-live-wrap', build.chromeTone === 'sentinel' && 'world-live-wrap--sentinel']}>
             <a
               class="world-control world-control--icon world-control--live"
               href={build.liveUrl}
@@ -77,15 +77,15 @@ const captionIcons = [
               data-world-live-name={build.name}
               data-track-gather={build.name === GATHER_PROJECT_NAME ? '' : undefined}
               data-track-gather-source={build.name === GATHER_PROJECT_NAME ? 'chrome_mic' : undefined}
-              aria-label={`${build.name} — open live meeting transcriber in a new tab`}
+              aria-label={build.chromeLabel ?? `${build.name} — open live app in a new tab`}
             >
-              <Icon name="mic" size={16} />
+              <Icon name={build.chromeIcon ?? 'mic'} size={16} />
             </a>
             {
-              index === 0 && (
+              build.chromeTip && (
                 <p class="world-live-tip" data-world-live-tip role="status" hidden>
                   <span class="world-live-tip-text">
-                    Try <strong>{build.name}</strong> — tap the mic for the live transcriber
+                    Try <strong>{build.name}</strong> — {build.chromeTip}
                   </span>
                 </p>
               )
@@ -221,7 +221,10 @@ const captionIcons = [
             {liveGithubProjects.map((build) => (
               <li>
                 <a
-                  class="world-map-live-link"
+                  class:list={[
+                    'world-map-live-link',
+                    build.chromeTone === 'sentinel' && 'world-map-live-link--sentinel',
+                  ]}
                   href={build.liveUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -601,12 +604,30 @@ const captionIcons = [
     display: block;
   }
 
+  /*
+    The loading screen owns the frame. The bar, the dock and the promo bubble
+    come back when the campus is on screen, including the short hold while the
+    progress rule finishes.
+  */
+  :global(
+    html[data-mode='world']:is(
+        [data-world-state='idle'],
+        [data-world-state='loading'],
+        [data-world-state='recovering'],
+        [data-world-hold='true']
+      )
+  )
+    .world-chrome {
+    display: none;
+  }
+
   .world-icon-bank {
     display: none !important;
   }
 
   .world-chrome-bar,
   .world-map,
+  .world-sound-panel,
   .world-alert-card {
     pointer-events: auto;
   }
@@ -673,14 +694,24 @@ const captionIcons = [
   }
 
   .world-live-wrap {
+    --live: var(--signal);
+    --live-soft: var(--signal-soft);
+    --live-line: var(--signal-line);
     position: relative;
+    z-index: 8;
     display: inline-flex;
     overflow: visible;
   }
 
+  .world-live-wrap--sentinel {
+    --live: var(--sentinel);
+    --live-soft: var(--sentinel-soft);
+    --live-line: var(--sentinel-line);
+  }
+
   .world-control--live {
-    color: var(--signal);
-    border-color: color-mix(in srgb, var(--signal) 40%, var(--hairline-strong));
+    color: var(--live);
+    border-color: color-mix(in srgb, var(--live) 40%, var(--hairline-strong));
     text-decoration: none;
     width: 44px;
     padding: 0;
@@ -694,23 +725,29 @@ const captionIcons = [
   .world-control--live:hover,
   .world-control--live:focus-visible {
     color: var(--text);
-    border-color: var(--signal-line);
-    background: var(--signal-soft);
+    border-color: var(--live-line);
+    background: var(--live-soft);
+  }
+
+  .world-live-wrap--sentinel .world-control--live,
+  .world-live-wrap--sentinel .world-control--live:hover,
+  .world-live-wrap--sentinel .world-control--live:focus-visible {
+    color: var(--live);
   }
 
   @keyframes world-live-blink {
     0%,
     100% {
-      border-color: color-mix(in srgb, var(--signal) 30%, var(--hairline-strong));
+      border-color: color-mix(in srgb, var(--live) 30%, var(--hairline-strong));
       box-shadow: var(--shadow-1);
       transform: scale(1);
       filter: brightness(1);
     }
     50% {
-      border-color: var(--signal);
+      border-color: var(--live);
       box-shadow:
-        0 0 0 4px var(--signal-soft),
-        0 0 22px color-mix(in srgb, var(--signal) 70%, transparent);
+        0 0 0 4px var(--live-soft),
+        0 0 22px color-mix(in srgb, var(--live) 70%, transparent);
       transform: scale(1.1);
       filter: brightness(1.15);
     }
@@ -735,7 +772,7 @@ const captionIcons = [
     max-width: min(16rem, 72vw);
     margin: 0;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--signal-line);
+    border: 1px solid var(--live-line);
     border-radius: var(--radius-sm);
     background: var(--bg-raised);
     box-shadow: var(--shadow-2);
@@ -747,6 +784,7 @@ const captionIcons = [
   }
 
   .world-live-tip.world-live-tip--open {
+    opacity: 1;
     animation: world-live-tip-in 480ms var(--ease-out) both, world-live-tip-float 2.6s ease-in-out 0.5s infinite;
   }
 
@@ -757,14 +795,14 @@ const captionIcons = [
     right: 14px;
     width: 10px;
     height: 10px;
-    border-top: 1px solid var(--signal-line);
-    border-left: 1px solid var(--signal-line);
+    border-top: 1px solid var(--live-line);
+    border-left: 1px solid var(--live-line);
     background: var(--bg-raised);
     transform: rotate(45deg);
   }
 
   .world-live-tip strong {
-    color: var(--signal);
+    color: var(--live);
     font-weight: 600;
   }
 
@@ -774,11 +812,9 @@ const captionIcons = [
 
   @keyframes world-live-tip-in {
     from {
-      opacity: 0;
       transform: translateY(-6px);
     }
     to {
-      opacity: 1;
       transform: none;
     }
   }
@@ -800,7 +836,7 @@ const captionIcons = [
     }
 
     .world-control--live {
-      outline: 2px solid var(--signal-line);
+      outline: 2px solid var(--live-line);
       outline-offset: 2px;
     }
 
@@ -933,6 +969,7 @@ const captionIcons = [
 
   .world-sound-panel {
     position: absolute;
+    z-index: 40;
     top: calc(0.85rem + env(safe-area-inset-top, 0px) + 3.95rem);
     right: calc(0.85rem + env(safe-area-inset-right, 0px));
     width: min(17.5rem, calc(100vw - 1.6rem));
@@ -1193,6 +1230,16 @@ const captionIcons = [
   .world-map-live-link:focus-visible {
     background: var(--signal-soft);
     border-color: var(--signal-line);
+  }
+
+  .world-map-live-link--sentinel .world-map-label {
+    color: var(--sentinel);
+  }
+
+  .world-map-live-link--sentinel:hover,
+  .world-map-live-link--sentinel:focus-visible {
+    background: var(--sentinel-soft);
+    border-color: var(--sentinel-line);
   }
 
   .world-map-title {
@@ -1565,14 +1612,29 @@ const captionIcons = [
     }
 
     .world-chrome-actions {
+      position: relative;
+      z-index: 0;
       flex-wrap: nowrap;
       justify-content: center;
       gap: 0.3rem;
       padding: 0.22rem 0.4rem;
       border: 1px solid var(--hairline-strong);
       border-radius: 999px;
-      background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
+      background: transparent;
       box-shadow: var(--shadow-1);
+    }
+
+    /*
+      Blur sits on a pseudo-element. backdrop-filter on the pill itself clips
+      the promo bubble, which hangs outside the pill.
+    */
+    .world-chrome-actions::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      border-radius: inherit;
+      background: color-mix(in srgb, var(--bg-raised) 92%, transparent);
       backdrop-filter: blur(12px);
     }
 
@@ -1605,7 +1667,7 @@ const captionIcons = [
     }
 
     .world-live-tip {
-      display: none !important;
+      max-width: min(14rem, calc(100vw - 1.5rem));
     }
 
     .world-map {

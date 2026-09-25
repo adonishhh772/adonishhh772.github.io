@@ -25,6 +25,13 @@
   /* Core palette ---------------------------------------------------- */
   --ink: #0b1020; /* midnight ink   */
   --ivory: #f3f0e8; /* warm ivory     */
+  /*
+    The campus caption sits on the island, and the island follows the sun.
+    These stay light in both page themes so the words remain readable at night.
+  */
+  --caption: var(--ivory);
+  --caption-soft: #e6e1d6;
+  --caption-muted: #d0d5e0;
   --teal: #6ee7d8; /* signal teal    */
   --amber: #f4b860; /* warm amber     */
 
@@ -49,6 +56,11 @@
   --signal-soft: rgba(244, 184, 96, 0.12);
   --signal-line: rgba(244, 184, 96, 0.4);
   --on-signal: #2a1704;
+
+  /* Architecture Sentinel chrome — the blue from its shield mark. */
+  --sentinel: #3b82f6;
+  --sentinel-soft: rgba(59, 130, 246, 0.14);
+  --sentinel-line: rgba(59, 130, 246, 0.5);
 
   --hairline: rgba(243, 240, 232, 0.1);
   --hairline-strong: rgba(243, 240, 232, 0.18);
@@ -138,6 +150,10 @@
   --dur-camera: 900ms; /* camera travel between stations     */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  /* Matches the island blend in theme-state.ts (THEME_TRANSITION_MS, ease-in-out). */
+  --theme-fade: 800ms;
+  --theme-ease: cubic-bezier(0.45, 0, 0.55, 1);
+  --caption-fade: 240ms;
   --ease: var(--ease-out); /* legacy alias */
   --dur: var(--dur-2); /* legacy alias */
 
@@ -277,13 +293,14 @@ html[data-theme-anim='true'] .world-hotspot,
 html[data-theme-anim='true'] .world-status,
 html[data-theme-anim='true'] .signup-input,
 html[data-theme-anim='true'] .site-footer,
-html[data-theme-anim='true'] .world-identity,
 html[data-theme-anim='true'] .chip,
 html[data-theme-anim='true'] .btn,
 html[data-theme-anim='true'] .prose pre,
 html[data-theme-anim='true'] .prose code {
-  transition: background-color 800ms var(--ease-out), color 800ms var(--ease-out),
-    border-color 800ms var(--ease-out), box-shadow 800ms var(--ease-out);
+  transition: background-color var(--theme-fade) var(--theme-ease),
+    color var(--theme-fade) var(--theme-ease),
+    border-color var(--theme-fade) var(--theme-ease),
+    box-shadow var(--theme-fade) var(--theme-ease);
 }
 
 /* ── 02. Reset & base ──────────────────────────────────────────────── */

@@ -4,6 +4,10 @@
  * Add or reorder entries here to change the "Open source & builds" sections.
  */
 export const GATHER_PROJECT_NAME = 'Gather';
+export const SENTINEL_PROJECT_NAME = 'Architecture Sentinel';
+
+export type LiveChromeIcon = 'mic' | 'shield';
+export type LiveChromeTone = 'signal' | 'sentinel';
 
 export interface GithubProject {
   name: string;
@@ -16,9 +20,34 @@ export interface GithubProject {
   liveUrl?: string;
   /** Show this one on the home page strip. */
   featured?: boolean;
+  /** Icon for the world-chrome shortcut. Only live apps set this. */
+  chromeIcon?: LiveChromeIcon;
+  /** Accent for the chrome shortcut. Defaults to the amber signal tone. */
+  chromeTone?: LiveChromeTone;
+  /** Accessible name for the world-chrome shortcut. */
+  chromeLabel?: string;
+  /**
+   * Text after the project name in the chrome promo bubble.
+   * Omit it and the shortcut stays, with no popup.
+   */
+  chromeTip?: string;
 }
 
 export const githubProjects: GithubProject[] = [
+  {
+    name: SENTINEL_PROJECT_NAME,
+    description:
+      'Evidence-backed architecture and security analysis for software repositories, including AI agents, tools, RAG, and multi-agent workflows.',
+    url: 'https://github.com/adonishhh772/architect-agent',
+    liveUrl: 'https://adonishhh772.github.io/architect-agent/',
+    language: 'TypeScript',
+    category: 'AI & agents',
+    featured: true,
+    chromeIcon: 'shield',
+    chromeTone: 'sentinel',
+    chromeLabel: 'Architecture Sentinel — open the live architecture agent in a new tab',
+    chromeTip: 'tap for the live architecture agent',
+  },
   {
     name: GATHER_PROJECT_NAME,
     description:
@@ -28,6 +57,9 @@ export const githubProjects: GithubProject[] = [
     language: 'TypeScript',
     category: 'AI & agents',
     featured: true,
+    chromeIcon: 'mic',
+    chromeLabel: 'Gather — open live meeting transcriber in a new tab',
+    chromeTip: 'tap the mic for the live transcriber',
   },
   {
     name: 'Regshift',

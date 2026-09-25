@@ -28,7 +28,8 @@ interface Props {
     | 'sound-on'
     | 'sound-off'
     | 'volume'
-    | 'mic';
+    | 'mic'
+    | 'shield';
   size?: number;
 }
 
@@ -416,6 +417,19 @@ const stroke = {
       <rect x="9.5" y="3.5" width="5" height="9.5" rx="2.5" />
       <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
       <path d="M12 17v3.5M8.5 20.5h7" />
+    </svg>
+  )
+}
+{
+  name === 'shield' && (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      {...stroke}
+    >
+      <path d="M12 3.2 19.4 6.1v6.1c0 4.6-3.1 7.2-7.4 8.8-4.3-1.6-7.4-4.2-7.4-8.8V6.1L12 3.2z" />
     </svg>
   )
 }

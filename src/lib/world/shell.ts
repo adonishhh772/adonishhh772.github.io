@@ -1248,7 +1248,11 @@ export function mountShell(root: WorldHost): ShellHandle {
     link.addEventListener('pointerdown', () => {
       revealedKey = key;
     });
-    if (kind === 'place') {
+    if (key === LIGHT_SWITCH_KEY) {
+      link.addEventListener('click', () => {
+        toggleWorldTheme();
+      });
+    } else if (kind === 'place') {
       const id = key.startsWith('place:') ? (key.slice(6) as DestinationId) : 'campus';
       link.addEventListener('click', () => travelTo(id));
     } else if (kind !== 'indicator') {
@@ -1384,8 +1388,8 @@ export function mountShell(root: WorldHost): ShellHandle {
     }
 
     /*
-     * The light switch stands on the observatory terrace. Its caption reflects
-     * whether the lamps are on; day and night change only from the sun and moon.
+     * The light switch stands on the observatory terrace. Pressing it, or the
+     * lamp itself, switches day and night the same way the sun and moon do.
      */
     if (!atPlace) {
       const lightSwitch = makeHotspot(LIGHT_SWITCH_KEY, '', '', '', 'indicator');
@@ -1438,12 +1442,11 @@ export function mountShell(root: WorldHost): ShellHandle {
     }
     const physical = hotspots.get(LIGHT_SWITCH_KEY);
     if (physical) {
-      /* The switch drives the world's lamps, which the hour decides. */
-      const lampsOn = liveTheme.practicalIntensity > 1;
-      const label = lampsOn
-        ? 'The observatory light switch — turn the lamps off'
-        : 'The observatory light switch — turn the lamps on';
-      physical.setAttribute('aria-pressed', lampsOn ? 'true' : 'false');
+      const day = currentTheme() === 'light';
+      const label = day
+        ? 'Observatory light — switch to night'
+        : 'Observatory light — switch to day';
+      physical.setAttribute('aria-pressed', day ? 'true' : 'false');
       physical.setAttribute('aria-label', label);
       physical.setAttribute('title', label);
       const mark = physical.querySelector<HTMLElement>('.world-hotspot-mark');
@@ -2953,9 +2956,13 @@ export function mountShell(root: WorldHost): ShellHandle {
     return null;
   }
 
-  function applyCelestialLighting(_kind: 'sun' | 'moon'): void {
+  function toggleWorldTheme(): void {
     const next: ThemeName = currentTheme() === 'light' ? 'dark' : 'light';
     setTheme(next, { animate: true, persist: true, source: 'visitor' });
+  }
+
+  function applyCelestialLighting(_kind: 'sun' | 'moon'): void {
+    toggleWorldTheme();
   }
 
   /**
@@ -2963,8 +2970,8 @@ export function mountShell(root: WorldHost): ShellHandle {
    * under the finger is activated exactly as if it had been pressed, and
    * otherwise the scene itself answers.
    *
-   * Day and night change only when the visitor presses the sun or moon in the
-   * sky — not the terrace switch, not a caption, and not a chrome control.
+   * Day and night change when the visitor presses the sun or moon, or the
+   * observatory light on the terrace.
    */
   function handleTap(x: number, y: number): void {
     if (currentMode() !== 'world') return;
@@ -2990,6 +2997,11 @@ export function mountShell(root: WorldHost): ShellHandle {
     const caption = hotspotAt(x, y);
     if (caption) {
       caption.click();
+      return;
+    }
+    const lightSwitch = rayAt(x, y, world.switchTargets());
+    if (lightSwitch) {
+      toggleWorldTheme();
       return;
     }
     const hit = pickAt(x, y);

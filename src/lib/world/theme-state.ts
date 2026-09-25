@@ -131,9 +131,26 @@ export function prefersReducedMotion(): boolean {
   }
 }
 
+let themeCommitId = 0;
+
+function publishTheme(
+  root: HTMLElement,
+  next: ThemeName,
+  animate: boolean,
+  source: 'visitor' | 'system',
+): void {
+  root.dataset.theme = next;
+  const detail: ThemeChangeDetail = { theme: next, animate, source };
+  document.dispatchEvent(new CustomEvent<ThemeChangeDetail>(THEME_EVENT, { detail }));
+}
+
 /**
  * Put the theme on the document, persist it when the visitor chose it, and
  * tell everyone listening. Returns the theme that is now live.
+ *
+ * The colour transition has to be armed a frame before the theme attribute
+ * flips. Setting both in one turn makes the page jump to the new colours
+ * while the island is still blending.
  */
 export function setTheme(
   next: ThemeName,
@@ -144,6 +161,7 @@ export function setTheme(
   const previous = root.dataset.theme === 'light' ? 'light' : 'dark';
   const animate =
     (options.animate ?? true) && !prefersReducedMotion() && previous !== next;
+  const source = options.source ?? 'visitor';
 
   if (options.persist) {
     const store = storage();
@@ -154,24 +172,24 @@ export function setTheme(
     }
   }
 
-  root.dataset.theme = next;
-  /* A marker the stylesheet uses to switch on colour transitions for exactly
-     as long as the change is happening. */
-  if (animate) {
-    root.dataset.themeAnim = 'true';
-    window.setTimeout(() => {
-      if (root.dataset.theme === next) delete root.dataset.themeAnim;
-    }, THEME_TRANSITION_MS + 80);
-  } else {
+  themeCommitId += 1;
+  const commitId = themeCommitId;
+
+  if (!animate) {
     delete root.dataset.themeAnim;
+    publishTheme(root, next, false, source);
+    return next;
   }
 
-  const detail: ThemeChangeDetail = {
-    theme: next,
-    animate,
-    source: options.source ?? 'visitor',
-  };
-  document.dispatchEvent(new CustomEvent<ThemeChangeDetail>(THEME_EVENT, { detail }));
+  root.dataset.themeAnim = 'true';
+  window.requestAnimationFrame(() => {
+    if (commitId !== themeCommitId) return;
+    publishTheme(root, next, true, source);
+    window.setTimeout(() => {
+      if (commitId !== themeCommitId) return;
+      if (root.dataset.theme === next) delete root.dataset.themeAnim;
+    }, THEME_TRANSITION_MS + 80);
+  });
   return next;
 }
 
