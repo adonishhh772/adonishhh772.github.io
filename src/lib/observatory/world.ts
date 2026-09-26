@@ -2092,8 +2092,9 @@ export class ObservatoryWorld {
     const cos = Math.cos(this.turnAngle);
     const sin = Math.sin(this.turnAngle);
     return this.solids.map((solid) => ({
-      x: solid.x * cos - solid.z * sin,
-      z: solid.x * sin + solid.z * cos,
+      /* Same Y rotation as the turntable (`rotation.y`), not its mirror. */
+      x: solid.x * cos + solid.z * sin,
+      z: -solid.x * sin + solid.z * cos,
       radius: solid.radius,
       top: solid.top,
     }));

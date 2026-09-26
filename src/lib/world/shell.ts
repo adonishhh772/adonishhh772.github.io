@@ -2470,7 +2470,22 @@ export function mountShell(root: WorldHost): ShellHandle {
     const reach =
       focusPlace === 'workbench' && immersive ? 1.22 : band ? 1.45 : 1;
     const base = placeShot(node.shot, aspect, reach);
-    return readingShot(base, view, subject);
+    /*
+     * The shot was composed while the island was still. The campus has been
+     * turning since then, so the building is no longer at that bearing. Swing
+     * the camera with it, or the click opens a view of where the place used to
+     * stand.
+     */
+    return readingShot(turnShotWithIsland(base), view, subject);
+  }
+
+  /** The same turn the captions use, applied to a composed shot. */
+  function turnShotWithIsland(shot: Shot): Shot {
+    return {
+      position: world.turnPoint(shot.position),
+      target: world.turnPoint(shot.target),
+      fov: shot.fov,
+    };
   }
 
   function compose(immediate: boolean): void {
