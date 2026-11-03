@@ -73,6 +73,10 @@ function storage(): Storage | null {
  * it off is a decision the visitor makes. A stored `off` is honoured for good.
  */
 export function readSoundPreference(): AudioPreference {
+  try {
+    const saved = document.cookie.split('; ').find((cookie) => cookie.startsWith('world_sound='))?.split('=')[1];
+    if (saved === 'on' || saved === 'off') return saved;
+  } catch { /* cookies unavailable */ }
   const store = storage();
   if (!store) return 'on';
   try {
@@ -112,6 +116,9 @@ function writePreferences(state: {
   volume: number;
   effects: boolean;
 }): void {
+  try {
+    document.cookie = `world_sound=${state.sound}; Max-Age=34560000; Path=/; SameSite=Lax; Secure`;
+  } catch { /* cookies unavailable */ }
   const store = storage();
   try {
     store?.setItem(SOUND_KEY, state.sound);

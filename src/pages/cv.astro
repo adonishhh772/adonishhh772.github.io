@@ -7,28 +7,37 @@ const title = 'CV — Abd Bastola';
 
 const quickFacts = [
   { label: 'Based', value: 'London, UK' },
-  { label: 'Current role', value: 'Lead AI Engineer, AWTG Ltd' },
+  { label: 'Current role', value: 'Cybersecurity Manager – AI Architect, BCG' },
   { label: 'Focus', value: 'Enterprise GenAI & agents' },
   { label: 'Status', value: 'Open to conversations' },
 ];
 
 const experience = [
   {
+    role: 'Cybersecurity Manager – AI Architect',
+    org: 'BCG',
+    where: 'London, UK',
+    period: 'Current',
+    current: true,
+    stack: ['Cybersecurity', 'AI architecture'],
+    bullets: [],
+  },
+  {
     role: 'Lead AI Engineer / GenAI Specialist',
     org: 'AWTG Ltd',
     where: 'London, UK',
-    period: 'May 2022 – Present',
-    current: true,
+    period: 'From May 2022 · Previous role',
+    current: false,
     stack: ['RAG', 'GraphRAG', 'LangGraph', 'Azure AI Foundry', 'GCP', 'FastAPI'],
     bullets: [
-      'Contribute to the KAI AI platform — production-grade LLM workflows, Python/FastAPI services, backend systems, data pipelines and reusable AI capabilities — supporting enterprise AI adoption for 65,000+ active users, including the British Council.',
+      'Contributed to the KAI AI platform — production-grade LLM workflows, Python/FastAPI services, backend systems, data pipelines and reusable AI capabilities — supporting enterprise AI adoption for 65,000+ active users, including the British Council.',
       'Led AI engineering delivery for an education platform (not yet publicly launched) — translating product, pedagogy and user needs into scalable, AI-enabled platform features.',
       'Built RAG and document-grounded AI workflows across approved knowledge sources, retrieval logic, structured context, embeddings and vector search, prompt construction and response validation.',
       'Designed agent-style AI workflows and LangGraph/LangChain-style orchestration connecting LLMs with retrieval, backend APIs and tool-style service calls — multi-step logic, error handling and validated outputs.',
       'Improved document-intelligence workflows by processing structured and unstructured data, running data-quality checks and preparing content for retrieval.',
       'Strengthened safe, responsible AI delivery through prompt versioning, approved knowledge sources, guardrails, response constraints, controlled releases and mitigation of hallucination, data leakage, prompt injection and unsafe outputs.',
       'Reduced manual reporting effort by 40% with automated data pipelines and reporting workflows, and improved network energy efficiency by 28% across 200+ network nodes with optimisation, analytics and decision-support tooling.',
-      'Operate cloud-native AI services on GCP and Azure AI Foundry with Docker, Kubernetes, Redis and GCP Pub/Sub — CI/CD, structured logging, debugging, root-cause analysis and cross-team knowledge sharing.',
+      'Operated cloud-native AI services on GCP and Azure AI Foundry with Docker, Kubernetes, Redis and GCP Pub/Sub — CI/CD, structured logging, debugging, root-cause analysis and cross-team knowledge sharing.',
     ],
   },
   {
@@ -200,7 +209,7 @@ const tel = `tel:${contact.phone.replace(/\s/g, '')}`;
 
 <BaseLayout
   title={title}
-  description={`CV for ${site.name}: Lead AI Engineer at AWTG Ltd (London) — experience, achievements, projects, skills and education.`}
+  description={`CV for ${site.name}: Cybersecurity Manager – AI Architect at BCG (London) — experience, achievements, projects, skills and education.`}
   destination="studio"
   surface="cv"
   backHref="/"
@@ -214,7 +223,7 @@ const tel = `tel:${contact.phone.replace(/\s/g, '')}`;
             {site.name}
           </h1>
           <p class="lede">
-            Lead AI Engineer · AWTG Ltd, London. Building reliable enterprise AI
+            Cybersecurity Manager – AI Architect · BCG, London. Building reliable enterprise AI
             systems across RAG, GraphRAG, agents, evaluation and responsible AI
             delivery.
           </p>
@@ -275,8 +284,8 @@ const tel = `tel:${contact.phone.replace(/\s/g, '')}`;
       <section class="cv-section" id="summary" aria-labelledby="summary-title">
         <h2 class="cv-section-title" id="summary-title">Summary</h2>
         <p class="cv-summary">
-          Lead AI Engineer in London with a track record of taking AI from
-          prototype to production in enterprise settings. Currently leading AI
+          Cybersecurity Manager – AI Architect at BCG in London with a track record of taking AI from
+          prototype to production in enterprise settings. Previously led AI
           engineering for AWTG — contributing to the KAI AI platform and leading
           delivery on an education-platform project — with a career spanning
           machine learning engineering, research-computing support and

@@ -28,7 +28,7 @@ const SOUND_GATE_KEY = 'world:sound-gate';
 
 function soundGateDismissed(): boolean {
   try {
-    return window.sessionStorage.getItem(SOUND_GATE_KEY) === '1';
+    return document.cookie.split('; ').includes('world_sound_gate=1') || window.localStorage.getItem(SOUND_GATE_KEY) === '1';
   } catch {
     return false;
   }
@@ -55,7 +55,8 @@ function tryArmMusic(): void {
 
 function dismissSoundGate(): void {
   try {
-    window.sessionStorage.setItem(SOUND_GATE_KEY, '1');
+    document.cookie = 'world_sound_gate=1; Max-Age=34560000; Path=/; SameSite=Lax; Secure';
+    window.localStorage.setItem(SOUND_GATE_KEY, '1');
   } catch {
     /* storage unavailable */
   }
@@ -256,17 +257,16 @@ export function watchSoundControls(): void {
     }
 
     if (target.closest('[data-world-enter-sound]')) {
+      if (event.detail === 0) {
+        dismissSoundGate();
+        engine.playFromGesture({ fadeMs: 1200 });
+      }
       return;
     }
 
     if (target.closest('[data-world-enter-silent]')) {
-      try {
-        window.sessionStorage.setItem(SOUND_GATE_KEY, '1');
-      } catch {
-        /* storage unavailable */
-      }
       engine.pause({ forget: true });
-      syncSoundGate();
+      dismissSoundGate();
       return;
     }
 

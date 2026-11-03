@@ -19,12 +19,12 @@ const baseUrl = import.meta.env.BASE_URL ?? '/';
 export const site = {
   /** Canonical origin — the live site root domain. */
   url: 'https://adonishhh772.github.io',
-  title: 'Abd Bastola — Lead AI Engineer',
+  title: 'Abd Bastola — Cybersecurity Manager – AI Architect',
   name: 'Abd Bastola',
-  role: 'Lead AI Engineer building reliable enterprise AI systems.',
+  role: 'Cybersecurity Manager – AI Architect building reliable enterprise AI systems.',
   location: 'London',
   metaDescription:
-    'Abd Bastola is a Lead AI Engineer in London (AWTG Ltd) building production-ready enterprise AI systems — RAG, GraphRAG, AI agents, evaluation, guardrails and responsible delivery across Azure AI Foundry and GCP. Publisher of the Reliable AI newsletter.',
+    'Abd Bastola is a Cybersecurity Manager – AI Architect at BCG in London building production-ready enterprise AI systems — RAG, GraphRAG, AI agents, evaluation, guardrails and responsible delivery across Azure AI Foundry and GCP. Publisher of the Reliable AI newsletter.',
 };
 
 /**
@@ -96,10 +96,10 @@ export const nav = {
  * by the shell chrome (status, captions, dock) and by the simple-mode page.
  */
 export const hero = {
-  eyebrow: `Lead AI Engineer · ${site.location}`,
+  eyebrow: `Cybersecurity Manager – AI Architect · ${site.location}`,
   headline: 'I build AI systems people can rely on.',
   lead: 'Production-grade agents, RAG and GraphRAG platforms for enterprise teams — with the unglamorous parts designed in: evaluation, guardrails, observability and clear limits.',
-  currently: 'Building and delivering enterprise AI systems at AWTG in London.',
+  currently: 'Building and delivering enterprise AI systems at BCG in London.',
   stage: {
     loadingLabel: 'Building the campus',
     readyLabel: 'Campus online',
